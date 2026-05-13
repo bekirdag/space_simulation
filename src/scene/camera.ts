@@ -1,12 +1,25 @@
 import {
   type Vec3, type Mat4,
-  normalize, cross, dot, sub,
   lookAt, perspective, mulMat4,
 } from "../math/mat4";
 
 const FOV_Y = Math.PI / 4; // 45° vertical field of view
-const NEAR  = 0.001;       // AU
-const FAR   = 2000;        // AU
+const NEAR  = 1e-8;        // AU, allows close body fly-ins without clipping
+const FAR   = 180_000;     // AU, includes compressed nearby-star catalog
+const MIN_DISTANCE = 1e-7; // AU
+const MAX_DISTANCE = FAR;
+const CLOSEUP_VIEW_FILL = 0.88;
+const ORBIT_POLE_MARGIN = 0.02;
+
+function clampDistance(distance: number): number {
+  return Math.max(MIN_DISTANCE, Math.min(MAX_DISTANCE, distance));
+}
+
+function aspectLimitedNdcRadius(fill: number): number {
+  if (typeof window === "undefined" || window.innerHeight <= 0) return fill;
+  const aspect = window.innerWidth / window.innerHeight;
+  return Math.max(0.25, Math.min(fill, fill * aspect));
+}
 
 export interface CameraUniforms {
   viewProj:   Mat4;
@@ -30,7 +43,7 @@ export class Camera {
     let panning  = false;
     let lastX = 0, lastY = 0;
 
-    // Middle mouse button = orbit
+    // Mouse wheel button drag = orbit
     canvas.addEventListener("mousedown", (e) => {
       if (e.button === 1) {
         orbiting = true;
@@ -62,8 +75,8 @@ export class Camera {
         const sens = 0.006;
         this.azimuth   -= dx * sens;
         this.elevation  = Math.max(
-          -Math.PI / 2 + 0.02,
-          Math.min(Math.PI / 2 - 0.02, this.elevation + dy * sens),
+          -Math.PI / 2 + ORBIT_POLE_MARGIN,
+          Math.min(Math.PI / 2 - ORBIT_POLE_MARGIN, this.elevation + dy * sens),
         );
       }
 
@@ -81,13 +94,25 @@ export class Camera {
     canvas.addEventListener("wheel", (e) => {
       e.preventDefault();
       const factor = e.deltaY < 0 ? 0.9 : 1.1;
-      this.distance = Math.max(0.01, Math.min(1000, this.distance * factor));
+      this.distance = clampDistance(this.distance * factor);
     }, { passive: false });
   }
 
   travelTo(x: number, y: number, z: number, distance: number): void {
     this.target   = [x, y, z];
-    this.distance = distance;
+    this.distance = clampDistance(distance);
+  }
+
+  distanceForViewRadius(radius: number, fill = CLOSEUP_VIEW_FILL): number {
+    if (!Number.isFinite(radius) || radius <= 0) return MIN_DISTANCE;
+    const focalY = 1 / Math.tan(FOV_Y / 2);
+    const distance = (radius * focalY) / aspectLimitedNdcRadius(fill);
+    return clampDistance(distance);
+  }
+
+  closeDistanceForRadius(radius: number): number {
+    if (!Number.isFinite(radius) || radius <= 0) return MIN_DISTANCE;
+    return clampDistance(Math.max(this.distanceForViewRadius(radius), radius * 1.25));
   }
 
   /** Compute and cache view-projection matrix + billboard vectors. */
@@ -103,17 +128,12 @@ export class Camera {
       this.target[2] + this.distance * sinPhi,
     ];
 
-    // World "up" is Z (out of ecliptic). Near poles use Y to avoid gimbal flip.
-    const worldUp: Vec3 = Math.abs(sinPhi) > 0.98 ? [0, 1, 0] : [0, 0, 1];
+    const right: Vec3 = [-sinTheta, cosTheta, 0];
+    const up: Vec3 = [-sinPhi * cosTheta, -sinPhi * sinTheta, cosPhi];
 
-    const view = lookAt(eye, this.target, worldUp);
+    const view = lookAt(eye, this.target, up);
     const proj = perspective(FOV_Y, aspect, NEAR, FAR);
     const viewProj = mulMat4(proj, view);
-
-    // Camera right and up in world space (for billboard quads)
-    const fwd = normalize(sub(this.target, eye));
-    const right = normalize(cross(fwd, worldUp));
-    const up    = normalize(cross(right, fwd));
 
     this._uniforms = {
       viewProj,

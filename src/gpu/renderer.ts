@@ -1,7 +1,9 @@
 import renderWGSL from "./render.wgsl?raw";
+import starWGSL   from "./star.wgsl?raw";
 import trailWGSL  from "./trail.wgsl?raw";
 import { type GPUContext } from "./device";
 import { type Body, BODY_FLOATS } from "../physics/body";
+import { STAR_FLOATS } from "../catalog/stars";
 import { type TrailSystem, TRAIL_VTXFLOATS } from "../scene/trail-system";
 import { type CameraUniforms } from "../scene/camera";
 
@@ -12,23 +14,29 @@ const TRAIL_VTXBUF_BYTES = 128 * 1500 * TRAIL_VTXFLOATS * 4; // ~6 MB (128 bodie
 
 export class Renderer {
   private bodyPipeline!:  GPURenderPipeline;
+  private starPipeline!:  GPURenderPipeline;
   private trailPipeline!: GPURenderPipeline;
 
   private cameraBuffer!:      GPUBuffer;
   private bodyBuffer!:        GPUBuffer;
+  private starBuffer!:        GPUBuffer;
   private trailVertexBuffer!: GPUBuffer;
 
   private bodyBindGroup!:  GPUBindGroup;
+  private starBindGroup!:  GPUBindGroup;
   private trailBindGroup!: GPUBindGroup;
+  private starBGL!:        GPUBindGroupLayout;
 
   private bodyCount = 0;
+  private starCount = 0;
+  private starCapacity = 0;
 
   constructor(
     private ctx: GPUContext,
     private canvasCtx: GPUCanvasContext,
   ) {}
 
-  init(maxBodies: number): void {
+  init(maxBodies: number, maxStars = 1): void {
     const { device, format } = this.ctx;
 
     this.cameraBuffer = device.createBuffer({
@@ -40,6 +48,13 @@ export class Renderer {
     this.bodyBuffer = device.createBuffer({
       label: "body-storage",
       size:  maxBodies * BODY_FLOATS * 4,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+
+    this.starCapacity = Math.max(1, maxStars);
+    this.starBuffer = device.createBuffer({
+      label: "catalog-star-storage",
+      size:  this.starCapacity * STAR_FLOATS * 4,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
 
@@ -71,6 +86,39 @@ export class Renderer {
       vertex:   { module: bodyShader, entryPoint: "vs_main" },
       fragment: {
         module: bodyShader, entryPoint: "fs_main",
+        targets: [{
+          format,
+          blend: {
+            color: { srcFactor: "src-alpha", dstFactor: "one", operation: "add" },
+            alpha: { srcFactor: "one",       dstFactor: "one", operation: "add" },
+          },
+        }],
+      },
+      primitive: { topology: "triangle-list" },
+    });
+
+    // ── Static catalog star pipeline ───────────────────────────────────────
+    this.starBGL = device.createBindGroupLayout({
+      label: "catalog-star-bgl",
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
+        { binding: 1, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "read-only-storage" } },
+      ],
+    });
+    this.starBindGroup = device.createBindGroup({
+      label: "catalog-star-bg", layout: this.starBGL,
+      entries: [
+        { binding: 0, resource: { buffer: this.cameraBuffer } },
+        { binding: 1, resource: { buffer: this.starBuffer } },
+      ],
+    });
+    const starShader = device.createShaderModule({ code: starWGSL });
+    this.starPipeline = device.createRenderPipeline({
+      label: "catalog-star-pipeline",
+      layout: device.createPipelineLayout({ bindGroupLayouts: [this.starBGL] }),
+      vertex:   { module: starShader, entryPoint: "vs_main" },
+      fragment: {
+        module: starShader, entryPoint: "fs_main",
         targets: [{
           format,
           blend: {
@@ -122,6 +170,16 @@ export class Renderer {
     });
   }
 
+  uploadStars(stars: Float32Array): void {
+    if (stars.length % STAR_FLOATS !== 0) {
+      throw new Error("Star buffer length must be a multiple of STAR_FLOATS.");
+    }
+
+    this.starCount = stars.length / STAR_FLOATS;
+    this.ensureStarCapacity(this.starCount);
+    this.ctx.device.queue.writeBuffer(this.starBuffer, 0, stars as GPUAllowSharedBufferSource);
+  }
+
   uploadBodies(bodies: Body[]): void {
     this.bodyCount = bodies.length;
     const data = new Float32Array(bodies.length * BODY_FLOATS);
@@ -138,6 +196,26 @@ export class Renderer {
       data[o+12]=b.color[0]; data[o+13]=b.color[1]; data[o+14]=b.color[2]; data[o+15]=b.id;
     }
     this.ctx.device.queue.writeBuffer(this.bodyBuffer, 0, data);
+  }
+
+  private ensureStarCapacity(count: number): void {
+    if (count <= this.starCapacity) return;
+
+    const { device } = this.ctx;
+    this.starCapacity = Math.ceil(count * 1.15);
+    this.starBuffer.destroy();
+    this.starBuffer = device.createBuffer({
+      label: "catalog-star-storage",
+      size: this.starCapacity * STAR_FLOATS * 4,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    this.starBindGroup = device.createBindGroup({
+      label: "catalog-star-bg", layout: this.starBGL,
+      entries: [
+        { binding: 0, resource: { buffer: this.cameraBuffer } },
+        { binding: 1, resource: { buffer: this.starBuffer } },
+      ],
+    });
   }
 
   updateCamera(uniforms: CameraUniforms, canvasHeight: number): void {
@@ -169,6 +247,13 @@ export class Renderer {
         loadOp: "clear", storeOp: "store",
       }],
     });
+
+    // ── Static catalog stars ───────────────────────────────────────────────
+    if (this.starCount > 0) {
+      pass.setPipeline(this.starPipeline);
+      pass.setBindGroup(0, this.starBindGroup);
+      pass.draw(6, this.starCount, 0, 0);
+    }
 
     // ── Trails ────────────────────────────────────────────────────────────
     pass.setPipeline(this.trailPipeline);

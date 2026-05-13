@@ -1,32 +1,42 @@
 import { type Body } from "../physics/body";
 import { type Camera } from "../scene/camera";
-import { MOON_ZOOM, SYSTEM_VIEW } from "../physics/moons";
+import { MOON_PARENT, MOON_ZOOM, systemViewDistanceForBody } from "../physics/moons";
+import { type StarSearchResult } from "../catalog/stars";
 
-const PLANET_DIST: Record<string, number> = {
-  Sun:5, Mercury:0.2, Venus:0.3, Earth:0.3, Mars:0.3,
-  Jupiter:1.5, Saturn:2.0, Uranus:1.2, Neptune:1.2,
-};
+const DEFAULT_TRAVEL_DIST = 0.5;
+const MOON_SYSTEM_PADDING = 1.15;
+const MOON_SYSTEM_VIEW_FILL = 0.82;
 
-const TRAVEL_DIST: Record<string, number> = { ...PLANET_DIST, ...MOON_ZOOM };
+type TravelMode = "system" | "close";
+
+interface CatalogSearchOptions {
+  searchCatalog: (query: string) => StarSearchResult[];
+  getCatalogStatus: () => string;
+}
 
 export class NavPanel {
   private panel:   HTMLElement;
   private toggle:  HTMLElement;
   private search:  HTMLInputElement;
+  private catalogResults: HTMLElement;
+  private focusedBodyName: string | null = null;
   private open     = true;
 
   constructor(
     private camera:    Camera,
     private getBodies: () => Body[],
     private onPreset:  (name: string) => void,
+    private catalogSearch?: CatalogSearchOptions,
   ) {
     this.panel  = document.getElementById("nav-panel")!;
     this.toggle = document.getElementById("nav-toggle")!;
     this.search = document.getElementById("nav-search") as HTMLInputElement;
+    this.catalogResults = document.getElementById("catalog-search-results")!;
 
     this.toggle.addEventListener("click", () => this.setOpen(!this.open));
     this.search.addEventListener("input",  () => this.filter());
     this.search.addEventListener("click",  e => e.stopPropagation()); // don't bubble to canvas
+    this.catalogResults.addEventListener("click", e => e.stopPropagation());
 
     this.bindLinks();
   }
@@ -35,33 +45,100 @@ export class NavPanel {
     this.panel.querySelectorAll<HTMLElement>("[data-travel]").forEach((el) => {
       el.addEventListener("click", () => {
         const name = el.dataset["travel"]!;
-        this.travelTo(name);
+        this.travelTo(name, this.focusedBodyName === name ? "close" : "system");
+      });
+      el.addEventListener("dblclick", () => {
+        const name = el.dataset["travel"]!;
+        this.travelTo(name, "close");
       });
     });
 
     this.panel.querySelectorAll<HTMLElement>("[data-preset]").forEach((el) => {
-      el.addEventListener("click", () => this.onPreset(el.dataset["preset"]!));
+      el.addEventListener("click", () => {
+        this.clearFocusedBody();
+        this.onPreset(el.dataset["preset"]!);
+      });
     });
   }
 
+  private bodyByName(name: string): Body | undefined {
+    return this.getBodies().find(b => b.name === name);
+  }
+
+  private travelDistanceFor(name: string): number {
+    return systemViewDistanceForBody(name) ?? MOON_ZOOM[name] ?? DEFAULT_TRAVEL_DIST;
+  }
+
+  private moonSystemDistanceFor(parent: Body): number | null {
+    const moons = this.getBodies().filter(body => MOON_PARENT[body.name] === parent.name);
+    if (moons.length === 0) return null;
+
+    const systemRadius = moons.reduce((max, moon) => Math.max(
+      max,
+      Math.hypot(moon.x - parent.x, moon.y - parent.y, moon.z - parent.z),
+    ), 0);
+    if (systemRadius <= 0) return null;
+    return this.camera.distanceForViewRadius(systemRadius * MOON_SYSTEM_PADDING, MOON_SYSTEM_VIEW_FILL);
+  }
+
+  private closeDistanceFor(body: Body): number {
+    const bodyDistance = this.camera.closeDistanceForRadius(body.radius);
+    const moonSystemDistance = this.moonSystemDistanceFor(body);
+    if (moonSystemDistance !== null) return Math.max(bodyDistance, moonSystemDistance);
+    return bodyDistance;
+  }
+
+  private distanceFor(name: string, body: Body, mode: TravelMode): number {
+    if (mode === "close") return this.closeDistanceFor(body);
+    return this.travelDistanceFor(name);
+  }
+
+  private setFocusedBody(name: string): void {
+    this.focusedBodyName = name;
+    this.panel.querySelectorAll<HTMLElement>("[data-travel]").forEach(el => {
+      el.classList.toggle("focused", el.dataset["travel"] === name);
+    });
+  }
+
+  clearFocusedBody(): void {
+    this.focusedBodyName = null;
+    this.panel.querySelectorAll<HTMLElement>("[data-travel].focused").forEach(el => {
+      el.classList.remove("focused");
+    });
+  }
+
+  updateFocusedBody(): void {
+    if (!this.focusedBodyName) return;
+    const body = this.bodyByName(this.focusedBodyName);
+    if (!body) {
+      this.clearFocusedBody();
+      return;
+    }
+    this.camera.target = [body.x, body.y, body.z];
+  }
+
   /** Travel to a named body. Called from nav clicks AND canvas clicks. */
-  travelTo(name: string): void {
-    const body = this.getBodies().find(b => b.name === name);
+  travelTo(name: string, mode: TravelMode = "system"): void {
+    const body = this.bodyByName(name);
     if (!body) return;
-    const dist = TRAVEL_DIST[name] ?? 0.5;
+    const dist = this.distanceFor(name, body, mode);
+    this.setFocusedBody(name);
     this.camera.travelTo(body.x, body.y, body.z, dist);
   }
 
   /** Travel to a planet with a zoom that shows all its moons. */
   travelToSystem(name: string): void {
-    const body = this.getBodies().find(b => b.name === name);
-    if (!body) return;
-    const dist = SYSTEM_VIEW[name] ?? TRAVEL_DIST[name] ?? 0.5;
-    this.camera.travelTo(body.x, body.y, body.z, dist);
+    this.travelTo(name, "system");
+  }
+
+  /** Travel close; planets with known moons keep their local moon system in frame. */
+  travelToClose(name: string): void {
+    this.travelTo(name, "close");
   }
 
   private filter(): void {
     const q = this.search.value.trim().toLowerCase();
+    const searchingCatalog = q.length >= 2;
 
     // Show/hide individual travel items
     this.panel.querySelectorAll<HTMLElement>("[data-travel]").forEach(el => {
@@ -83,6 +160,56 @@ export class NavPanel {
       ).some(el => el.style.display !== "none");
       block.style.display = hasVisible ? "" : "none";
     });
+
+    const catalogHits = this.catalogSearch?.searchCatalog(q) ?? [];
+    this.renderCatalogResults(searchingCatalog ? q : "", catalogHits);
+  }
+
+  private renderCatalogResults(query: string, hits: StarSearchResult[]): void {
+    this.catalogResults.replaceChildren();
+    this.catalogResults.hidden = !query;
+    if (!query) return;
+
+    if (hits.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "catalog-search-empty";
+      empty.textContent = this.catalogSearch?.getCatalogStatus() ?? "No catalog results";
+      this.catalogResults.appendChild(empty);
+      return;
+    }
+
+    for (const hit of hits) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "catalog-search-item";
+      btn.dataset["starId"] = hit.id;
+
+      const swatch = document.createElement("span");
+      swatch.className = "catalog-search-dot";
+      swatch.style.background = `rgb(${Math.round(hit.color[0] * 255)}, ${Math.round(hit.color[1] * 255)}, ${Math.round(hit.color[2] * 255)})`;
+
+      const copy = document.createElement("span");
+      copy.className = "catalog-search-copy";
+
+      const label = document.createElement("span");
+      label.className = "catalog-search-label";
+      label.textContent = hit.label;
+
+      const subtitle = document.createElement("span");
+      subtitle.className = "catalog-search-subtitle";
+      subtitle.textContent = hit.subtitle;
+
+      copy.append(label, subtitle);
+      btn.append(swatch, copy);
+      btn.addEventListener("click", () => {
+        this.clearFocusedBody();
+        this.camera.travelTo(hit.x, hit.y, hit.z, hit.focusDistance);
+        this.search.value = hit.label;
+        this.renderCatalogResults("", []);
+      });
+
+      this.catalogResults.appendChild(btn);
+    }
   }
 
   private setOpen(open: boolean): void {

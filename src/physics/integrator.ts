@@ -3,7 +3,11 @@ import { G, SOFTENING } from "./constants";
 
 type Vec3 = { x: number; y: number; z: number };
 
-function acceleration(bodies: Body[], idx: number): Vec3 {
+export interface IntegratorOptions {
+  externalAcceleration?: (body: Body, index: number) => Vec3;
+}
+
+function acceleration(bodies: Body[], idx: number, options: IntegratorOptions): Vec3 {
   const b = bodies[idx]!;
   let ax = 0, ay = 0, az = 0;
   for (let j = 0; j < bodies.length; j++) {
@@ -19,11 +23,19 @@ function acceleration(bodies: Body[], idx: number): Vec3 {
     ay += f * dy;
     az += f * dz;
   }
+
+  const external = options.externalAcceleration?.(b, idx);
+  if (external) {
+    ax += external.x;
+    ay += external.y;
+    az += external.z;
+  }
+
   return { x: ax, y: ay, z: az };
 }
 
-export function stepLeapfrog(bodies: Body[], dt: number): void {
-  const a1 = bodies.map((_, i) => acceleration(bodies, i));
+export function stepLeapfrog(bodies: Body[], dt: number, options: IntegratorOptions = {}): void {
+  const a1 = bodies.map((_, i) => acceleration(bodies, i, options));
 
   for (let i = 0; i < bodies.length; i++) {
     const b = bodies[i]!; const a = a1[i]!;
@@ -38,7 +50,7 @@ export function stepLeapfrog(bodies: Body[], dt: number): void {
     b.z += b.vz * dt;
   }
 
-  const a2 = bodies.map((_, i) => acceleration(bodies, i));
+  const a2 = bodies.map((_, i) => acceleration(bodies, i, options));
   for (let i = 0; i < bodies.length; i++) {
     const b = bodies[i]!; const a = a2[i]!;
     b.vx += 0.5 * a.x * dt;

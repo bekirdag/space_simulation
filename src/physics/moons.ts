@@ -127,3 +127,33 @@ export const SYSTEM_VIEW: Record<string, number> = {
   Haumea:  0.004,
   Makemake:0.004,
 };
+
+export const MOON_PARENT: Record<string, string> = {
+  Moon: "Earth",
+  Io: "Jupiter",
+  Europa: "Jupiter",
+  Ganymede: "Jupiter",
+  Callisto: "Jupiter",
+  Mimas: "Saturn",
+  Enceladus: "Saturn",
+  Tethys: "Saturn",
+  Dione: "Saturn",
+  Rhea: "Saturn",
+  Titan: "Saturn",
+  Iapetus: "Saturn",
+  Miranda: "Uranus",
+  Ariel: "Uranus",
+  Umbriel: "Uranus",
+  Titania: "Uranus",
+  Oberon: "Uranus",
+  Triton: "Neptune",
+  Charon: "Pluto",
+};
+
+export function systemCenterForBody(name: string): string {
+  return MOON_PARENT[name] ?? name;
+}
+
+export function systemViewDistanceForBody(name: string): number | undefined {
+  return SYSTEM_VIEW[systemCenterForBody(name)];
+}

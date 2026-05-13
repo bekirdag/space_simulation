@@ -1,21 +1,69 @@
 import { type Body } from "../physics/body";
 import { type Mat4 } from "../math/mat4";
 
+const ALWAYS_VISIBLE_BODY_NAMES = new Set([
+  "Sun",
+  "Mercury",
+  "Venus",
+  "Earth",
+  "Mars",
+  "Jupiter",
+  "Saturn",
+  "Uranus",
+  "Neptune",
+]);
+const LABEL_EDGE_MARGIN = 24;
+const LABEL_NAV_MARGIN = 238;
+const LABEL_BOTTOM_MARGIN = 86;
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function pinToViewport(nx: number, ny: number, cssW: number, cssH: number): ProjectedPoint {
+  let dirX = nx;
+  let dirY = ny;
+  if (!Number.isFinite(dirX) || !Number.isFinite(dirY) || (Math.abs(dirX) < 0.001 && Math.abs(dirY) < 0.001)) {
+    dirX = 0;
+    dirY = -1;
+  }
+  const scale = Math.max(Math.abs(dirX), Math.abs(dirY), 1);
+  const edgeX = dirX / scale;
+  const edgeY = dirY / scale;
+  const rightLimit = cssW > 720 ? cssW - LABEL_NAV_MARGIN : cssW - LABEL_EDGE_MARGIN;
+  const bottomLimit = Math.max(LABEL_EDGE_MARGIN, cssH - LABEL_BOTTOM_MARGIN);
+  return {
+    x: clamp((edgeX + 1) * 0.5 * cssW, LABEL_EDGE_MARGIN, Math.max(LABEL_EDGE_MARGIN, rightLimit)),
+    y: clamp((1 - edgeY) * 0.5 * cssH, LABEL_EDGE_MARGIN, bottomLimit),
+    pinned: true,
+  };
+}
+
+interface ProjectedPoint { x: number; y: number; pinned: boolean }
+
 function project(
   x: number, y: number, z: number,
   vp: Mat4, cssW: number, cssH: number,
-): { x: number; y: number } | null {
+  pin = false,
+): ProjectedPoint | null {
   /* eslint-disable @typescript-eslint/no-non-null-assertion */
   const cx = vp[0]!*x + vp[4]!*y + vp[8]! *z + vp[12]!;
   const cy = vp[1]!*x + vp[5]!*y + vp[9]! *z + vp[13]!;
   const cz = vp[2]!*x + vp[6]!*y + vp[10]!*z + vp[14]!;
   const cw = vp[3]!*x + vp[7]!*y + vp[11]!*z + vp[15]!;
   /* eslint-enable */
-  if (cw <= 0) return null;
+  if (cw <= 0) {
+    if (!pin) return null;
+    const cwAbs = Math.max(Math.abs(cw), 1e-6);
+    return pinToViewport(-cx / cwAbs, -cy / cwAbs, cssW, cssH);
+  }
   const nx = cx / cw, ny = cy / cw, nz = cz / cw;
-  if (nz < 0 || nz > 1.02) return null;
-  if (nx < -1.4 || nx > 1.4 || ny < -1.4 || ny > 1.4) return null;
-  return { x: (nx + 1) * 0.5 * cssW, y: (1 - ny) * 0.5 * cssH };
+  const visibleBounds = pin ? 0.98 : 1.4;
+  if (nz >= 0 && nz <= 1.02 && nx >= -visibleBounds && nx <= visibleBounds && ny >= -visibleBounds && ny <= visibleBounds) {
+    return { x: (nx + 1) * 0.5 * cssW, y: (1 - ny) * 0.5 * cssH, pinned: false };
+  }
+  if (!pin) return null;
+  return pinToViewport(nx, ny, cssW, cssH);
 }
 
 interface Projected { x: number; y: number; body: Body }
@@ -59,14 +107,19 @@ export class LabelManager {
       }
 
       const sp  = this.spans.get(b.id)!;
-      const pos = project(b.x, b.y, b.z, viewProj, cssW, cssH);
+      const pos = project(b.x, b.y, b.z, viewProj, cssW, cssH, ALWAYS_VISIBLE_BODY_NAMES.has(b.name));
 
-      if (!pos) { sp.style.display = 'none'; continue; }
+      if (!pos) {
+        sp.style.display = 'none';
+        sp.classList.remove('pinned', 'hovered');
+        continue;
+      }
 
       this.positions.set(b.id, { x: pos.x, y: pos.y, body: b });
       sp.style.display = 'block';
-      sp.style.left    = `${pos.x + 10}px`;
-      sp.style.top     = `${pos.y - 6}px`;
+      sp.classList.toggle('pinned', pos.pinned);
+      sp.style.left    = `${pos.pinned ? pos.x : pos.x + 10}px`;
+      sp.style.top     = `${pos.pinned ? pos.y : pos.y - 6}px`;
 
       const dx = this.mouseX - pos.x;
       const dy = this.mouseY - pos.y;

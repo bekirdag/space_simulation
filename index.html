@@ -87,6 +87,15 @@
         user-select: none;
       }
       #hud .hud-title { color: rgba(255,255,255,0.9); letter-spacing: 0.12em; font-size: 12px; }
+      #hud-time {
+        color: rgba(255,255,255,0.8);
+        display: block;
+        width: 12ch;
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+        text-align: right;
+        white-space: nowrap;
+      }
 
       /* ── Bottom controls ── */
       #controls {
@@ -252,6 +261,66 @@
       #nav-search:focus { border-color: rgba(136,170,255,0.4); }
       #nav-search::placeholder { color: rgba(255,255,255,0.25); }
 
+      .catalog-search-results {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        margin-top: 7px;
+        max-height: 220px;
+        overflow-y: auto;
+      }
+      .catalog-search-results[hidden] { display: none; }
+      .catalog-search-item {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: rgba(136,170,255,0.08);
+        border: 1px solid rgba(136,170,255,0.14);
+        border-radius: 6px;
+        color: rgba(255,255,255,0.82);
+        padding: 6px 7px;
+        cursor: pointer;
+        text-align: left;
+      }
+      .catalog-search-item:hover {
+        background: rgba(136,170,255,0.16);
+        border-color: rgba(136,170,255,0.28);
+      }
+      .catalog-search-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        flex-shrink: 0;
+        box-shadow: 0 0 8px currentColor;
+      }
+      .catalog-search-copy {
+        display: flex;
+        min-width: 0;
+        flex-direction: column;
+        gap: 1px;
+      }
+      .catalog-search-label {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 11px;
+        line-height: 1.2;
+      }
+      .catalog-search-subtitle,
+      .catalog-search-empty {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-family: 'SF Mono', monospace;
+        font-size: 9px;
+        color: rgba(255,255,255,0.38);
+        line-height: 1.3;
+      }
+      .catalog-search-empty {
+        padding: 6px 2px 2px;
+      }
+
       /* Scrollable body of the nav */
       #nav-scroll {
         overflow-y: auto;
@@ -285,6 +354,10 @@
         white-space: nowrap;
       }
       .nav-item:hover { background: rgba(255,255,255,0.1); color: #fff; }
+      .nav-item.focused {
+        background: rgba(136,170,255,0.16);
+        color: #fff;
+      }
 
       .nav-dot {
         width: 8px;
@@ -322,6 +395,14 @@
         transition: color 0.18s, text-shadow 0.18s;
         text-shadow: 0 1px 3px rgba(0,0,0,0.9);
         letter-spacing: 0.04em;
+      }
+      .body-label.pinned {
+        transform: translate(-50%, -50%);
+        padding: 2px 6px;
+        border: 1px solid rgba(136,170,255,0.18);
+        border-radius: 999px;
+        background: rgba(8,12,24,0.72);
+        color: rgba(210,225,255,0.58);
       }
       .body-label.hovered {
         color: rgba(255,255,255,0.92);
@@ -469,7 +550,7 @@
       <div class="hud-title">CELESTIA</div>
       <div id="hud-fps">FPS —</div>
       <div id="hud-bodies">Bodies —</div>
-      <div id="hud-time" style="color:rgba(255,255,255,0.8);font-size:12px">—</div>
+      <div id="hud-time">—</div>
       <div id="hud-source" style="font-size:9px;margin-top:2px;color:rgba(255,255,255,0.3)">J2000.0 preset</div>
     </div>
 
@@ -479,7 +560,8 @@
       <div id="nav-panel">
         <!-- Sticky search bar -->
         <div id="nav-search-box">
-          <input type="text" id="nav-search" placeholder="Search bodies…" autocomplete="off" spellcheck="false" />
+          <input type="text" id="nav-search" placeholder="Search bodies / stars..." autocomplete="off" spellcheck="false" />
+          <div id="catalog-search-results" class="catalog-search-results" hidden></div>
         </div>
 
         <!-- Scrollable content -->
