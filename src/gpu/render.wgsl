@@ -55,7 +55,7 @@ fn vs_main(
   let r_phys   = b.vel_rad.w;
   let camRight = camera.rightAndMNR.xyz;
   let camUp    = camera.upAndFocal.xyz;
-  let mnr      = camera.rightAndMNR.w;
+  var mnr      = camera.rightAndMNR.w;
   let focalY   = camera.upAndFocal.w;
 
   // Project center to get clip-space depth (W component)
@@ -76,6 +76,10 @@ fn vs_main(
   // Perspective-correct radius: how large is the body in NDC at this depth?
   let r_ndc = r_phys * focalY / clip_c.w;
   var r_eff  = r_phys;
+
+  if (out.btype > 1.5 && out.btype < 2.5) {
+    mnr = max(mnr, camera.rightAndMNR.w * 1.8);
+  }
 
   if r_ndc < mnr {
     // Scale up billboard to maintain minimum pixel size

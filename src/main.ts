@@ -438,7 +438,7 @@ async function main(): Promise<void> {
     renderer.updateCamera(camUniforms, canvas.height);
     renderer.draw(trails);
 
-    labels.update(bodies, camUniforms.viewProj);
+    labels.update(bodies, camUniforms.viewProj, nav.focusedSystemMembers());
     hud.update(bodies.length, simYears);
 
     requestAnimationFrame(frame);

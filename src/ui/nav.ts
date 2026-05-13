@@ -1,6 +1,11 @@
 import { type Body } from "../physics/body";
 import { type Camera } from "../scene/camera";
-import { MOON_PARENT, MOON_ZOOM, systemViewDistanceForBody } from "../physics/moons";
+import {
+  MOON_ZOOM,
+  systemCenterForBody,
+  systemMembersForBody,
+  systemViewDistanceForBody,
+} from "../physics/moons";
 import { type StarSearchResult } from "../catalog/stars";
 
 const DEFAULT_TRAVEL_DIST = 0.5;
@@ -20,6 +25,7 @@ export class NavPanel {
   private search:  HTMLInputElement;
   private catalogResults: HTMLElement;
   private focusedBodyName: string | null = null;
+  private focusedSystemCenterName: string | null = null;
   private open     = true;
 
   constructor(
@@ -45,7 +51,7 @@ export class NavPanel {
     this.panel.querySelectorAll<HTMLElement>("[data-travel]").forEach((el) => {
       el.addEventListener("click", () => {
         const name = el.dataset["travel"]!;
-        this.travelTo(name, this.focusedBodyName === name ? "close" : "system");
+        this.travelTo(name, "system");
       });
       el.addEventListener("dblclick", () => {
         const name = el.dataset["travel"]!;
@@ -69,32 +75,46 @@ export class NavPanel {
     return systemViewDistanceForBody(name) ?? MOON_ZOOM[name] ?? DEFAULT_TRAVEL_DIST;
   }
 
-  private moonSystemDistanceFor(parent: Body): number | null {
-    const moons = this.getBodies().filter(body => MOON_PARENT[body.name] === parent.name);
-    if (moons.length === 0) return null;
+  private systemDistanceFor(name: string, target: Body): number | null {
+    const memberNames = new Set(systemMembersForBody(name));
+    const members = this.getBodies().filter(body => memberNames.has(body.name));
+    if (members.length <= 1) return null;
 
-    const systemRadius = moons.reduce((max, moon) => Math.max(
+    const systemRadius = members.reduce((max, member) => Math.max(
       max,
-      Math.hypot(moon.x - parent.x, moon.y - parent.y, moon.z - parent.z),
+      Math.hypot(member.x - target.x, member.y - target.y, member.z - target.z) + member.radius,
     ), 0);
     if (systemRadius <= 0) return null;
     return this.camera.distanceForViewRadius(systemRadius * MOON_SYSTEM_PADDING, MOON_SYSTEM_VIEW_FILL);
   }
 
-  private closeDistanceFor(body: Body): number {
+  private closeDistanceFor(name: string, body: Body): number {
     const bodyDistance = this.camera.closeDistanceForRadius(body.radius);
-    const moonSystemDistance = this.moonSystemDistanceFor(body);
-    if (moonSystemDistance !== null) return Math.max(bodyDistance, moonSystemDistance);
-    return bodyDistance;
+    const systemDistance = this.systemDistanceFor(name, body);
+    return systemDistance === null ? bodyDistance : Math.max(bodyDistance, systemDistance);
   }
 
   private distanceFor(name: string, body: Body, mode: TravelMode): number {
-    if (mode === "close") return this.closeDistanceFor(body);
-    return this.travelDistanceFor(name);
+    if (mode === "close") return this.closeDistanceFor(name, body);
+    return this.systemDistanceFor(name, body) ?? this.travelDistanceFor(name);
+  }
+
+  focusedSystemMembers(): ReadonlySet<string> {
+    if (!this.focusedSystemCenterName) return new Set();
+    return new Set(systemMembersForBody(this.focusedSystemCenterName));
+  }
+
+  private setFocusedSystem(name: string): void {
+    this.focusedSystemCenterName = systemCenterForBody(name);
+  }
+
+  private clearFocusedSystem(): void {
+    this.focusedSystemCenterName = null;
   }
 
   private setFocusedBody(name: string): void {
     this.focusedBodyName = name;
+    this.setFocusedSystem(name);
     this.panel.querySelectorAll<HTMLElement>("[data-travel]").forEach(el => {
       el.classList.toggle("focused", el.dataset["travel"] === name);
     });
@@ -102,6 +122,7 @@ export class NavPanel {
 
   clearFocusedBody(): void {
     this.focusedBodyName = null;
+    this.clearFocusedSystem();
     this.panel.querySelectorAll<HTMLElement>("[data-travel].focused").forEach(el => {
       el.classList.remove("focused");
     });

@@ -85,7 +85,7 @@ export class LabelManager {
     window.addEventListener('mousemove', e => { this.mouseX = e.clientX; this.mouseY = e.clientY; });
   }
 
-  update(bodies: Body[], viewProj: Mat4): void {
+  update(bodies: Body[], viewProj: Mat4, focusedSystemMembers: ReadonlySet<string> = new Set()): void {
     const cssW = window.innerWidth;
     const cssH = window.innerHeight;
 
@@ -107,17 +107,23 @@ export class LabelManager {
       }
 
       const sp  = this.spans.get(b.id)!;
-      const pos = project(b.x, b.y, b.z, viewProj, cssW, cssH, ALWAYS_VISIBLE_BODY_NAMES.has(b.name));
+      const isFocusedSystemMember = focusedSystemMembers.has(b.name);
+      const pos = project(
+        b.x, b.y, b.z,
+        viewProj, cssW, cssH,
+        ALWAYS_VISIBLE_BODY_NAMES.has(b.name) || isFocusedSystemMember,
+      );
 
       if (!pos) {
         sp.style.display = 'none';
-        sp.classList.remove('pinned', 'hovered');
+        sp.classList.remove('pinned', 'hovered', 'system');
         continue;
       }
 
       this.positions.set(b.id, { x: pos.x, y: pos.y, body: b });
       sp.style.display = 'block';
       sp.classList.toggle('pinned', pos.pinned);
+      sp.classList.toggle('system', isFocusedSystemMember);
       sp.style.left    = `${pos.pinned ? pos.x : pos.x + 10}px`;
       sp.style.top     = `${pos.pinned ? pos.y : pos.y - 6}px`;
 

@@ -157,3 +157,12 @@ export function systemCenterForBody(name: string): string {
 export function systemViewDistanceForBody(name: string): number | undefined {
   return SYSTEM_VIEW[systemCenterForBody(name)];
 }
+
+export function systemMembersForBody(name: string): string[] {
+  const center = systemCenterForBody(name);
+  const members = [center];
+  for (const [moon, parent] of Object.entries(MOON_PARENT)) {
+    if (parent === center) members.push(moon);
+  }
+  return members;
+}
