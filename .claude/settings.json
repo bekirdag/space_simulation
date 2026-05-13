@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__docdex__docdex_search",
+      "mcp__docdex__docdex_memory_recall",
+      "mcp__docdex__docdex_get_profile",
+      "mcp__docdex__docdex_memory_save",
+      "mcp__docdex__docdex_save_preference",
+      "mcp__docdex__docdex_tree",
+      "mcp__docdex__docdex_files",
+      "mcp__docdex__docdex_stats",
+      "mcp__docdex__docdex_open",
+      "mcp__docdex__docdex_symbols",
+      "mcp__docdex__docdex_impact_graph",
+      "Bash(npm install *)",
+      "Bash(npm run dev)",
+      "Bash(npm run build)",
+      "Bash(npm run typecheck)",
+      "Bash(npx tsc --noEmit)"
+    ],
+    "deny": []
+  }
+}

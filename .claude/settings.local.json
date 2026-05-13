@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(awk '{print $2}')",
+      "Bash(xargs -I{} sh -c 'grep -o '\"'\"'\"name\":\"Bash\",\"input\":{\"command\":\"[^\"]*\"'\"'\"' \"{}\" 2>/dev/null || true')",
+      "Bash(awk '{print $1, $2}')",
+      "Bash(xargs '-I{}' python3 -c ' *)",
+      "Bash(read f *)",
+      "Bash(python3 -c ' *)",
+      "Bash(npm install *)",
+      "Bash(npm run *)",
+      "Bash(node *)",
+      "Bash(curl -s \"https://ssd.jpl.nasa.gov/api/horizons.api?format=json&COMMAND=399&OBJ_DATA=NO&MAKE_EPHEM=YES&EPHEM_TYPE=VECTORS&CENTER=500%4010&TLIST=2460822.0&OUT_UNITS=AU-D&REF_PLANE=ECLIPTIC&REF_SYSTEM=J2000&VECT_TABLE=2&VEC_LABELS=YES&CSV_FORMAT=NO\")",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(d\\)\")",
+      "Bash(curl -s \"https://ssd.jpl.nasa.gov/api/horizons.api?format=json&COMMAND=399&OBJ_DATA=NO&MAKE_EPHEM=YES&EPHEM_TYPE=VECTORS&CENTER=500%4010&TLIST=2460822.0&OUT_UNITS=AU-D&REF_PLANE=ECLIPTIC&REF_SYSTEM=J2000&VECT_TABLE=2&VEC_LABELS=YES\")",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(list\\(d.keys\\(\\)\\)\\); print\\(repr\\(d.get\\('result',''\\)[:600]\\)\\)\")",
+      "Bash(curl -sv \"https://ssd.jpl.nasa.gov/api/horizons.api?format=json&COMMAND=399&EPHEM_TYPE=VECTORS&CENTER=500%4010&START_TIME=2024-01-01&STOP_TIME=2024-01-02&STEP_SIZE=1d&OBJ_DATA=NO\")",
+      "Bash(curl -s \"https://ssd.jpl.nasa.gov/api/horizons.api?format=json&COMMAND=399&EPHEM_TYPE=VECTORS&CENTER=500%4010&START_TIME=2024-01-01&STOP_TIME=2024-01-02&STEP_SIZE=1d&OBJ_DATA=NO&OUT_UNITS=AU-D&REF_PLANE=ECLIPTIC&REF_SYSTEM=J2000&VECT_TABLE=2&VEC_LABELS=YES\")",
+      "Bash(curl -s \"https://ssd.jpl.nasa.gov/api/horizons.api?format=json&COMMAND=399&EPHEM_TYPE=VECTORS&CENTER=500%4010&START_TIME=2024-01-01&STOP_TIME=2024-01-02&STEP_SIZE=1d&OBJ_DATA=NO&REF_PLANE=ECLIPTIC&REF_SYSTEM=J2000&VECT_TABLE=2&VEC_LABELS=YES\")",
+      "Bash(python3 *)"
+    ]
+  }
+}

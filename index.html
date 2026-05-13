@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Celestia</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+      canvas { display: block; width: 100%; height: 100%; }
+
+      /* ── Loading overlay ── */
+      #loading-overlay {
+        display: flex;
+        position: fixed;
+        inset: 0;
+        background: #06060f;
+        color: #c8d0ff;
+        font-family: 'SF Mono', 'Fira Code', monospace;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        gap: 20px;
+        z-index: 100;
+        transition: opacity 0.4s ease;
+      }
+      #loading-overlay.hidden { opacity: 0; pointer-events: none; }
+      #loading-overlay.gone   { display: none; }
+
+      .loader-ring {
+        width: 48px; height: 48px;
+        border: 3px solid rgba(136,170,255,0.15);
+        border-top-color: #88aaff;
+        border-radius: 50%;
+        animation: spin 0.9s linear infinite;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+
+      #loading-title {
+        font-size: 13px;
+        letter-spacing: 0.1em;
+        color: rgba(255,255,255,0.85);
+      }
+      #loading-text {
+        font-size: 11px;
+        color: rgba(200,208,255,0.55);
+        max-width: 340px;
+        text-align: center;
+        line-height: 1.7;
+      }
+      #loading-progress {
+        font-size: 10px;
+        color: #88aaff;
+        letter-spacing: 0.05em;
+      }
+
+      /* ── Error overlay ── */
+      #error-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: #0a0a0f;
+        color: #e0e0ff;
+        font-family: system-ui, sans-serif;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        gap: 16px;
+        text-align: center;
+        padding: 32px;
+      }
+      #error-overlay.visible { display: flex; }
+      #error-overlay h1 { font-size: 1.4rem; color: #ff6b6b; }
+      #error-overlay p  { font-size: 0.9rem; opacity: 0.7; max-width: 480px; line-height: 1.6; }
+      #error-overlay a  { color: #88aaff; }
+
+      /* ── HUD ── */
+      #hud {
+        position: fixed;
+        top: 16px;
+        left: 16px;
+        color: rgba(255,255,255,0.5);
+        font-family: 'SF Mono', 'Fira Code', monospace;
+        font-size: 11px;
+        line-height: 1.9;
+        pointer-events: none;
+        user-select: none;
+      }
+      #hud .hud-title { color: rgba(255,255,255,0.9); letter-spacing: 0.12em; font-size: 12px; }
+
+      /* ── Bottom controls ── */
+      #controls {
+        position: fixed;
+        bottom: 24px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        background: rgba(10,10,20,0.7);
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 12px;
+        padding: 10px 20px;
+        backdrop-filter: blur(10px);
+        white-space: nowrap;
+      }
+      #controls button {
+        background: rgba(255,255,255,0.08);
+        border: 1px solid rgba(255,255,255,0.15);
+        color: #dde;
+        border-radius: 6px;
+        padding: 5px 13px;
+        font-size: 12px;
+        cursor: pointer;
+        transition: background 0.15s;
+        flex-shrink: 0;
+      }
+      #controls button:hover { background: rgba(255,255,255,0.18); }
+      #controls button.paused { color: #88ffaa; border-color: rgba(136,255,170,0.3); }
+
+      /* Slider block */
+      .slider-block {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        flex-shrink: 0;
+      }
+      .slider-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .slider-row input[type="range"] {
+        width: 300px;
+        accent-color: #88aaff;
+        cursor: pointer;
+      }
+      .tw-cap {
+        color: rgba(255,255,255,0.25);
+        font-size: 10px;
+        font-family: 'SF Mono', monospace;
+        user-select: none;
+        white-space: nowrap;
+      }
+
+      /* Tick labels beneath the slider */
+      .tick-row {
+        position: relative;
+        /* match the slider track width: input width minus thumb padding (~14px each side) */
+        width: 300px;
+        margin-left: calc(6px + 14px); /* gap + half-thumb offset */
+        height: 12px;
+        pointer-events: none;
+      }
+      .tick-row span {
+        position: absolute;
+        font-size: 9px;
+        color: rgba(255,255,255,0.28);
+        font-family: 'SF Mono', monospace;
+        transform: translateX(-50%);
+        white-space: nowrap;
+      }
+      /* Vertical tick line above each label */
+      .tick-row span::before {
+        content: '';
+        display: block;
+        width: 1px;
+        height: 4px;
+        background: rgba(255,255,255,0.2);
+        margin: 0 auto 1px;
+      }
+
+      #timescale-display {
+        color: #88aaff;
+        font-size: 12px;
+        font-family: 'SF Mono', monospace;
+        min-width: 100px;
+        text-align: left;
+        flex-shrink: 0;
+      }
+
+      /* ── Nav panel (top-right) ── */
+      #nav-wrapper {
+        position: fixed;
+        top: 16px;
+        right: 0;
+        display: flex;
+        align-items: flex-start;
+        gap: 0;
+        z-index: 10;
+      }
+
+      #nav-toggle {
+        background: rgba(10,10,20,0.75);
+        border: 1px solid rgba(255,255,255,0.1);
+        border-right: none;
+        border-radius: 8px 0 0 8px;
+        color: rgba(255,255,255,0.6);
+        font-size: 16px;
+        width: 22px;
+        height: 36px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        backdrop-filter: blur(10px);
+        transition: color 0.15s;
+        flex-shrink: 0;
+        align-self: flex-start;
+        margin-top: 0;
+      }
+      #nav-toggle:hover { color: #fff; }
+
+      #nav-panel {
+        background: rgba(10,10,20,0.82);
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 0 0 0 8px;
+        backdrop-filter: blur(10px);
+        width: 210px;
+        max-height: calc(100vh - 24px);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        transition: width 0.2s ease, opacity 0.2s ease;
+        font-family: system-ui, -apple-system, sans-serif;
+      }
+      #nav-panel.collapsed {
+        width: 0;
+        opacity: 0;
+        pointer-events: none;
+        border-color: transparent;
+      }
+
+      /* Search bar — sticky at top */
+      #nav-search-box {
+        padding: 8px 10px 6px;
+        flex-shrink: 0;
+        border-bottom: 1px solid rgba(255,255,255,0.06);
+      }
+      #nav-search {
+        width: 100%;
+        background: rgba(255,255,255,0.07);
+        border: 1px solid rgba(255,255,255,0.12);
+        border-radius: 6px;
+        color: rgba(255,255,255,0.8);
+        font-size: 11px;
+        font-family: 'SF Mono', monospace;
+        padding: 5px 8px;
+        outline: none;
+        color-scheme: dark;
+      }
+      #nav-search:focus { border-color: rgba(136,170,255,0.4); }
+      #nav-search::placeholder { color: rgba(255,255,255,0.25); }
+
+      /* Scrollable body of the nav */
+      #nav-scroll {
+        overflow-y: auto;
+        flex: 1;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(255,255,255,0.12) transparent;
+      }
+      #nav-scroll::-webkit-scrollbar { width: 4px; }
+      #nav-scroll::-webkit-scrollbar-track { background: transparent; }
+      #nav-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 2px; }
+
+      .nav-section-title {
+        color: rgba(255,255,255,0.35);
+        font-size: 10px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        padding: 10px 14px 4px;
+      }
+
+      .nav-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 14px;
+        font-size: 12px;
+        color: rgba(255,255,255,0.75);
+        cursor: pointer;
+        border-radius: 4px;
+        margin: 1px 6px;
+        transition: background 0.12s, color 0.12s;
+        white-space: nowrap;
+      }
+      .nav-item:hover { background: rgba(255,255,255,0.1); color: #fff; }
+
+      .nav-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        flex-shrink: 0;
+      }
+
+      .nav-divider {
+        height: 1px;
+        background: rgba(255,255,255,0.07);
+        margin: 6px 10px;
+      }
+
+      .nav-bottom-pad { height: 8px; }
+
+      /* Moon sub-items */
+      .nav-moon { font-size: 11px; padding: 4px 14px; }
+      .nav-parent {
+        font-size: 9px;
+        color: rgba(255,255,255,0.25);
+        margin-left: auto;
+        padding-left: 6px;
+      }
+
+      /* ── Body labels ── */
+      .body-label {
+        position: absolute;
+        font-family: 'SF Mono', 'Fira Code', monospace;
+        font-size: 10px;
+        color: rgba(255,255,255,0.22);
+        white-space: nowrap;
+        pointer-events: none;
+        user-select: none;
+        transition: color 0.18s, text-shadow 0.18s;
+        text-shadow: 0 1px 3px rgba(0,0,0,0.9);
+        letter-spacing: 0.04em;
+      }
+      .body-label.hovered {
+        color: rgba(255,255,255,0.92);
+        text-shadow: 0 0 8px rgba(136,170,255,0.45), 0 1px 3px rgba(0,0,0,0.9);
+      }
+
+      /* ── Jump-to-date modal ── */
+      #date-modal {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.65);
+        backdrop-filter: blur(4px);
+        z-index: 50;
+        align-items: center;
+        justify-content: center;
+      }
+      #date-modal.open { display: flex; }
+
+      .modal-box {
+        background: rgba(12,12,24,0.97);
+        border: 1px solid rgba(255,255,255,0.12);
+        border-radius: 14px;
+        padding: 28px 32px;
+        width: 340px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+      }
+      .modal-box h3 {
+        color: rgba(255,255,255,0.92);
+        font-family: system-ui, sans-serif;
+        font-size: 15px;
+        font-weight: 600;
+        margin: 0;
+      }
+      .modal-box p {
+        color: rgba(255,255,255,0.42);
+        font-size: 12px;
+        font-family: system-ui, sans-serif;
+        line-height: 1.5;
+        margin: 0;
+      }
+      .modal-field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .modal-field label {
+        font-size: 11px;
+        font-family: 'SF Mono', monospace;
+        color: rgba(255,255,255,0.4);
+      }
+      .modal-field input[type="date"] {
+        background: rgba(255,255,255,0.06);
+        border: 1px solid rgba(255,255,255,0.15);
+        border-radius: 7px;
+        color: #dde;
+        font-size: 13px;
+        font-family: 'SF Mono', monospace;
+        padding: 8px 12px;
+        width: 100%;
+        color-scheme: dark;
+        outline: none;
+      }
+      .modal-field input[type="date"]:focus {
+        border-color: rgba(136,170,255,0.5);
+      }
+      #modal-status {
+        font-size: 11px;
+        font-family: 'SF Mono', monospace;
+        min-height: 16px;
+        color: #88aaff;
+      }
+      #modal-status.error { color: #ff8888; }
+      .modal-actions {
+        display: flex;
+        gap: 10px;
+        justify-content: flex-end;
+      }
+      .modal-actions button {
+        border-radius: 7px;
+        padding: 7px 16px;
+        font-size: 12px;
+        cursor: pointer;
+        font-family: system-ui, sans-serif;
+        transition: background 0.15s;
+      }
+      #modal-cancel {
+        background: rgba(255,255,255,0.06);
+        border: 1px solid rgba(255,255,255,0.12);
+        color: rgba(255,255,255,0.6);
+      }
+      #modal-cancel:hover { background: rgba(255,255,255,0.12); }
+      #modal-confirm {
+        background: rgba(136,170,255,0.18);
+        border: 1px solid rgba(136,170,255,0.35);
+        color: #aaccff;
+      }
+      #modal-confirm:hover { background: rgba(136,170,255,0.3); }
+      #modal-confirm:disabled { opacity: 0.4; cursor: default; }
+    </style>
+  </head>
+  <body>
+    <canvas id="canvas"></canvas>
+
+    <!-- Jump-to-date modal -->
+    <div id="date-modal">
+      <div class="modal-box">
+        <h3>Jump to Date</h3>
+        <p>Fetch real planetary positions from NASA JPL Horizons for any date and restart the simulation from there.</p>
+        <div class="modal-field">
+          <label>Date (UTC)</label>
+          <input type="date" id="jump-date" min="1600-01-01" max="2200-01-01" />
+        </div>
+        <div id="modal-status"></div>
+        <div class="modal-actions">
+          <button id="modal-cancel">Cancel</button>
+          <button id="modal-confirm">Fetch &amp; Jump ▶</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Loading overlay — shown while fetching Horizons data -->
+    <div id="loading-overlay">
+      <div class="loader-ring"></div>
+      <div id="loading-title">CELESTIA</div>
+      <div id="loading-text">Fetching real-time planetary positions from NASA JPL Horizons…</div>
+      <div id="loading-progress">0 / 9 bodies</div>
+    </div>
+
+    <div id="error-overlay">
+      <h1>WebGPU Not Available</h1>
+      <p>
+        Celestia requires WebGPU. Please use
+        <a href="https://www.google.com/chrome/" target="_blank">Chrome 113+</a>
+        or <a href="https://www.microsoft.com/edge" target="_blank">Edge 113+</a>.
+        Safari 18+ has partial support. Firefox requires enabling
+        <code>dom.webgpu.enabled</code> in <code>about:config</code>.
+      </p>
+    </div>
+
+    <div id="hud">
+      <div class="hud-title">CELESTIA</div>
+      <div id="hud-fps">FPS —</div>
+      <div id="hud-bodies">Bodies —</div>
+      <div id="hud-time" style="color:rgba(255,255,255,0.8);font-size:12px">—</div>
+      <div id="hud-source" style="font-size:9px;margin-top:2px;color:rgba(255,255,255,0.3)">J2000.0 preset</div>
+    </div>
+
+    <!-- Nav panel -->
+    <div id="nav-wrapper">
+      <button id="nav-toggle" title="Toggle navigation">›</button>
+      <div id="nav-panel">
+        <!-- Sticky search bar -->
+        <div id="nav-search-box">
+          <input type="text" id="nav-search" placeholder="Search bodies…" autocomplete="off" spellcheck="false" />
+        </div>
+
+        <!-- Scrollable content -->
+        <div id="nav-scroll">
+
+          <div class="nav-section-block">
+            <div class="nav-section-title">Presets</div>
+            <div class="nav-item" data-preset="solar-system"><span class="nav-dot" style="background:#6688cc"></span>Solar System</div>
+            <div class="nav-item" data-preset="binary-stars"><span class="nav-dot" style="background:#cc8844"></span>Binary Stars</div>
+          </div>
+
+          <div class="nav-section-block">
+            <div class="nav-divider"></div>
+            <div class="nav-section-title">Planets</div>
+            <div class="nav-item" data-travel="Sun">    <span class="nav-dot" style="background:#ffe066"></span>Sun</div>
+            <div class="nav-item" data-travel="Mercury"><span class="nav-dot" style="background:#b3a899"></span>Mercury</div>
+            <div class="nav-item" data-travel="Venus">  <span class="nav-dot" style="background:#f2d97f"></span>Venus</div>
+            <div class="nav-item" data-travel="Earth">  <span class="nav-dot" style="background:#4d99ff"></span>Earth</div>
+            <div class="nav-item" data-travel="Mars">   <span class="nav-dot" style="background:#e6723f"></span>Mars</div>
+            <div class="nav-item" data-travel="Jupiter"><span class="nav-dot" style="background:#d9bf99"></span>Jupiter</div>
+            <div class="nav-item" data-travel="Saturn"> <span class="nav-dot" style="background:#f2e6b3"></span>Saturn</div>
+            <div class="nav-item" data-travel="Uranus"> <span class="nav-dot" style="background:#80d9e6"></span>Uranus</div>
+            <div class="nav-item" data-travel="Neptune"><span class="nav-dot" style="background:#4d80ff"></span>Neptune</div>
+          </div>
+
+          <div class="nav-section-block">
+            <div class="nav-divider"></div>
+            <div class="nav-section-title">Dwarf Planets</div>
+            <div class="nav-item" data-travel="Pluto">    <span class="nav-dot" style="background:#d2b89a"></span>Pluto</div>
+            <div class="nav-item" data-travel="Eris">     <span class="nav-dot" style="background:#ebe8e4"></span>Eris</div>
+            <div class="nav-item" data-travel="Ceres">    <span class="nav-dot" style="background:#938d87"></span>Ceres</div>
+            <div class="nav-item" data-travel="Haumea">   <span class="nav-dot" style="background:#dddbd8"></span>Haumea</div>
+            <div class="nav-item" data-travel="Makemake"> <span class="nav-dot" style="background:#ccb9a6"></span>Makemake</div>
+          </div>
+
+          <div class="nav-section-block">
+            <div class="nav-divider"></div>
+            <div class="nav-section-title">Moons</div>
+            <!-- Earth -->
+            <div class="nav-item nav-moon" data-travel="Moon">     <span class="nav-dot" style="background:#ccc5bb"></span>Moon      <span class="nav-parent">Earth</span></div>
+            <!-- Pluto -->
+            <div class="nav-item nav-moon" data-travel="Charon">   <span class="nav-dot" style="background:#b8b0a8"></span>Charon    <span class="nav-parent">Pluto</span></div>
+            <!-- Jupiter -->
+            <div class="nav-item nav-moon" data-travel="Io">       <span class="nav-dot" style="background:#e6b847"></span>Io        <span class="nav-parent">Jupiter</span></div>
+            <div class="nav-item nav-moon" data-travel="Europa">   <span class="nav-dot" style="background:#d4cbbf"></span>Europa    <span class="nav-parent">Jupiter</span></div>
+            <div class="nav-item nav-moon" data-travel="Ganymede"> <span class="nav-dot" style="background:#9e8f80"></span>Ganymede  <span class="nav-parent">Jupiter</span></div>
+            <div class="nav-item nav-moon" data-travel="Callisto"> <span class="nav-dot" style="background:#7a6e66"></span>Callisto  <span class="nav-parent">Jupiter</span></div>
+            <!-- Saturn -->
+            <div class="nav-item nav-moon" data-travel="Titan">    <span class="nav-dot" style="background:#e6a64d"></span>Titan     <span class="nav-parent">Saturn</span></div>
+            <div class="nav-item nav-moon" data-travel="Enceladus"><span class="nav-dot" style="background:#f5f5f8"></span>Enceladus <span class="nav-parent">Saturn</span></div>
+            <div class="nav-item nav-moon" data-travel="Rhea">     <span class="nav-dot" style="background:#c7bfb8"></span>Rhea      <span class="nav-parent">Saturn</span></div>
+            <div class="nav-item nav-moon" data-travel="Iapetus">  <span class="nav-dot" style="background:#a69990"></span>Iapetus   <span class="nav-parent">Saturn</span></div>
+            <div class="nav-item nav-moon" data-travel="Dione">    <span class="nav-dot" style="background:#ccc8c5"></span>Dione     <span class="nav-parent">Saturn</span></div>
+            <div class="nav-item nav-moon" data-travel="Tethys">   <span class="nav-dot" style="background:#d4d0cd"></span>Tethys    <span class="nav-parent">Saturn</span></div>
+            <div class="nav-item nav-moon" data-travel="Mimas">    <span class="nav-dot" style="background:#dbd8d5"></span>Mimas     <span class="nav-parent">Saturn</span></div>
+            <!-- Uranus -->
+            <div class="nav-item nav-moon" data-travel="Titania">  <span class="nav-dot" style="background:#9e9996"></span>Titania   <span class="nav-parent">Uranus</span></div>
+            <div class="nav-item nav-moon" data-travel="Oberon">   <span class="nav-dot" style="background:#847a75"></span>Oberon    <span class="nav-parent">Uranus</span></div>
+            <div class="nav-item nav-moon" data-travel="Ariel">    <span class="nav-dot" style="background:#b8b5ad"></span>Ariel     <span class="nav-parent">Uranus</span></div>
+            <div class="nav-item nav-moon" data-travel="Umbriel">  <span class="nav-dot" style="background:#6b6666"></span>Umbriel   <span class="nav-parent">Uranus</span></div>
+            <div class="nav-item nav-moon" data-travel="Miranda">  <span class="nav-dot" style="background:#adaaa0"></span>Miranda   <span class="nav-parent">Uranus</span></div>
+            <!-- Neptune -->
+            <div class="nav-item nav-moon" data-travel="Triton">   <span class="nav-dot" style="background:#b8c8e6"></span>Triton    <span class="nav-parent">Neptune</span></div>
+          </div>
+
+          <div class="nav-bottom-pad"></div>
+        </div><!-- #nav-scroll -->
+      </div>
+    </div>
+
+    <!-- Bottom controls -->
+    <div id="controls">
+      <button id="btn-pause">⏸</button>
+      <button id="btn-reset">↺ Reset</button>
+
+      <div class="slider-block">
+        <div class="slider-row">
+          <span class="tw-cap">◀◀ rev</span>
+          <!--
+            Slider range: -3.5 → 8.5  (total span = 12)
+            timewarp = sign(v) × 10^|v|  sim-seconds per real-second
+            v = 0 → 1× real-time
+            v = 1.78 → 60× = 1 min/s
+            v = 3.56 → 3600× = 1 hr/s
+            v = 4.94 → 86400× = 1 day/s
+            v = 7.50 → 31 557 600× = 1 yr/s
+            v = 8.50 → 315 576 000× ≈ 10 yr/s
+          -->
+          <input type="range" id="timescale" min="-3.5" max="8.5" step="0.05" value="0" />
+          <span class="tw-cap">10yr/s ▶▶</span>
+        </div>
+        <!--
+          Tick positions: left% = (v - (-3.5)) / 12 × 100
+          real(0)=29.2%  min(1.78)=44.0%  hr(3.56)=58.8%  day(4.94)=70.3%  yr(7.5)=91.7%  10yr(8.5)=100%
+        -->
+        <div class="tick-row">
+          <span style="left:29.2%">real</span>
+          <span style="left:44.0%">min/s</span>
+          <span style="left:58.8%">hr/s</span>
+          <span style="left:70.3%">day/s</span>
+          <span style="left:91.7%">yr/s</span>
+        </div>
+      </div>
+
+      <span id="timescale-display">▶ real-time</span>
+      <button id="btn-jump" title="Jump to a specific date">🗓 Jump</button>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
