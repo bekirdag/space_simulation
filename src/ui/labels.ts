@@ -2,6 +2,7 @@ import { type Body } from "../physics/body";
 import { BodyType } from "../physics/constants";
 import { type Mat4, type Vec3 } from "../math/mat4";
 import { NEARBY_STAR_AU_PER_PARSEC, type NearbyStarLabel } from "../catalog/nearby-stars";
+import { type ConstellationLabel } from "../catalog/constellations";
 
 // Moons fade out beyond this distance from the camera eye (AU).
 // Matches the shader's 1.5 AU soft cutoff.
@@ -105,6 +106,8 @@ export class LabelManager {
 
   // Nearby-star label spans keyed by star name
   private nearbyStarSpans = new Map<string, HTMLSpanElement>();
+  // Constellation title spans keyed by constellation id
+  private constellationSpans = new Map<string, HTMLSpanElement>();
   // Sgr A* permanent label
   private galacticCenterEl: HTMLSpanElement | null = null;
   // Whether all labels are visible (controlled by settings)
@@ -115,6 +118,7 @@ export class LabelManager {
     if (!v) {
       for (const sp of this.spans.values()) sp.style.display = 'none';
       for (const sp of this.nearbyStarSpans.values()) sp.style.display = 'none';
+      for (const sp of this.constellationSpans.values()) sp.style.display = 'none';
       if (this.galacticCenterEl) this.galacticCenterEl.style.display = 'none';
       if (this.starLabelEl) this.starLabelEl.style.display = 'none';
     }
@@ -378,6 +382,53 @@ export class LabelManager {
       sp.style.opacity = opacity.toFixed(3);
       sp.style.left = `${Math.round(pt.x + 7)}px`;
       sp.style.top  = `${Math.round(pt.y - 5)}px`;
+    }
+  }
+
+  /**
+   * Project constellation titles from the same 3D catalog-star positions used
+   * by the constellation line buffer. The setting toggle hides lines and labels together.
+   */
+  updateConstellationLabels(
+    constellations: readonly ConstellationLabel[],
+    viewProj: Mat4,
+    visible: boolean,
+  ): void {
+    if (!this._visible || !visible || constellations.length === 0) {
+      for (const sp of this.constellationSpans.values()) sp.style.display = 'none';
+      return;
+    }
+
+    const cssW = window.innerWidth;
+    const cssH = window.innerHeight;
+    const active = new Set<string>();
+
+    for (const label of constellations) {
+      active.add(label.id);
+
+      let sp = this.constellationSpans.get(label.id);
+      if (!sp) {
+        sp = document.createElement('span');
+        sp.className = 'constellation-label';
+        sp.textContent = label.name;
+        this.container.appendChild(sp);
+        this.constellationSpans.set(label.id, sp);
+      }
+
+      const pt = project(label.x, label.y, label.z, viewProj, cssW, cssH, false);
+      if (!pt) {
+        sp.style.display = 'none';
+        continue;
+      }
+
+      sp.style.display = 'block';
+      sp.style.opacity = label.alpha.toFixed(3);
+      sp.style.left = `${Math.round(pt.x + 10)}px`;
+      sp.style.top  = `${Math.round(pt.y - 6)}px`;
+    }
+
+    for (const [id, sp] of this.constellationSpans) {
+      if (!active.has(id)) sp.style.display = 'none';
     }
   }
 

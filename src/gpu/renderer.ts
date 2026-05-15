@@ -884,7 +884,7 @@ export class Renderer {
       pass.draw(6, this.dustCount, 0, 0);
     }
 
-    // ── Constellation figure lines (cached J2000 sky overlay) ─────────────
+    // ── Constellation lines between snapped visible-star positions ─────────
     if (this._showConstellations && this.constellationCount > 0) {
       pass.setPipeline(this.constellationPipeline);
       pass.setBindGroup(0, this.constellationBindGroup);

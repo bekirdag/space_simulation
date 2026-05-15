@@ -54,7 +54,7 @@ import { loadMilkywayStars } from "./catalog/milkyway";
 import { loadDustMap } from "./catalog/dust";
 import { NEARBY_STAR_LABELS, SGR_A_STAR_POS } from "./catalog/nearby-stars";
 import { sortIntoOctants } from "./gpu/sky-cull";
-import { loadConstellationLines } from "./catalog/constellations";
+import { loadConstellationLines, type ConstellationLabel } from "./catalog/constellations";
 import {
   buildNebulaBuffer,
   nebulaPositions,
@@ -306,11 +306,12 @@ async function main(): Promise<void> {
   document.addEventListener("keydown", e => { if (e.key === "Escape") closeSettings(); });
 
   let showGalaxies = true;
+  let showConstellations = true;
 
   function applySettings(): void {
     const showLabels = (document.getElementById("set-labels") as HTMLInputElement).checked;
     const showTrails = (document.getElementById("set-trails") as HTMLInputElement).checked;
-    const showConstellations = (document.getElementById("set-constellations") as HTMLInputElement).checked;
+    showConstellations = (document.getElementById("set-constellations") as HTMLInputElement).checked;
     const showDust = (document.getElementById("set-dust-maps") as HTMLInputElement).checked;
     const showBlackHole = (document.getElementById("set-black-hole") as HTMLInputElement).checked;
     const actualBodyBrightness = (document.getElementById("set-body-brightness") as HTMLInputElement).checked;
@@ -436,10 +437,15 @@ async function main(): Promise<void> {
   const nebulaDets: NebulaDet[] = nebulaPositions();
   console.info(`Loaded ${nebulaDets.length} Milky Way nebulas`);
 
-  // ── Constellation line figures (cached NASA/IAU sky overlay) ─────────────
-  void loadConstellationLines().then(({ data, source, featureCount, segmentCount }) => {
+  // ── Constellation lines snapped to real visible-star positions ───────────
+  let constellationLabels: ConstellationLabel[] = [];
+  void loadConstellationLines().then(({ data, labels: loadedLabels, source, featureCount, segmentCount, snappedEndpointCount, looseEndpointCount }) => {
+    constellationLabels = loadedLabels;
     renderer.uploadConstellations(data);
-    console.info(`Loaded ${segmentCount} constellation segments across ${featureCount} figures from ${source}.`);
+    console.info(
+      `Loaded ${segmentCount} constellation star-to-star segments across ${featureCount} figures ` +
+      `(${snappedEndpointCount} snapped endpoints, ${looseEndpointCount} loose) from ${source}.`,
+    );
   }).catch(err => {
     console.warn("Constellation line catalog failed:", err);
   });
@@ -1102,6 +1108,7 @@ async function main(): Promise<void> {
 
     labels.update(bodies, camUniforms.viewProj, focusedMembers, camUniforms.eye, bodyVisibility);
     labels.updateNearbyStarLabels(NEARBY_STAR_LABELS, camUniforms.viewProj, camUniforms.eye, sunWorldPos);
+    labels.updateConstellationLabels(constellationLabels, camUniforms.viewProj, showConstellations);
     labels.updateGalacticCenterLabel(SGR_A_STAR_POS, camUniforms.viewProj, () => {
       nav.clearFocusedBody();
       // Orbit the galactic centre at ~50 000 AU — shows the surrounding star field
