@@ -1,8 +1,11 @@
 // Visual Galactic dust map layer.
 //
 // The checked-in binary is a reduced visual product derived from the NASA/GSFC
-// LAMBDA Meisner & Finkbeiner 2015 E(B-V) all-sky dust map. It is visual only:
-// no body physics, extinction math, or star photometry is changed here.
+// LAMBDA Meisner & Finkbeiner 2015 E(B-V) all-sky dust map. Positions encode
+// sky directions on a nominal shell; the shader anchors that shell to the
+// camera so the 2D line-of-sight map behaves like a background, not a nearby
+// physical cloud. It is visual only: no body physics, extinction math, or star
+// photometry is changed here.
 
 export const DUST_FLOATS = 8;
 export const DUST_SHELL_RADIUS_AU = 85_000;
