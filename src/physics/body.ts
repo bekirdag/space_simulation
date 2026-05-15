@@ -6,7 +6,7 @@ export interface Body {
   mass:   number;           // solar masses
   x: number; y: number; z: number;    // AU
   vx: number; vy: number; vz: number; // AU/yr
-  radius: number;           // AU (visual)
+  radius: number;           // physical radius in AU
   color:  [number, number, number];    // RGB 0–1
   type:   BodyType;
 }

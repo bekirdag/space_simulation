@@ -35,8 +35,8 @@ import {
 } from "./catalog/stars";
 import {
   EXOPLANET_CATALOG,
-  EXOPLANET_VISUAL_RADIUS_AU,
   exoplanetColor,
+  exoplanetRadiusAU,
   initialPhase,
   planetWorldPos,
   planetsForHost,
@@ -457,7 +457,7 @@ async function main(): Promise<void> {
         id:     exoBodyIdCounter++,
         name:   p.name,
         mass:   0,
-        radius: EXOPLANET_VISUAL_RADIUS_AU,
+        radius: exoplanetRadiusAU(p.radiusEarth),
         color:  exoplanetColor(p.radiusEarth),
         type:   BodyType.Exoplanet,
         x, y, z, vx: 0, vy: 0, vz: 0,

@@ -71,7 +71,7 @@ fn vs_main(
     return out;
   }
 
-  // Expand billboard at the body's actual projected visual radius. Do not
+  // Expand billboard at the body's actual physical radius. Do not
   // clamp to a minimum dot; distant bodies should become naturally tiny.
   let world_pos = center + uv.x * camRight * r_phys + uv.y * camUp * r_phys;
   out.clip_pos  = camera.viewProj * vec4(world_pos, 1.0);
@@ -83,12 +83,21 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   let d = length(in.uv);
   if d > 1.0 { discard; }
 
-  // Full-size body
-  let a = (1.0 - smoothstep(0.75, 1.0, d)) * in.fade;
+  let z = sqrt(max(0.0, 1.0 - d * d));
+  let edge = 1.0 - smoothstep(0.985, 1.0, d);
+  let a = edge * in.fade;
   var col = in.color;
   if in.btype < 0.5 {
-    let core = 1.0 - smoothstep(0.0, 0.35, d);
-    col = col + vec3(core * 0.2);
+    let core = 1.0 - smoothstep(0.0, 0.55, d);
+    let limb = 0.76 + 0.24 * z;
+    col = col * (limb + core * 0.35) + vec3(core * 0.18);
+  } else {
+    let normal = normalize(vec3(in.uv.x, in.uv.y, z));
+    let lightDir = normalize(vec3(-0.42, 0.34, 0.84));
+    let diffuse = max(dot(normal, lightDir), 0.0);
+    let rimShade = 0.78 + 0.22 * z;
+    let nightSide = 0.18;
+    col = col * (nightSide + diffuse * 0.82) * rimShade;
   }
   return vec4<f32>(col * a, a);
 }

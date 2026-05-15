@@ -26,9 +26,17 @@ export function exoplanetColor(radiusEarth: number | null): [number, number, num
   return [0.38, 0.62, 0.52];                           // rocky – muted teal-green
 }
 
-// Visual radius in AU used only for rendering (clamped to min pixel in shader).
-// We use a modest fixed visual radius so all planets show as clear dots.
-export const EXOPLANET_VISUAL_RADIUS_AU = 2e-4; // ~30 000 km – clearly visible dot
+const KM_PER_AU = 149_597_870.7;
+const EARTH_MEAN_RADIUS_KM = 6_371.0;
+export const EARTH_RADIUS_AU = EARTH_MEAN_RADIUS_KM / KM_PER_AU;
+
+/** Physical exoplanet radius in AU. Unknown catalog radii fall back to Earth radius. */
+export function exoplanetRadiusAU(radiusEarth: number | null): number {
+  const radiusRe = radiusEarth !== null && Number.isFinite(radiusEarth) && radiusEarth > 0
+    ? radiusEarth
+    : 1;
+  return radiusRe * EARTH_RADIUS_AU;
+}
 
 /** Deterministic initial orbital phase from planet name hash. */
 export function initialPhase(name: string): number {
@@ -200,6 +208,7 @@ export function searchExoplanets(
     const sp = getStarPos(planet.hostName);
     if (!sp) return [];
     const [x, y, z] = planetWorldPos(sp[0], sp[1], sp[2], planet, simYears);
+    const radiusAU = exoplanetRadiusAU(planet.radiusEarth);
     const rStr  = planet.radiusEarth ? `${planet.radiusEarth.toFixed(2)} R⊕` : 'radius unknown';
     const pStr  = `${planet.periodDays < 10 ? planet.periodDays.toFixed(2) : planet.periodDays.toFixed(1)} d orbit`;
     const aStr  = `${planet.semiMajorAU < 0.1 ? planet.semiMajorAU.toFixed(4) : planet.semiMajorAU.toFixed(3)} AU`;
@@ -208,7 +217,7 @@ export function searchExoplanets(
       label:        planet.name,
       subtitle:     `${planet.hostName} · ${rStr} · ${pStr} · ${aStr}`,
       x, y, z,
-      focusDistance: Math.max(0.002, planet.semiMajorAU * 2.5),
+      focusDistance: Math.max(1e-4, radiusAU * 6),
     }];
   });
 }
