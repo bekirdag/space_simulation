@@ -1,0 +1,21 @@
+{
+  "schema": "celestia.constellations.source.v1",
+  "runtimeData": "/cache/nasa/constellations-lines.geojson",
+  "nameData": "/cache/nasa/constellations-names.geojson",
+  "nasaFigureImage": "/cache/nasa/constellation_figures_4k.tif",
+  "nasaSource": {
+    "title": "NASA SVS Deep Star Maps 2020",
+    "url": "https://svs.gsfc.nasa.gov/4851/",
+    "released": "2020-09-09",
+    "asset": "constellation_figures_4k.tif",
+    "assetUrl": "https://svs.gsfc.nasa.gov/vis/a000000/a004800/a004851/constellation_figures_4k.tif",
+    "notes": "NASA SVS publishes constellation figure maps in celestial coordinates and states the constellation figures come from the IAU, although they are not official."
+  },
+  "vectorSource": {
+    "title": "d3-celestial constellations.lines.json",
+    "url": "https://raw.githubusercontent.com/ofrohn/d3-celestial/master/data/constellations.lines.json",
+    "format": "GeoJSON MultiLineString, J2000-equatorial longitude/latitude degrees",
+    "notes": "Used as the runtime vector cache because the NASA SVS figure asset is a raster TIFF, not a line-segment JSON file."
+  },
+  "cachedAt": "2026-05-15"
+}

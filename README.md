@@ -91,6 +91,11 @@ after install:
   star field.
 - `public/data/exoplanet-hosts.json`: searchable NASA Exoplanet Archive host
   stars.
+- `public/cache/nasa/constellations-lines.geojson`: cached J2000 constellation
+  line figures used by the Settings-controlled constellation overlay.
+- `public/cache/nasa/constellation_figures_4k.tif` and
+  `public/cache/nasa/constellations.meta.json`: NASA SVS Deep Star Maps 2020
+  source reference for the constellation figure layer.
 
 Horizons data is loaded in this order: committed cache file, browser
 `localStorage`, then live NASA/JPL Horizons fetch if no cache is available.
