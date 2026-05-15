@@ -68,12 +68,22 @@ const MAX_BODIES = 1024;
 const MAX_CATALOG_STARS  = DEFAULT_VISIBLE_STAR_COUNT + 8_000;
 const MAX_CATALOG_GALAXIES = 100_000;
 const MAX_STEPS  = 2000;
-const SGR_A_BLACK_HOLE_RING_AU = 3_200;
-const SGR_A_BLACK_HOLE_FOCUS_AU = 50_000;
+const KM_PER_AU = 149_597_870.7;
+const SOLAR_MASS_KG = 1.98847e30;
+const GRAVITATIONAL_CONSTANT = 6.67430e-11;
+const SPEED_OF_LIGHT_M_S = 299_792_458;
+const SGR_A_MASS_SOLAR = 4.3e6;
+const SGR_A_EVENT_HORIZON_RADIUS_AU =
+  (2 * GRAVITATIONAL_CONSTANT * SGR_A_MASS_SOLAR * SOLAR_MASS_KG) /
+  (SPEED_OF_LIGHT_M_S * SPEED_OF_LIGHT_M_S) /
+  1000 /
+  KM_PER_AU;
+const SGR_A_SHADOW_RADIUS_AU = SGR_A_EVENT_HORIZON_RADIUS_AU * 2.6;
+const SGR_A_BLACK_HOLE_FOCUS_AU = SGR_A_SHADOW_RADIUS_AU * 8;
 const SGR_A_SEARCH_RESULT: StarSearchResult = {
   id: "blackhole:sgr-a",
   label: "Sagittarius A*",
-  subtitle: "Milky Way central black hole",
+  subtitle: "Milky Way central black hole; event horizon diameter ~0.17 AU",
   x: SGR_A_STAR_POS[0],
   y: SGR_A_STAR_POS[1],
   z: SGR_A_STAR_POS[2],
@@ -1169,7 +1179,7 @@ async function main(): Promise<void> {
     renderer.updateCamera(camUniforms, canvas.height);
     renderer.updateBlackHoleVisual(
       SGR_A_STAR_POS,
-      SGR_A_BLACK_HOLE_RING_AU,
+      SGR_A_EVENT_HORIZON_RADIUS_AU,
       now / 1000,
       canvas.width,
       canvas.height,

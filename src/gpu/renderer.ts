@@ -666,7 +666,7 @@ export class Renderer {
 
   updateBlackHoleVisual(
     position: [number, number, number],
-    visualRingRadiusAU: number,
+    eventHorizonRadiusAU: number,
     timeSeconds: number,
     viewportWidth: number,
     viewportHeight: number,
@@ -675,7 +675,7 @@ export class Renderer {
     this._blackHoleUniform[0] = position[0];
     this._blackHoleUniform[1] = position[1];
     this._blackHoleUniform[2] = position[2];
-    this._blackHoleUniform[3] = Math.max(0, visualRingRadiusAU);
+    this._blackHoleUniform[3] = Math.max(0, eventHorizonRadiusAU);
     this._blackHoleUniform[4] = Number.isFinite(timeSeconds) ? timeSeconds : 0;
     this._blackHoleUniform[5] = Math.max(1, viewportWidth);
     this._blackHoleUniform[6] = Math.max(1, viewportHeight);

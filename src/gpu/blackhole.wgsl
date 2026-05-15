@@ -11,11 +11,13 @@ struct Camera {
 };
 
 struct BlackHole {
-  // xyz = world-space position, w = visual ring scale in AU
+  // xyz = world-space position, w = event-horizon radius in AU
   pos_size: vec4<f32>,
   // x = time seconds, y = viewport width, z = viewport height, w = lens strength
   params:   vec4<f32>,
 };
+
+const SGR_A_SHADOW_RADIUS_PER_HORIZON = 2.6;
 
 @group(0) @binding(0) var<uniform> camera:    Camera;
 @group(0) @binding(1) var<uniform> blackHole: BlackHole;
@@ -46,10 +48,12 @@ fn vs_main(@builtin(vertex_index) vi: u32) -> VertexOut {
 }
 
 fn sample_scene(uv: vec2<f32>) -> vec3<f32> {
+  // textureSampleLevel (explicit LOD=0) is allowed in non-uniform control flow.
+  // textureSample (implicit LOD) is not: it needs derivative quads to be uniform.
   if uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 {
     return vec3<f32>(0.006, 0.006, 0.020);
   }
-  return textureSample(sceneTex, sceneSampler, uv).rgb;
+  return textureSampleLevel(sceneTex, sceneSampler, uv, 0.0).rgb;
 }
 
 @fragment
@@ -65,9 +69,15 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   let viewport = max(blackHole.params.yz, vec2<f32>(1.0, 1.0));
   let aspect = viewport.x / viewport.y;
 
-  // Convert the physical AU scale into projected UV units. The clamp keeps the
-  // lens inspectable at the Sgr A* focus distance without covering the screen.
-  let ringR = clamp(0.5 * blackHole.pos_size.w * camera.upAndFocal.w / clip.w, 0.006, 0.22);
+  // Convert the physical event-horizon radius into projected UV units. There
+  // is intentionally no minimum clamp here: if Sgr A* is too small at the
+  // current camera distance, it should be invisible instead of inflated.
+  let horizonR = max(0.5 * blackHole.pos_size.w * camera.upAndFocal.w / clip.w, 0.0);
+  let shadowR = horizonR * SGR_A_SHADOW_RADIUS_PER_HORIZON;
+  if shadowR < 0.75 / viewport.y {
+    return vec4<f32>(raw, 1.0);
+  }
+  let ringR = shadowR;
 
   if centerUv.x < -ringR * 7.0 || centerUv.x > 1.0 + ringR * 7.0 ||
      centerUv.y < -ringR * 7.0 || centerUv.y > 1.0 + ringR * 7.0 {
@@ -90,9 +100,11 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   let lensedUv = centerUv + vec2<f32>(lensedAspect.x / aspect, lensedAspect.y);
   var col = mix(raw, sample_scene(lensedUv), lensMask * 0.86);
 
-  // Event-horizon shadow and photon rings.
-  let shadow = 1.0 - smoothstep(ringR * 0.40, ringR * 0.57, r);
-  col *= 1.0 - shadow * 0.98;
+  // Physical event horizon plus the larger apparent black-hole shadow.
+  let horizon = 1.0 - smoothstep(horizonR * 0.94, horizonR * 1.06, r);
+  let shadow = (1.0 - smoothstep(ringR * 0.72, ringR * 1.00, r)) * (1.0 - horizon);
+  col *= 1.0 - shadow * 0.58;
+  col *= 1.0 - horizon * 0.995;
 
   let photon = exp(-pow((r - ringR * 0.67) / max(ringR * 0.032, 0.0004), 2.0));
   let innerPhoton = exp(-pow((r - ringR * 0.49) / max(ringR * 0.022, 0.0003), 2.0)) * 0.42;
