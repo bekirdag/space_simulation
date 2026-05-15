@@ -24,7 +24,11 @@ import { type CameraUniforms } from "../scene/camera";
 const CAMERA_BYTES = 96;
 const BLACK_HOLE_BYTES = 32;
 
-const EARTH_GEOMETRIC_ALBEDO = 0.367;
+const KM_PER_AU = 149_597_870.7;
+const SUN_APPARENT_MAG = -26.74;
+const FULL_MOON_APPARENT_MAG = -12.74;
+const MOON_MEAN_DISTANCE_AU = 384_400 / KM_PER_AU;
+const MOON_RADIUS_AU = 1_737.4 / KM_PER_AU;
 const DEFAULT_REFLECTIVE_ALBEDO = 0.25;
 const REFLECTIVE_BODY_ALBEDO: Record<string, number> = {
   Mercury: 0.142,
@@ -42,14 +46,35 @@ const REFLECTIVE_BODY_ALBEDO: Record<string, number> = {
   Callisto: 0.17,
   Titan: 0.22,
   Enceladus: 1.38,
+  Mimas: 0.96,
+  Tethys: 1.23,
+  Dione: 0.998,
+  Rhea: 0.95,
+  Iapetus: 0.5,
+  Miranda: 0.32,
+  Ariel: 0.39,
+  Umbriel: 0.21,
+  Titania: 0.27,
+  Oberon: 0.23,
+  Triton: 0.76,
   Pluto: 0.49,
   Charon: 0.37,
   Eris: 0.96,
   Ceres: 0.09,
+  Haumea: 0.7,
+  Makemake: 0.8,
 };
+const MOON_GEOMETRIC_ALBEDO = REFLECTIVE_BODY_ALBEDO["Moon"] ?? 0.136;
+const FULL_MOON_REFLECTED_FLUX =
+  MOON_GEOMETRIC_ALBEDO * MOON_RADIUS_AU * MOON_RADIUS_AU /
+  (MOON_MEAN_DISTANCE_AU * MOON_MEAN_DISTANCE_AU);
 
 const TRAIL_MAX_BODIES   = 64;
 const TRAIL_VTXBUF_BYTES = TRAIL_MAX_BODIES * TRAIL_SLOT_BYTES; // 64 × fixed slot = ~31 MB
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
 
 export class Renderer {
   private bodyPipeline!:    GPURenderPipeline;
@@ -95,8 +120,9 @@ export class Renderer {
   private sceneTextureWidth = 0;
   private sceneTextureHeight = 0;
   private selectedStarBuffer!: GPUBuffer;
-  private starLodBuffer!:   GPUBuffer;  // 16-byte uniform: x=brightness, y=camera radius
-  private mwLodBuffer!:     GPUBuffer;  // 16-byte uniform: x=fade for MW stars
+  private starLodBuffer!:   GPUBuffer;  // x=legacy fade, y=camera radius
+  private mwLodBuffer!:     GPUBuffer;  // x=fade, y=actual brightness
+  private galaxyLodBuffer!: GPUBuffer;  // x=actual brightness
 
   private bodyCount    = 0;
   private starCount    = 0;
@@ -129,7 +155,8 @@ export class Renderer {
   private _showTrails   = true;
   private _showGalaxies = true;
   private _showConstellations = true;
-  private _actualBodyBrightness = true;
+  private _actualBrightness = true;
+  private _cameraDistanceFromSun = 0;
   private _showDust = true;
   private _showBlackHole = true;
   private _blackHoleUniform = new Float32Array([
@@ -154,7 +181,10 @@ export class Renderer {
     if (s.showGalaxies !== undefined) this._showGalaxies = s.showGalaxies;
     if (s.showConstellations !== undefined) this._showConstellations = s.showConstellations;
     if (s.showTrails  !== undefined) this._showTrails  = s.showTrails;
-    if (s.actualBodyBrightness !== undefined) this._actualBodyBrightness = s.actualBodyBrightness;
+    if (s.actualBodyBrightness !== undefined) {
+      this._actualBrightness = s.actualBodyBrightness;
+      this.syncBrightnessUniforms();
+    }
     if (s.showDust !== undefined) this._showDust = s.showDust;
     if (s.showBlackHole !== undefined) this._showBlackHole = s.showBlackHole;
   }
@@ -274,7 +304,7 @@ export class Renderer {
     });
     device.queue.writeBuffer(this.selectedStarBuffer, 0, new Float32Array([0, 0, 0, 0]));
 
-    // ── LOD fade uniforms — 16-byte each (x=fade 0..1) ────────────────────
+    // ── LOD / brightness uniforms — 16-byte each ──────────────────────────
     this.starLodBuffer = device.createBuffer({
       label: "star-lod", size: 16,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
@@ -283,10 +313,13 @@ export class Renderer {
       label: "mw-lod", size: 16,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
+    this.galaxyLodBuffer = device.createBuffer({
+      label: "galaxy-lod", size: 16,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
     // Catalog stars use camera-distance shell culling in star.wgsl; named
     // nearby-star labels handle their own DOM visibility in LabelManager.
-    device.queue.writeBuffer(this.starLodBuffer, 0, new Float32Array([1, 0, 0, 0]));
-    device.queue.writeBuffer(this.mwLodBuffer,   0, new Float32Array([1, 0, 0, 0]));
+    this.syncBrightnessUniforms();
 
     // ── Milky Way background star buffer (fixed 100k capacity) ────────────
     this.mwStarBuffer = device.createBuffer({
@@ -373,6 +406,7 @@ export class Renderer {
       entries: [
         { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
         { binding: 1, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "read-only-storage" } },
+        { binding: 2, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
       ],
     });
     this.galaxyBindGroup = device.createBindGroup({
@@ -380,6 +414,7 @@ export class Renderer {
       entries: [
         { binding: 0, resource: { buffer: this.cameraBuffer } },
         { binding: 1, resource: { buffer: this.galaxyBuffer } },
+        { binding: 2, resource: { buffer: this.galaxyLodBuffer } },
       ],
     });
     const galaxyShader = device.createShaderModule({ code: galaxyWGSL });
@@ -594,8 +629,8 @@ export class Renderer {
   }
 
   updateLOD(cameraDistanceFromSun: number): void {
-    const radius = Number.isFinite(cameraDistanceFromSun) ? Math.max(0, cameraDistanceFromSun) : 0;
-    this.ctx.device.queue.writeBuffer(this.starLodBuffer, 0, new Float32Array([1, radius, 0, 0]));
+    this._cameraDistanceFromSun = Number.isFinite(cameraDistanceFromSun) ? Math.max(0, cameraDistanceFromSun) : 0;
+    this.syncBrightnessUniforms();
   }
 
   uploadGalaxies(galaxies: Float32Array): void {
@@ -665,10 +700,11 @@ export class Renderer {
     this.bodyCount = bodies.length;
     const data = new Float32Array(bodies.length * BODY_FLOATS);
     const sun = bodies.find(b => b.name === "Sun" && b.type === BodyType.Star);
+    const earth = bodies.find(b => b.name === "Earth" && b.type === BodyType.Planet);
     for (let i = 0; i < bodies.length; i++) {
       const b = bodies[i]!;
       const o = i * BODY_FLOATS;
-      const brightness = this.bodyBrightnessFactor(b, sun);
+      const brightness = this.bodyBrightnessFactor(b, sun, earth);
       // vec4 pos_mass
       data[o+0]=b.x;  data[o+1]=b.y;  data[o+2]=b.z;  data[o+3]=b.mass;
       // vec4 vel_rad
@@ -681,24 +717,50 @@ export class Renderer {
     this.ctx.device.queue.writeBuffer(this.bodyBuffer, 0, data);
   }
 
-  private bodyBrightnessFactor(body: Body, sun: Body | undefined): number {
-    if (!this._actualBodyBrightness) return 1;
+  private bodyBrightnessFactor(body: Body, sun: Body | undefined, earth: Body | undefined): number {
+    if (!this._actualBrightness) return 1;
     if (body.type === BodyType.Star) {
-      return body.name === "Sun" ? 48 : 32;
+      return body.name === "Sun" ? this.apparentMagnitudeToDisplayBrightness(SUN_APPARENT_MAG) : 32;
     }
     if (body.type === BodyType.Exoplanet) {
       return 1.35;
     }
+    if (!sun || !earth) return 1;
+    if (body.id === earth.id) return 1.25;
 
     const albedo = REFLECTIVE_BODY_ALBEDO[body.name] ?? DEFAULT_REFLECTIVE_ALBEDO;
-    const sunDistanceAU = sun
-      ? Math.hypot(body.x - sun.x, body.y - sun.y, body.z - sun.z)
-      : 1;
-    const illumination = 1 / Math.max(0.05, sunDistanceAU * sunDistanceAU);
-    const relativeSurfaceBrightness = (albedo / EARTH_GEOMETRIC_ALBEDO) * illumination;
+    const sunVec = [sun.x - body.x, sun.y - body.y, sun.z - body.z] as const;
+    const earthVec = [earth.x - body.x, earth.y - body.y, earth.z - body.z] as const;
+    const sunDistanceAU = Math.max(0.02, Math.hypot(sunVec[0], sunVec[1], sunVec[2]));
+    const earthDistanceAU = Math.max(body.radius * 4, Math.hypot(earthVec[0], earthVec[1], earthVec[2]));
+    const phaseCos = clamp(
+      (sunVec[0] * earthVec[0] + sunVec[1] * earthVec[1] + sunVec[2] * earthVec[2]) /
+      (sunDistanceAU * earthDistanceAU),
+      -1,
+      1,
+    );
+    const phaseAngle = Math.acos(phaseCos);
+    const phase = Math.max(0.02, (Math.sin(phaseAngle) + (Math.PI - phaseAngle) * Math.cos(phaseAngle)) / Math.PI);
+    const reflectedFlux = Math.max(
+      1e-24,
+      albedo * body.radius * body.radius * phase /
+      (sunDistanceAU * sunDistanceAU * earthDistanceAU * earthDistanceAU),
+    );
+    const apparentMag = FULL_MOON_APPARENT_MAG - 2.5 * Math.log10(reflectedFlux / FULL_MOON_REFLECTED_FLUX);
+    return this.apparentMagnitudeToDisplayBrightness(apparentMag);
+  }
 
-    // Compress the real dynamic range so dim bodies are still usable in the sim.
-    return Math.max(0.16, Math.min(4.0, Math.pow(relativeSurfaceBrightness, 0.45)));
+  private apparentMagnitudeToDisplayBrightness(mag: number): number {
+    if (!Number.isFinite(mag)) return 1;
+    return clamp(Math.pow(10, (1.0 - mag) / 7.0), 0.35, 160);
+  }
+
+  private syncBrightnessUniforms(): void {
+    if (!this.starLodBuffer || !this.mwLodBuffer || !this.galaxyLodBuffer) return;
+    const actual = this._actualBrightness ? 1 : 0;
+    this.ctx.device.queue.writeBuffer(this.starLodBuffer, 0, new Float32Array([1, this._cameraDistanceFromSun, 0, 0]));
+    this.ctx.device.queue.writeBuffer(this.mwLodBuffer, 0, new Float32Array([1, actual, 0, 0]));
+    this.ctx.device.queue.writeBuffer(this.galaxyLodBuffer, 0, new Float32Array([actual, 0, 0, 0]));
   }
 
   private ensureStarCapacity(count: number): void {

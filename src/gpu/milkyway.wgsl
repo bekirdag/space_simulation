@@ -20,19 +20,33 @@ struct Star {
 
 @group(0) @binding(0) var<uniform>       camera:  Camera;
 @group(0) @binding(1) var<storage, read> stars:   array<Star>;
-@group(0) @binding(2) var<uniform>       lodFade: vec4<f32>; // x=fade 0..1
+@group(0) @binding(2) var<uniform>       lodFade: vec4<f32>; // x=fade 0..1, y=actual brightness
 
 struct VertexOut {
   @builtin(position) clip_pos: vec4<f32>,
   @location(0)       uv:       vec2<f32>,
   @location(1)       color:    vec3<f32>,
   @location(2)       alpha:    f32,
+  @location(3)       brightness: f32,
 };
 
 var<private> quad: array<vec2<f32>, 6> = array<vec2<f32>, 6>(
   vec2(-1.0,-1.0), vec2(1.0,-1.0), vec2(-1.0,1.0),
   vec2(-1.0, 1.0), vec2(1.0,-1.0), vec2( 1.0,1.0),
 );
+
+fn stellar_luminosity_proxy(color: vec3<f32>, size: f32, alpha: f32) -> f32 {
+  let blueWeight = clamp((color.b - color.r + 0.35) / 0.70, 0.0, 1.0);
+  let warmWeight = clamp((color.r - color.b + 0.20) / 0.80, 0.0, 1.0);
+  let spectralLum = mix(0.65, 18.0, blueWeight) * mix(1.0, 0.55, warmWeight * (1.0 - blueWeight));
+  return spectralLum * (0.35 + size * 0.65) * (0.65 + alpha);
+}
+
+fn apparent_mw_brightness(center: vec3<f32>, color: vec3<f32>, size: f32, alpha: f32) -> f32 {
+  let distKpc = max(length(center) / 8000.0, 0.10);
+  let flux = stellar_luminosity_proxy(color, size, alpha) / (distKpc * distKpc);
+  return clamp(pow(max(flux * 8.0, 0.0001), 0.45), 0.05, 2.8);
+}
 
 @vertex
 fn vs_main(
@@ -47,7 +61,9 @@ fn vs_main(
   var out: VertexOut;
   out.uv    = uv;
   out.color = star.color_alpha.xyz;
-  out.alpha = star.color_alpha.w * lodFade.x;
+  let actual = lodFade.y > 0.5;
+  out.brightness = select(1.0, apparent_mw_brightness(center, out.color, star.pos_size.w, star.color_alpha.w), actual);
+  out.alpha = star.color_alpha.w * lodFade.x * select(1.0, clamp(0.35 + out.brightness, 0.25, 2.1), actual);
 
   // Skip invisible or back-facing instances
   if lodFade.x < 0.01 || clip_c.w <= 0.0 {
@@ -59,7 +75,8 @@ fn vs_main(
   // Cull only once the complete billboard is outside the frame.
   let ndcX = clip_c.x / clip_c.w;
   let ndcY = clip_c.y / clip_c.w;
-  let pxRadius = camera.rightAndMNR.w * max(star.pos_size.w * 1.8, 0.6);
+  let sizeMult = star.pos_size.w * select(1.0, clamp(0.55 + out.brightness, 0.45, 2.8), actual);
+  let pxRadius = camera.rightAndMNR.w * max(sizeMult * 1.8, 0.6);
   let cullMargin = max(pxRadius * 1.5, 0.06);
   if ndcX - cullMargin > 1.0 || ndcX + cullMargin < -1.0 ||
      ndcY - cullMargin > 1.0 || ndcY + cullMargin < -1.0 {
@@ -89,9 +106,10 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   let wings = max(0.0, 1.0 / (1.0 + d2 * 10.0) - 0.09);
 
   var col    = in.color;
-  let bleach = clamp(core * in.alpha * 1.6, 0.0, 1.0);
+  let lift   = clamp(pow(max(in.brightness, 0.08), 0.28), 0.55, 1.8);
+  let bleach = clamp(core * in.alpha * (1.15 + lift * 0.55), 0.0, 1.0);
   col = mix(col, vec3<f32>(1.0, 0.97, 0.94), bleach * 0.65);
 
-  let alpha = clamp((core * 0.80 + wings * 0.55) * in.alpha * 2.8, 0.0, 1.0);
+  let alpha = clamp((core * 0.80 + wings * 0.55) * in.alpha * (1.8 + lift), 0.0, 1.0);
   return vec4<f32>(col * alpha, alpha);
 }

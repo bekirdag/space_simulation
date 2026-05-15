@@ -20,18 +20,37 @@ struct Galaxy {
 
 @group(0) @binding(0) var<uniform>       camera:  Camera;
 @group(0) @binding(1) var<storage, read> galaxies: array<Galaxy>;
+@group(0) @binding(2) var<uniform>       galaxyLod: vec4<f32>; // x=actual brightness
 
 struct VertexOut {
   @builtin(position) clip_pos: vec4<f32>,
   @location(0)       uv:       vec2<f32>,
   @location(1)       color:    vec3<f32>,
   @location(2)       alpha:    f32,
+  @location(3)       brightness: f32,
 };
 
 var<private> quad: array<vec2<f32>, 6> = array<vec2<f32>, 6>(
   vec2(-1.0,-1.0), vec2(1.0,-1.0), vec2(-1.0,1.0),
   vec2(-1.0, 1.0), vec2(1.0,-1.0), vec2( 1.0,1.0),
 );
+
+fn visual_radius_to_mpc(radiusAU: f32) -> f32 {
+  let linearLimitMpc = 2.0;
+  let mpcToAU = 8000000.0;
+  let linearLimitAU = linearLimitMpc * mpcToAU;
+  if radiusAU <= linearLimitAU {
+    return max(radiusAU / mpcToAU, 0.02);
+  }
+  return linearLimitMpc + 2.0 * (pow(2.0, (radiusAU - linearLimitAU) / 1200000.0) - 1.0);
+}
+
+fn apparent_galaxy_brightness(center: vec3<f32>, size: f32, alpha: f32) -> f32 {
+  let distMpc = max(visual_radius_to_mpc(length(center)), 0.02);
+  let luminosityProxy = size * size * (0.55 + alpha);
+  let flux = luminosityProxy / (distMpc * distMpc);
+  return clamp(pow(max(flux * 2.0, 0.00001), 0.42), 0.04, 3.4);
+}
 
 @vertex
 fn vs_main(
@@ -46,7 +65,9 @@ fn vs_main(
   var out: VertexOut;
   out.uv    = uv;
   out.color = g.col_alpha.xyz;
-  out.alpha = g.col_alpha.w;
+  let actual = galaxyLod.x > 0.5;
+  out.brightness = select(1.0, apparent_galaxy_brightness(center, g.pos_size.w, g.col_alpha.w), actual);
+  out.alpha = g.col_alpha.w * select(1.0, clamp(0.28 + out.brightness, 0.18, 2.0), actual);
 
   if clip_c.w <= 0.0 {
     out.clip_pos = vec4(10.0, 10.0, 10.0, 1.0);
@@ -54,7 +75,8 @@ fn vs_main(
   }
 
   // Galaxies are rendered slightly larger than stars to give a "nebulous" feel
-  let pxRadius    = camera.rightAndMNR.w * max(g.pos_size.w * 2.5, 0.8);
+  let sizeMult = g.pos_size.w * select(1.0, clamp(0.65 + out.brightness * 0.75, 0.55, 2.7), actual);
+  let pxRadius = camera.rightAndMNR.w * max(sizeMult * 2.5, 0.8);
 
   // ── Frustum culling ────────────────────────────────────────────────────────
   // Cull only when the whole billboard is outside the frame plus a small margin.
@@ -97,8 +119,9 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   let disk    = exp(-d  *  3.5);           // exponential disk
   let env     = max(0.0, 1.0 - d) * 0.4;  // faint outer envelope
 
-  let brightness = nucleus * 0.65 + disk * 0.45 + env * 0.15;
-  let a = clamp(brightness * in.alpha * 1.6, 0.0, 1.0);
+  let profileBrightness = nucleus * 0.65 + disk * 0.45 + env * 0.15;
+  let lift = clamp(pow(max(in.brightness, 0.08), 0.30), 0.55, 1.85);
+  let a = clamp(profileBrightness * in.alpha * (1.10 + lift * 0.55), 0.0, 1.0);
 
   // ── Nucleus colour ────────────────────────────────────────────────────────
   // Galaxy nuclei are dominated by old K/M stars → warmer than the outer disk.

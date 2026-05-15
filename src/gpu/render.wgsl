@@ -87,6 +87,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   if d > 1.0 { discard; }
 
   let brightness = max(in.brightness, 0.0);
+  let displayLift = clamp(pow(max(brightness, 0.08), 0.35), 0.50, 5.25);
   let glowScale = clamp(1.0 + log2(max(brightness, 1.0)) * 0.65, 1.0, 8.0);
   let sphereD = d * glowScale;
   let coreEdge = 1.0 - smoothstep(0.985, 1.0, sphereD);
@@ -97,7 +98,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     if in.btype < 0.5 {
       let core = 1.0 - smoothstep(0.0, 0.55, sphereD);
       let limb = 0.76 + 0.24 * z;
-      let starLift = 1.0 + log2(max(brightness, 1.0)) * 0.18;
+      let starLift = clamp(pow(max(brightness, 1.0), 0.22), 1.0, 3.2);
       coreCol = coreCol * (limb + core * 0.35) * starLift + vec3(core * 0.18);
     } else {
       let sphereUv = in.uv * glowScale;
@@ -106,7 +107,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
       let diffuse = max(dot(normal, lightDir), 0.0);
       let rimShade = 0.78 + 0.22 * z;
       let nightSide = 0.18;
-      coreCol = coreCol * (nightSide + diffuse * 0.82) * rimShade * brightness;
+      coreCol = coreCol * (nightSide + diffuse * 0.82) * rimShade * displayLift;
     }
   } else {
     coreAlpha = 0.0;
