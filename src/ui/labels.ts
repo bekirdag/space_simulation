@@ -21,6 +21,8 @@ const ALWAYS_VISIBLE_BODY_NAMES = new Set([
 const LABEL_EDGE_MARGIN = 24;
 const LABEL_NAV_MARGIN = 238;
 const LABEL_BOTTOM_MARGIN = 86;
+// Near a direct 180-degree behind-camera alignment, every screen edge is arbitrary.
+const BEHIND_CAMERA_PIN_DEADZONE = 0.16;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
@@ -77,7 +79,10 @@ function project(
   if (cw <= 0) {
     if (!pin) return null;
     const cwAbs = Math.max(Math.abs(cw), 1e-6);
-    return pinToViewport(-cx / cwAbs, -cy / cwAbs, cssW, cssH);
+    const behindX = cx / cwAbs;
+    const behindY = cy / cwAbs;
+    if (Math.hypot(behindX, behindY) < BEHIND_CAMERA_PIN_DEADZONE) return null;
+    return pinToViewport(behindX, behindY, cssW, cssH);
   }
   const nx = cx / cw, ny = cy / cw, nz = cz / cw;
   const visibleBounds = pin ? 0.98 : 1.4;
