@@ -389,6 +389,19 @@ async function main(): Promise<void> {
     return truncateObjectInfoStatus(firstSentence || `${typeLabel} · ${info.title || focus.title}`);
   }
 
+  function objectInfoSourceText(info: NasaObjectInfo): string {
+    const provider = normalizeObjectInfoText(info.provider);
+    const sourceTitle = normalizeObjectInfoText(info.sourceTitle);
+    if (/^wikipedia$/i.test(provider)) {
+      const title = sourceTitle.replace(/^Wikipedia:\s*/i, "") || "Wikipedia";
+      return `Wikipedia source: ${title}`;
+    }
+    if (/NASA/i.test(provider)) {
+      return sourceTitle ? `NASA source: ${sourceTitle}` : "NASA source";
+    }
+    return sourceTitle ? `Source: ${sourceTitle}` : "Source";
+  }
+
   function closeObjectInfo(): void {
     showObjectInfoModal(false);
   }
@@ -400,7 +413,7 @@ async function main(): Promise<void> {
     setObjectInfoImage(info.imageUrl);
 
     objectInfoSource.href = info.sourceUrl || "https://images.nasa.gov/";
-    objectInfoSource.textContent = info.sourceTitle ? `NASA source: ${info.sourceTitle}` : "NASA source";
+    objectInfoSource.textContent = objectInfoSourceText(info);
 
     if (info.error) {
       setObjectInfoStatus("NASA lookup failed.", true);

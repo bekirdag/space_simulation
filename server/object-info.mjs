@@ -13,7 +13,9 @@ const NASA_IMAGES_API = "https://images-api.nasa.gov";
 const NASA_IMAGES_WEB = "https://images.nasa.gov";
 const NASA_SCIENCE_WEB = "https://science.nasa.gov";
 const NASA_SCIENCE_SEARCH_API = `${NASA_SCIENCE_WEB}/wp-json/wp/v2/search`;
-const OBJECT_INFO_CACHE_VERSION = 3;
+const WIKIPEDIA_SUMMARY_API = "https://en.wikipedia.org/api/rest_v1/page/summary";
+const WIKIPEDIA_WEB = "https://en.wikipedia.org/wiki";
+const OBJECT_INFO_CACHE_VERSION = 4;
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
 const DEFAULT_CACHE_TTL_DAYS = 30;
 const GENERAL_DESCRIPTION_MAX_LENGTH = 1400;
@@ -32,6 +34,40 @@ const NASA_SCIENCE_OBJECT_PAGES = new Map([
   ["neptune", "https://science.nasa.gov/neptune/facts/"],
   ["pluto", "https://science.nasa.gov/dwarf-planets/pluto/facts/"],
   ["ceres", "https://science.nasa.gov/dwarf-planets/ceres/facts/"],
+]);
+const WIKIPEDIA_OBJECT_PAGES = new Map([
+  ["sun", "Sun"],
+  ["mercury", "Mercury (planet)"],
+  ["venus", "Venus"],
+  ["earth", "Earth"],
+  ["moon", "Moon"],
+  ["mars", "Mars"],
+  ["jupiter", "Jupiter"],
+  ["saturn", "Saturn"],
+  ["uranus", "Uranus"],
+  ["neptune", "Neptune"],
+  ["pluto", "Pluto"],
+  ["ceres", "Ceres (dwarf planet)"],
+  ["eris", "Eris (dwarf planet)"],
+  ["haumea", "Haumea"],
+  ["makemake", "Makemake"],
+  ["io", "Io (moon)"],
+  ["europa", "Europa (moon)"],
+  ["ganymede", "Ganymede (moon)"],
+  ["callisto", "Callisto (moon)"],
+  ["titan", "Titan (moon)"],
+  ["enceladus", "Enceladus"],
+  ["triton", "Triton (moon)"],
+  ["charon", "Charon (moon)"],
+  ["milky way", "Milky Way"],
+  ["andromeda galaxy", "Andromeda Galaxy"],
+  ["large magellanic cloud", "Large Magellanic Cloud"],
+  ["small magellanic cloud", "Small Magellanic Cloud"],
+  ["sgr a", "Sagittarius A*"],
+  ["sagittarius a", "Sagittarius A*"],
+  ["proxima centauri", "Proxima Centauri"],
+  ["alpha centauri", "Alpha Centauri"],
+  ["barnard s star", "Barnard's Star"],
 ]);
 const HTML_FETCH_TIMEOUT_MS = 10_000;
 
@@ -185,7 +221,7 @@ function sourceDetailsUrl(nasaId) {
 }
 
 function fallbackDescription(title, objectType) {
-  return `NASA did not return a matching object record for ${title}. The object is still selectable in CosmosMap as a ${objectType}.`;
+  return `No encyclopedic object record was returned for ${title}. The object is still selectable in CosmosMap as a ${objectType}.`;
 }
 
 function cleanMediaDescription(value, title, objectType) {
@@ -195,6 +231,15 @@ function cleanMediaDescription(value, title, objectType) {
     .replace(/\s*To read more go to:.*$/i, "")
     .trim();
   return text || fallbackDescription(title, objectType);
+}
+
+async function tryInfoSource(label, producer) {
+  try {
+    return await producer();
+  } catch (err) {
+    console.warn(`CosmosMap ${label} lookup failed:`, err);
+    return null;
+  }
 }
 
 function normalizedSearchTerms(title, objectType, subtitle) {
@@ -401,6 +446,7 @@ function scoreItem(item, title, objectType) {
   const data = dataForItem(item);
   if (data.media_type !== "image") return -1000;
   const blob = itemSearchBlob(item);
+  const itemTitle = String(data.title ?? "");
   const normalizedTitle = title.toLowerCase().replace(/\*/g, "").trim();
   const words = normalizedTitle.split(/[^a-z0-9]+/).filter(w => w.length > 1);
   let score = previewImageForItem(item) ? 10 : 0;
@@ -413,7 +459,12 @@ function scoreItem(item, title, objectType) {
     if (blob.includes(word)) score += 8;
   }
   if (cleanText(data.description, 500).length > 80) score += 8;
-  if (/\b(logo|insignia|patch|poster)\b/i.test(String(data.title ?? ""))) score -= 18;
+  if (/\b(logo|insignia|patch|poster)\b/i.test(itemTitle)) score -= 18;
+  if (/\blaunch vehicles?\b/i.test(itemTitle)) score -= 90;
+  if (/\b(?:launch|spacecraft|mission|probe|rover|astronaut)\b/i.test(blob)) {
+    if (/\b(?:planet|dwarf|moon)\b/i.test(objectType)) score -= 35;
+    else score -= 12;
+  }
   return score;
 }
 
@@ -447,18 +498,18 @@ function selectAssetImage(assetJson, fallbackUrl) {
     .sort((a, b) => b.rank - a.rank)[0]?.href ?? fallbackUrl;
 }
 
-async function cachedImageFromNasa(imageUrl, title, objectType, nasaId) {
+async function cachedRemoteImage(imageUrl, title, objectType, sourceId) {
   if (!imageUrl) return null;
   await mkdir(IMAGE_CACHE_DIR, { recursive: true });
 
   const probe = await fetch(imageUrl, {
     headers: { "User-Agent": "CosmosMap object-info cache" },
   });
-  if (!probe.ok) throw new Error(`NASA image request failed: ${probe.status} ${probe.statusText}`);
+  if (!probe.ok) throw new Error(`Remote image request failed: ${probe.status} ${probe.statusText}`);
 
   const length = Number.parseInt(probe.headers.get("content-length") ?? "", 10);
   if (Number.isFinite(length) && length > MAX_IMAGE_BYTES) {
-    throw new Error(`NASA image is too large to cache (${length} bytes)`);
+    throw new Error(`Remote image is too large to cache (${length} bytes)`);
   }
 
   const contentType = probe.headers.get("content-type") ?? "";
@@ -468,10 +519,10 @@ async function cachedImageFromNasa(imageUrl, title, objectType, nasaId) {
 
   const buffer = Buffer.from(await probe.arrayBuffer());
   if (buffer.byteLength > MAX_IMAGE_BYTES) {
-    throw new Error(`NASA image is too large to cache (${buffer.byteLength} bytes)`);
+    throw new Error(`Remote image is too large to cache (${buffer.byteLength} bytes)`);
   }
 
-  const hash = createHash("sha256").update(`${nasaId ?? ""}\n${imageUrl}`).digest("hex").slice(0, 14);
+  const hash = createHash("sha256").update(`${sourceId ?? ""}\n${imageUrl}`).digest("hex").slice(0, 14);
   const filename = `${slugify(`${objectType}-${title}`)}-${hash}${extFromMime(contentType, imageUrl)}`;
   await writeFile(path.join(IMAGE_CACHE_DIR, filename), buffer);
   return { filename, url: imageRouteFor(filename) };
@@ -543,6 +594,58 @@ function scienceRecordImageUrl(record, contentHtml) {
     null;
 }
 
+function wikipediaPageTitle(title) {
+  return WIKIPEDIA_OBJECT_PAGES.get(objectLookupKey(title)) || cleanText(title, 120);
+}
+
+function wikipediaPageUrl(title) {
+  return `${WIKIPEDIA_WEB}/${encodeURIComponent(title.replace(/\s+/g, "_"))}`;
+}
+
+function isUsableWikipediaSummary(summary) {
+  const extract = cleanText(summary?.extract, GENERAL_DESCRIPTION_MAX_LENGTH);
+  if (summary?.type === "disambiguation") return false;
+  if (summary?.type === "no-extract") return false;
+  if (extract.length < 80) return false;
+  return true;
+}
+
+async function wikipediaObjectInfo({ title, objectType }) {
+  const pageTitle = wikipediaPageTitle(title);
+  if (!pageTitle) return null;
+
+  const url = new URL(`${WIKIPEDIA_SUMMARY_API}/${encodeURIComponent(pageTitle)}`);
+  url.searchParams.set("redirect", "true");
+
+  const summary = await fetchJson(url);
+  if (!isUsableWikipediaSummary(summary)) return null;
+
+  const description = cleanText(summary.extract, GENERAL_DESCRIPTION_MAX_LENGTH);
+  const remoteImageUrl = summary?.thumbnail?.source || summary?.originalimage?.source || null;
+  let image = null;
+  try {
+    image = await cachedRemoteImage(remoteImageUrl, title, objectType, summary?.pageid ?? pageTitle);
+  } catch (err) {
+    console.warn("CosmosMap Wikipedia image cache failed:", err);
+  }
+
+  return {
+    cacheVersion: OBJECT_INFO_CACHE_VERSION,
+    title,
+    objectType,
+    description,
+    imageUrl: image?.url ?? null,
+    nasaId: null,
+    sourceTitle: `Wikipedia: ${cleanText(summary.title || pageTitle, 180)}`,
+    sourceUrl: summary?.content_urls?.desktop?.page || wikipediaPageUrl(pageTitle),
+    query: pageTitle,
+    cachedImage: image?.filename ?? null,
+    remoteImageUrl,
+    provider: "Wikipedia",
+    cachedAt: new Date().toISOString(),
+  };
+}
+
 async function nasaScienceRecordInfo({ record, searchItem, title, objectType }) {
   const contentHtml = record?.content?.rendered ?? "";
   const fallback = record?.excerpt?.rendered || record?.parsely?.meta?.description || "";
@@ -552,7 +655,7 @@ async function nasaScienceRecordInfo({ record, searchItem, title, objectType }) 
   const remoteImageUrl = scienceRecordImageUrl(record, contentHtml);
   let image = null;
   try {
-    image = await cachedImageFromNasa(remoteImageUrl, title, objectType, record?.id ?? record?.link ?? searchItem?.url);
+    image = await cachedRemoteImage(remoteImageUrl, title, objectType, record?.id ?? record?.link ?? searchItem?.url);
   } catch (err) {
     console.warn("CosmosMap NASA Science image cache failed:", err);
   }
@@ -586,7 +689,7 @@ async function nasaScienceObjectInfo({ title, objectType }) {
   const remoteImageUrl = metaContent(html, ["og:image"], 1000) || firstImageFromHtml(html) || null;
   let image = null;
   try {
-    image = await cachedImageFromNasa(remoteImageUrl, title, objectType, url);
+    image = await cachedRemoteImage(remoteImageUrl, title, objectType, url);
   } catch (err) {
     console.warn("CosmosMap NASA Science image cache failed:", err);
   }
@@ -657,7 +760,7 @@ async function nasaImagesObjectInfo({ title, objectType, subtitle }) {
 
     let image = null;
     try {
-      image = await cachedImageFromNasa(remoteImageUrl, title, objectType, nasaId);
+      image = await cachedRemoteImage(remoteImageUrl, title, objectType, nasaId);
     } catch (err) {
       console.warn("CosmosMap object-info image cache failed:", err);
     }
@@ -719,13 +822,30 @@ async function withFallbackImage(info, params) {
 
 async function nasaObjectInfo({ title, objectType, subtitle }) {
   const params = { title, objectType, subtitle };
-  const directScienceInfo = await nasaScienceObjectInfo({ title, objectType });
+  const directScienceInfo = await tryInfoSource("NASA Science facts", () => nasaScienceObjectInfo({ title, objectType }));
   if (directScienceInfo) return withFallbackImage(directScienceInfo, params);
 
-  const searchedScienceInfo = await nasaScienceSearchInfo(params);
+  const wikipediaInfo = await tryInfoSource("Wikipedia summary", () => wikipediaObjectInfo(params));
+  if (wikipediaInfo) return withFallbackImage(wikipediaInfo, params);
+
+  const searchedScienceInfo = await tryInfoSource("NASA Science search", () => nasaScienceSearchInfo(params));
   if (searchedScienceInfo) return withFallbackImage(searchedScienceInfo, params);
 
-  return nasaImagesObjectInfo(params);
+  return withFallbackImage({
+    cacheVersion: OBJECT_INFO_CACHE_VERSION,
+    title,
+    objectType,
+    description: fallbackDescription(title, objectType),
+    imageUrl: null,
+    nasaId: null,
+    sourceTitle: "No encyclopedic source matched",
+    sourceUrl: NASA_SCIENCE_WEB,
+    query: title,
+    cachedImage: null,
+    remoteImageUrl: null,
+    provider: "CosmosMap",
+    cachedAt: new Date().toISOString(),
+  }, params);
 }
 
 async function objectInfoResponse(params) {
