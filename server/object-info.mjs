@@ -11,8 +11,25 @@ const CACHE_ROOT = process.env.COSMOSMAP_OBJECT_INFO_CACHE_DIR
 const IMAGE_CACHE_DIR = path.join(CACHE_ROOT, "images");
 const NASA_IMAGES_API = "https://images-api.nasa.gov";
 const NASA_IMAGES_WEB = "https://images.nasa.gov";
+const OBJECT_INFO_CACHE_VERSION = 2;
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
 const DEFAULT_CACHE_TTL_DAYS = 30;
+const NASA_SCIENCE_OBJECT_PAGES = new Map([
+  ["sun", "https://science.nasa.gov/sun/facts/"],
+  ["mercury", "https://science.nasa.gov/mercury/facts/"],
+  ["venus", "https://science.nasa.gov/venus/venus-facts/"],
+  ["earth", "https://science.nasa.gov/earth/facts/"],
+  ["moon", "https://science.nasa.gov/moon/facts/"],
+  ["mars", "https://science.nasa.gov/mars/facts/"],
+  ["jupiter", "https://science.nasa.gov/jupiter/facts/"],
+  ["saturn", "https://science.nasa.gov/saturn/facts/"],
+  ["titan", "https://science.nasa.gov/saturn/moons/titan/facts/"],
+  ["uranus", "https://science.nasa.gov/uranus/facts/"],
+  ["neptune", "https://science.nasa.gov/neptune/facts/"],
+  ["pluto", "https://science.nasa.gov/dwarf-planets/pluto/facts/"],
+  ["ceres", "https://science.nasa.gov/dwarf-planets/ceres/facts/"],
+]);
+const HTML_FETCH_TIMEOUT_MS = 10_000;
 
 function cacheTtlMs() {
   const raw = Number.parseFloat(process.env.COSMOSMAP_OBJECT_INFO_CACHE_TTL_DAYS ?? "");
@@ -21,11 +38,36 @@ function cacheTtlMs() {
 }
 
 function cleanText(value, maxLength = 240) {
-  return String(value ?? "")
+  return decodeHtmlEntities(String(value ?? "").replace(/<[^>]*>/g, " "))
     .normalize("NFKC")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, maxLength);
+}
+
+function decodeHtmlEntities(value) {
+  return String(value ?? "")
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(Number.parseInt(hex, 16)))
+    .replace(/&#([0-9]+);/g, (_, num) => String.fromCodePoint(Number.parseInt(num, 10)))
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, "\"")
+    .replace(/&apos;/gi, "'")
+    .replace(/&#039;/gi, "'")
+    .replace(/&rsquo;/gi, "'")
+    .replace(/&lsquo;/gi, "'")
+    .replace(/&rdquo;/gi, "\"")
+    .replace(/&ldquo;/gi, "\"")
+    .replace(/&mdash;/gi, " - ")
+    .replace(/&ndash;/gi, " - ");
+}
+
+function objectLookupKey(value) {
+  return cleanText(value, 120)
+    .toLowerCase()
+    .replace(/\*/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }
 
 function slugify(value, fallback = "object") {
@@ -109,6 +151,7 @@ async function writeCache(filePath, payload) {
 }
 
 function cacheIsFresh(payload) {
+  if (!cacheVersionIsCurrent(payload)) return false;
   if (!payload?.cachedAt) return false;
   const ttl = cacheTtlMs();
   if (ttl === 0) return false;
@@ -116,12 +159,16 @@ function cacheIsFresh(payload) {
   return Number.isFinite(cachedMs) && Date.now() - cachedMs <= ttl;
 }
 
+function cacheVersionIsCurrent(payload) {
+  return payload?.cacheVersion === OBJECT_INFO_CACHE_VERSION;
+}
+
 function sourceDetailsUrl(nasaId) {
   return nasaId ? `${NASA_IMAGES_WEB}/details/${encodeURIComponent(nasaId)}` : NASA_IMAGES_WEB;
 }
 
 function fallbackDescription(title, objectType) {
-  return `NASA Images did not return a matching image record for ${title}. The object is still selectable in CosmosMap as a ${objectType}.`;
+  return `NASA did not return a matching object record for ${title}. The object is still selectable in CosmosMap as a ${objectType}.`;
 }
 
 function normalizedSearchTerms(title, objectType, subtitle) {
@@ -166,6 +213,50 @@ async function fetchJson(url) {
   });
   if (!response.ok) throw new Error(`NASA request failed: ${response.status} ${response.statusText}`);
   return response.json();
+}
+
+async function fetchText(url) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), HTML_FETCH_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, {
+      redirect: "follow",
+      signal: controller.signal,
+      headers: {
+        "Accept": "text/html,application/xhtml+xml",
+        "User-Agent": "CosmosMap object-info cache (https://github.com/bekirdag/space_simulation)",
+      },
+    });
+    if (!response.ok) throw new Error(`NASA Science request failed: ${response.status} ${response.statusText}`);
+    return { html: await response.text(), url: response.url };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function htmlAttr(tag, name) {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = tag.match(new RegExp(`\\b${escaped}\\s*=\\s*("([^"]*)"|'([^']*)'|([^\\s>]+))`, "i"));
+  return match?.[2] ?? match?.[3] ?? match?.[4] ?? "";
+}
+
+function metaContent(html, names, maxLength = 1800) {
+  const wanted = new Set(names.map(name => name.toLowerCase()));
+  const tags = html.match(/<meta\b[^>]*>/gi) ?? [];
+  for (const tag of tags) {
+    const key = (htmlAttr(tag, "name") || htmlAttr(tag, "property")).toLowerCase();
+    if (!wanted.has(key)) continue;
+    const content = htmlAttr(tag, "content");
+    if (content) return cleanText(content, maxLength);
+  }
+  return "";
+}
+
+function pageTitle(html, fallback) {
+  const title = cleanText(html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? "", 240)
+    .replace(/\s*-\s*NASA Science$/i, "")
+    .replace(/\s*\|\s*NASA$/i, "");
+  return title || fallback;
 }
 
 function dataForItem(item) {
@@ -267,7 +358,43 @@ async function cachedImageFromNasa(imageUrl, title, objectType, nasaId) {
   return { filename, url: imageRouteFor(filename) };
 }
 
+async function nasaScienceObjectInfo({ title, objectType }) {
+  const sourcePage = NASA_SCIENCE_OBJECT_PAGES.get(objectLookupKey(title));
+  if (!sourcePage) return null;
+
+  const { html, url } = await fetchText(sourcePage);
+  const description = metaContent(html, ["description", "og:description"], 1800);
+  if (!description) return null;
+
+  const remoteImageUrl = metaContent(html, ["og:image"], 1000) || null;
+  let image = null;
+  try {
+    image = await cachedImageFromNasa(remoteImageUrl, title, objectType, url);
+  } catch (err) {
+    console.warn("CosmosMap NASA Science image cache failed:", err);
+  }
+
+  return {
+    cacheVersion: OBJECT_INFO_CACHE_VERSION,
+    title,
+    objectType,
+    description,
+    imageUrl: image?.url ?? null,
+    nasaId: null,
+    sourceTitle: pageTitle(html, `${title}: Facts`),
+    sourceUrl: url,
+    query: sourcePage,
+    cachedImage: image?.filename ?? null,
+    remoteImageUrl,
+    provider: "NASA Science",
+    cachedAt: new Date().toISOString(),
+  };
+}
+
 async function nasaObjectInfo({ title, objectType, subtitle }) {
+  const scienceInfo = await nasaScienceObjectInfo({ title, objectType });
+  if (scienceInfo) return scienceInfo;
+
   const queries = normalizedSearchTerms(title, objectType, subtitle);
 
   for (const query of queries) {
@@ -300,6 +427,7 @@ async function nasaObjectInfo({ title, objectType, subtitle }) {
     }
 
     return {
+      cacheVersion: OBJECT_INFO_CACHE_VERSION,
       title,
       objectType,
       description: cleanText(data.description || data.description_508 || fallbackDescription(title, objectType), 1800),
@@ -316,6 +444,7 @@ async function nasaObjectInfo({ title, objectType, subtitle }) {
   }
 
   return {
+    cacheVersion: OBJECT_INFO_CACHE_VERSION,
     title,
     objectType,
     description: fallbackDescription(title, objectType),
@@ -343,7 +472,9 @@ async function objectInfoResponse(params) {
     await writeCache(cacheFile, fresh);
     return { ...fresh, cacheHit: false };
   } catch (err) {
-    if (cached) return { ...cached, cacheHit: true, stale: true, warning: "Returned stale cache after NASA lookup failed." };
+    if (cacheVersionIsCurrent(cached)) {
+      return { ...cached, cacheHit: true, stale: true, warning: "Returned stale cache after NASA lookup failed." };
+    }
     throw err;
   }
 }
