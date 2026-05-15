@@ -125,6 +125,26 @@ const STARTUP_TRAIL_BODIES = new Set([
 const DENSE_CLUSTER_CELL_PX = 3;
 const DENSE_CLUSTER_MIN_BODIES = 4;
 
+interface FocusInfo {
+  title: string;
+  subtitle: string;
+  objectType: string;
+}
+
+interface NasaObjectInfo {
+  title?: string;
+  objectType?: string;
+  description?: string;
+  imageUrl?: string | null;
+  sourceTitle?: string | null;
+  sourceUrl?: string | null;
+  provider?: string;
+  cacheHit?: boolean;
+  stale?: boolean;
+  warning?: string;
+  error?: string;
+}
+
 function isMajorRenderBody(body: Body): boolean {
   return body.type === BodyType.Star ||
     body.type === BodyType.Planet ||
@@ -296,15 +316,123 @@ async function main(): Promise<void> {
   const errorOverlay = document.getElementById("error-overlay")!;
   const sourceEl     = document.getElementById("hud-source")!;
   const focusTitleEl = document.getElementById("focus-title")!;
+  const objectInfoModal = document.getElementById("object-info-modal")!;
+  const objectInfoClose = document.getElementById("object-info-close")!;
+  const objectInfoTitle = document.getElementById("object-info-title")!;
+  const objectInfoType = document.getElementById("object-info-type")!;
+  const objectInfoStatus = document.getElementById("object-info-status")!;
+  const objectInfoDescription = document.getElementById("object-info-description")!;
+  const objectInfoSource = document.getElementById("object-info-source") as HTMLAnchorElement;
+  const objectInfoImageWrap = document.getElementById("object-info-image-wrap")!;
+  const objectInfoImage = document.getElementById("object-info-image") as HTMLImageElement;
 
-  function setFocusTitle(title: string | null, subtitle = ""): void {
+  let currentFocusInfo: FocusInfo | null = null;
+  let objectInfoRequestSeq = 0;
+
+  function showObjectInfoModal(open: boolean): void {
+    objectInfoModal.classList.toggle("open", open);
+    objectInfoModal.setAttribute("aria-hidden", String(!open));
+  }
+
+  function setObjectInfoStatus(text: string, isError = false): void {
+    objectInfoStatus.textContent = text;
+    objectInfoStatus.classList.toggle("error", isError);
+  }
+
+  function setObjectInfoImage(imageUrl: string | null | undefined): void {
+    if (imageUrl) {
+      objectInfoImage.src = imageUrl;
+      objectInfoImageWrap.classList.remove("empty");
+    } else {
+      objectInfoImage.removeAttribute("src");
+      objectInfoImageWrap.classList.add("empty");
+    }
+  }
+
+  function closeObjectInfo(): void {
+    showObjectInfoModal(false);
+  }
+
+  function renderObjectInfo(info: NasaObjectInfo, focus: FocusInfo): void {
+    objectInfoTitle.textContent = info.title || focus.title;
+    objectInfoType.textContent = info.objectType || focus.objectType;
+    objectInfoDescription.textContent = info.description || "No NASA description was returned for this object.";
+    setObjectInfoImage(info.imageUrl);
+
+    objectInfoSource.href = info.sourceUrl || "https://images.nasa.gov/";
+    objectInfoSource.textContent = info.sourceTitle ? `NASA source: ${info.sourceTitle}` : "NASA source";
+
+    if (info.error) {
+      setObjectInfoStatus("NASA lookup failed.", true);
+    } else if (info.stale) {
+      setObjectInfoStatus(info.warning || "Showing cached NASA data.");
+    } else {
+      setObjectInfoStatus(info.cacheHit ? "Loaded from local NASA cache." : "Loaded from NASA and cached locally.");
+    }
+  }
+
+  async function openObjectInfo(): Promise<void> {
+    const focus = currentFocusInfo;
+    if (!focus) return;
+
+    const seq = ++objectInfoRequestSeq;
+    objectInfoTitle.textContent = focus.title;
+    objectInfoType.textContent = focus.objectType;
+    objectInfoDescription.textContent = "";
+    objectInfoSource.href = "https://images.nasa.gov/";
+    objectInfoSource.textContent = "NASA source";
+    setObjectInfoImage(null);
+    setObjectInfoStatus("Loading NASA data...");
+    showObjectInfoModal(true);
+
+    const url = new URL("/api/object-info", window.location.origin);
+    url.searchParams.set("title", focus.title);
+    url.searchParams.set("type", focus.objectType);
+    if (focus.subtitle) url.searchParams.set("subtitle", focus.subtitle);
+
+    try {
+      const response = await fetch(url);
+      const payload = await response.json() as NasaObjectInfo;
+      if (seq !== objectInfoRequestSeq) return;
+      if (!response.ok) {
+        renderObjectInfo(payload, focus);
+        return;
+      }
+      renderObjectInfo(payload, focus);
+    } catch {
+      if (seq !== objectInfoRequestSeq) return;
+      renderObjectInfo({
+        title: focus.title,
+        objectType: focus.objectType,
+        description: "The local CosmosMap NASA information service is not reachable.",
+        sourceUrl: "https://images.nasa.gov/",
+        sourceTitle: "NASA Image and Video Library",
+        error: "service_unreachable",
+      }, focus);
+    }
+  }
+
+  objectInfoClose.addEventListener("click", closeObjectInfo);
+  objectInfoModal.addEventListener("click", e => { if (e.target === objectInfoModal) closeObjectInfo(); });
+
+  function setFocusTitle(title: string | null, subtitle = "", objectType = "object"): void {
     focusTitleEl.replaceChildren();
     if (!title) {
+      currentFocusInfo = null;
+      closeObjectInfo();
       focusTitleEl.hidden = true;
       return;
     }
 
+    const focusChanged =
+      !currentFocusInfo ||
+      currentFocusInfo.title !== title ||
+      currentFocusInfo.objectType !== objectType;
+    if (focusChanged) closeObjectInfo();
+    currentFocusInfo = { title, subtitle, objectType };
+
     const nameEl = document.createElement("span");
+    nameEl.className = "focus-title-name";
     nameEl.textContent = title;
     focusTitleEl.appendChild(nameEl);
 
@@ -314,6 +442,18 @@ async function main(): Promise<void> {
       subEl.textContent = subtitle;
       focusTitleEl.appendChild(subEl);
     }
+
+    const infoBtn = document.createElement("button");
+    infoBtn.type = "button";
+    infoBtn.className = "focus-info-btn";
+    infoBtn.title = "NASA information";
+    infoBtn.setAttribute("aria-label", `NASA information for ${title}`);
+    infoBtn.textContent = "ⓘ";
+    infoBtn.addEventListener("click", e => {
+      e.stopPropagation();
+      void openObjectInfo();
+    });
+    focusTitleEl.appendChild(infoBtn);
 
     focusTitleEl.hidden = false;
   }
@@ -380,6 +520,7 @@ async function main(): Promise<void> {
     if (e.key !== "Escape") return;
     closeSettings();
     closeInfo();
+    closeObjectInfo();
   });
 
   let showGalaxies = true;
@@ -750,7 +891,7 @@ async function main(): Promise<void> {
     setExoplanetBodies(null);
     nav.clearFocusedBody();
     renderer.uploadSelectedStar(null);
-    setFocusTitle("Milky Way", "home galaxy · center at Sagittarius A*");
+    setFocusTitle("Milky Way", "home galaxy · center at Sagittarius A*", "galaxy");
     camera.travelTo(
       SGR_A_STAR_POS[0],
       SGR_A_STAR_POS[1],
@@ -764,7 +905,7 @@ async function main(): Promise<void> {
     setExoplanetBodies(null);
     nav.clearFocusedBody();
     renderer.uploadSelectedStar(null);
-    setFocusTitle(galaxy.name, galaxyFocusSubtitle(galaxy.dist));
+    setFocusTitle(galaxy.name, galaxyFocusSubtitle(galaxy.dist), "galaxy");
     camera.travelTo(galaxy.x, galaxy.y, galaxy.z, galaxy.focusDistance);
     renderer.uploadBodies(bodies);
   }
@@ -918,14 +1059,14 @@ async function main(): Promise<void> {
       (gal) => {
         const r = Math.sqrt(gal.x**2 + gal.y**2 + gal.z**2);
         nav.clearFocusedBody();
-        setFocusTitle(gal.name, galaxyFocusSubtitle(gal.dist));
+        setFocusTitle(gal.name, galaxyFocusSubtitle(gal.dist), "galaxy");
         camera.travelTo(gal.x, gal.y, gal.z, Math.min(10_000, Math.max(500, r * 0.02)));
       },
       nearbyNebulas,
       (neb) => {
         const r = Math.sqrt(neb.x**2 + neb.y**2 + neb.z**2);
         nav.clearFocusedBody();
-        setFocusTitle(neb.name, "nebula");
+        setFocusTitle(neb.name, "nebula", "nebula");
         camera.travelTo(neb.x, neb.y, neb.z, Math.max(200, r * 0.005));
       },
     );

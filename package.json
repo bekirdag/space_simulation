@@ -4,9 +4,11 @@
   "description": "CosmosMap celestial simulation and universe map — WebGPU + TypeScript",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node server/dev.mjs",
+    "dev:vite": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview",
+    "preview": "node server/index.mjs",
+    "serve": "node server/index.mjs",
     "typecheck": "tsc --noEmit",
     "test": "npm run typecheck",
     "catalog:exoplanets": "node scripts/build-exoplanet-hosts.mjs",

@@ -12,7 +12,8 @@ help from Claude and Codex 5.5.
 ## Features
 
 - WebGPU-rendered solar-system simulation with trails, labels, search, focus,
-  top-center focus titles, context menus, and time controls.
+  top-center focus titles, NASA-backed object information, context menus, and
+  time controls.
 - NASA/JPL Horizons starting vectors cached for 33 simulated bodies: the Sun,
   planets, major moons, Pluto/Charon, and selected dwarf planets.
 - Solar-system-barycentric state data, so the Sun has a real starting position
@@ -48,14 +49,15 @@ npm install
 
 ## Run Locally
 
-Start the Vite development server:
+Start the CosmosMap development backend. It wraps Vite and also serves the
+NASA object-information API used by the top-center focus title:
 
 ```sh
 npm run dev
 ```
 
-Open the local URL printed by Vite, usually `http://localhost:5173/`. If that
-port is already in use, Vite will choose the next available port.
+Open the local URL printed by the server, usually `http://127.0.0.1:5173/`. If
+that port is already in use, the server will choose the next available port.
 
 ## Build And Preview
 
@@ -65,7 +67,7 @@ Create a production build:
 npm run build
 ```
 
-Preview the built app locally:
+Preview the built app locally with the same local NASA information backend:
 
 ```sh
 npm run preview
@@ -118,6 +120,9 @@ after install:
 
 Horizons data is loaded in this order: committed cache file, browser
 `localStorage`, then live NASA/JPL Horizons fetch if no cache is available.
+Focused-object information is requested from the local backend, which queries
+NASA Images and caches normalized JSON plus same-origin image files under
+`cache/nasa/object-info/`. That runtime cache is intentionally git-ignored.
 
 ## Limits And Assumptions
 
@@ -198,6 +203,7 @@ src/physics/              Bodies, constants, integration, moons, galactic frame
 src/scene/                Camera and trail systems
 src/services/horizons.ts  NASA/JPL Horizons client and cache loader
 src/ui/                   HUD, labels, navigation, context menu
+server/                   Local NASA Images object-info API and static server
 scripts/                  Data generation and cache refresh scripts
 public/cache/             Committed runtime cache files
 public/data/              Generated catalog assets served by Vite

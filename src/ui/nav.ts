@@ -6,6 +6,7 @@ import {
   systemMembersForBody,
   systemViewDistanceForBody,
 } from "../physics/moons";
+import { BodyType } from "../physics/constants";
 import { type StarSearchResult } from "../catalog/stars";
 
 const DEFAULT_TRAVEL_DIST = 0.5;
@@ -20,7 +21,7 @@ interface CatalogSearchOptions {
   /** Called when any catalog search result is clicked, with its id. */
   onCatalogItemClick?: (id: string) => void;
   /** Called when navigation focus changes so the page can show the current focus. */
-  onFocusTitleChange?: (title: string | null, subtitle?: string) => void;
+  onFocusTitleChange?: (title: string | null, subtitle?: string, objectType?: string) => void;
 }
 
 export class NavPanel {
@@ -40,7 +41,7 @@ export class NavPanel {
   selectCatalogStar(hit: StarSearchResult): void {
     this.clearFocusedBody();
     this._selectedCatalogStar = hit;
-    this.catalogSearch?.onFocusTitleChange?.(hit.label, hit.subtitle);
+    this.catalogSearch?.onFocusTitleChange?.(hit.label, hit.subtitle, this.catalogObjectType(hit));
     this.camera.travelTo(hit.x, hit.y, hit.z, hit.focusDistance);
   }
 
@@ -85,6 +86,26 @@ export class NavPanel {
 
   private bodyByName(name: string): Body | undefined {
     return this.getBodies().find(b => b.name === name);
+  }
+
+  private bodyObjectType(body: Body | undefined): string {
+    if (!body) return "object";
+    switch (body.type) {
+      case BodyType.Star: return "star";
+      case BodyType.Planet: return "planet";
+      case BodyType.Moon: return "moon";
+      case BodyType.Asteroid: return "asteroid";
+      case BodyType.DwarfPlanet: return "dwarf planet";
+      case BodyType.Exoplanet: return "exoplanet";
+      default: return "object";
+    }
+  }
+
+  private catalogObjectType(hit: StarSearchResult): string {
+    if (hit.id.startsWith("blackhole:")) return "black hole";
+    if (hit.id.startsWith("exo:")) return "exoplanet";
+    if (hit.id.startsWith("nearby:")) return "star";
+    return "exoplanet host star";
   }
 
   private travelDistanceFor(name: string): number {
@@ -132,10 +153,11 @@ export class NavPanel {
   }
 
   private setFocusedBody(name: string): void {
+    const body = this.bodyByName(name);
     this._focusedBodyName = name;
     this._selectedCatalogStar = null; // simulation body takes over; dismiss star selection
     this.setFocusedSystem(name);
-    this.catalogSearch?.onFocusTitleChange?.(name);
+    this.catalogSearch?.onFocusTitleChange?.(name, "", this.bodyObjectType(body));
     this.camera.lockTarget = true; // scroll zooms orbit radius, not toward cursor
     let focusedEl: HTMLElement | undefined;
     this.panel.querySelectorAll<HTMLElement>("[data-travel]").forEach(el => {
@@ -263,7 +285,7 @@ export class NavPanel {
       btn.addEventListener("click", () => {
         this.clearFocusedBody();
         this._selectedCatalogStar = hit;
-        this.catalogSearch?.onFocusTitleChange?.(hit.label, hit.subtitle);
+        this.catalogSearch?.onFocusTitleChange?.(hit.label, hit.subtitle, this.catalogObjectType(hit));
         this.camera.travelTo(hit.x, hit.y, hit.z, hit.focusDistance);
         this.search.value = hit.label;
         this.renderCatalogResults("", []);
