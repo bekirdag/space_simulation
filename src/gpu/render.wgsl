@@ -2,7 +2,7 @@
 //
 // Camera uniform (96 bytes = 6 × vec4):
 //   mat4x4 viewProj         — view-projection matrix (64 bytes)
-//   vec4   rightAndMNR      — xyz = camera right, w = minNDCRadius
+//   vec4   rightAndMNR      — xyz = camera right, w = minNDCRadius for point layers
 //   vec4   upAndFocal       — xyz = camera up,    w = focalY (= 1/tan(fovY/2))
 //
 // Body storage (64 bytes = 4 × vec4, matches JS BODY_FLOATS=16):
@@ -16,7 +16,7 @@
 
 struct Camera {
   viewProj:    mat4x4<f32>,
-  rightAndMNR: vec4<f32>,  // xyz=right, w=minNDCRadius
+  rightAndMNR: vec4<f32>,  // xyz=right, w=minNDCRadius for point layers
   upAndFocal:  vec4<f32>,  // xyz=up,    w=focalY
 };
 
@@ -35,8 +35,7 @@ struct VertexOut {
   @location(0)       uv:       vec2<f32>,
   @location(1)       color:    vec3<f32>,
   @location(2)       btype:    f32,
-  @location(3)       clamped:  f32,
-  @location(4)       fade:     f32,  // 1.0 = fully visible, 0.0 = hidden
+  @location(3)       fade:     f32,  // 1.0 = fully visible, 0.0 = hidden
 };
 
 var<private> quad: array<vec2<f32>, 6> = array<vec2<f32>, 6>(
@@ -56,8 +55,6 @@ fn vs_main(
   let r_phys   = b.vel_rad.w;
   let camRight = camera.rightAndMNR.xyz;
   let camUp    = camera.upAndFocal.xyz;
-  var mnr      = camera.rightAndMNR.w;
-  let focalY   = camera.upAndFocal.w;
 
   // Project center to get clip-space depth (W component)
   let clip_c = camera.viewProj * vec4(center, 1.0);
@@ -66,7 +63,6 @@ fn vs_main(
   out.uv      = uv;
   out.color   = b.col_id.xyz;
   out.btype   = b.acc_type.w;
-  out.clamped = 0.0;
   out.fade    = clamp(b.acc_type.z, 0.0, 1.0);
 
   // Discard body behind the camera or suppressed by screen-density reduction.
@@ -75,29 +71,9 @@ fn vs_main(
     return out;
   }
 
-  // Perspective-correct radius: how large is the body in NDC at this depth?
-  let r_ndc = r_phys * focalY / clip_c.w;
-  var r_eff  = r_phys;
-
-  // Moons (btype=2): no distance/occlusion discard. Visibility is driven by
-  // screen-density reduction on the CPU; keep a larger minimum dot when shown.
-  if (out.btype > 1.5 && out.btype < 2.5) {
-    mnr = max(mnr, camera.rightAndMNR.w * 7.0);
-  }
-
-  // Exoplanets (btype=5): catalog bodies orbiting distant stars.
-  // No distance/occlusion discard; slightly smaller minimum dot for distinction.
-  if (out.btype > 4.5 && out.btype < 5.5) {
-    mnr = max(mnr, camera.rightAndMNR.w * 5.0);
-  }
-
-  if r_ndc < mnr {
-    r_eff       = mnr * clip_c.w / focalY;
-    out.clamped = 1.0;
-  }
-
-  // Expand billboard in world space along camera right/up
-  let world_pos = center + uv.x * camRight * r_eff + uv.y * camUp * r_eff;
+  // Expand billboard at the body's actual projected visual radius. Do not
+  // clamp to a minimum dot; distant bodies should become naturally tiny.
+  let world_pos = center + uv.x * camRight * r_phys + uv.y * camUp * r_phys;
   out.clip_pos  = camera.viewProj * vec4(world_pos, 1.0);
   return out;
 }
@@ -106,21 +82,6 @@ fn vs_main(
 fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   let d = length(in.uv);
   if d > 1.0 { discard; }
-
-  // Minimum-size (clamped) bodies
-  if in.clamped > 0.5 {
-    let a = (1.0 - smoothstep(0.45, 1.0, d)) * in.fade;
-    var col = in.color;
-    // Boost dark moons so they read against black space
-    if in.btype > 1.5 && in.btype < 2.5 {
-      col = clamp(col * 1.8 + vec3(0.12), vec3(0.0), vec3(1.0));
-    }
-    // Exoplanets: bright distinct dot with subtle ring highlight
-    if in.btype > 4.5 && in.btype < 5.5 {
-      col = clamp(col * 2.0 + vec3(0.15), vec3(0.0), vec3(1.0));
-    }
-    return vec4<f32>(col * a, a);
-  }
 
   // Full-size body
   let a = (1.0 - smoothstep(0.75, 1.0, d)) * in.fade;
