@@ -96,6 +96,8 @@ export interface CatalogStarInfo {
   x: number; y: number; z: number;
 }
 
+export type NearbyStarClickHandler = (star: NearbyStarLabel) => void;
+
 export class LabelManager {
   private container:  HTMLDivElement;
   private spans     = new Map<number, HTMLSpanElement>();
@@ -337,6 +339,7 @@ export class LabelManager {
     viewProj:    Mat4,
     cameraEye:   Vec3 = [0, 0, 0],
     sunWorldPos: Vec3 = [0, 0, 0],
+    onStarClick?: NearbyStarClickHandler,
   ): void {
     const cssW = window.innerWidth;
     const cssH = window.innerHeight;
@@ -368,6 +371,20 @@ export class LabelManager {
         sp = document.createElement('span');
         sp.className = 'nearby-star-label';
         sp.textContent = star.name;
+        sp.title = `Focus ${star.name}`;
+        sp.setAttribute('role', 'button');
+        sp.tabIndex = 0;
+        sp.addEventListener('click', event => {
+          event.preventDefault();
+          event.stopPropagation();
+          onStarClick?.(star);
+        });
+        sp.addEventListener('keydown', event => {
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          event.preventDefault();
+          event.stopPropagation();
+          onStarClick?.(star);
+        });
         this.container.appendChild(sp);
         this.nearbyStarSpans.set(star.name, sp);
       }

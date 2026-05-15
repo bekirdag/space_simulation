@@ -52,7 +52,7 @@ import {
 } from "./catalog/galaxies";
 import { loadMilkywayStars } from "./catalog/milkyway";
 import { loadDustMap } from "./catalog/dust";
-import { NEARBY_STAR_LABELS, SGR_A_STAR_POS } from "./catalog/nearby-stars";
+import { NEARBY_STAR_LABELS, SGR_A_STAR_POS, type NearbyStarLabel } from "./catalog/nearby-stars";
 import { sortIntoOctants } from "./gpu/sky-cull";
 import { loadConstellationLines, type ConstellationLabel } from "./catalog/constellations";
 import {
@@ -68,6 +68,10 @@ const MAX_CATALOG_GALAXIES = 100_000;
 const MAX_STEPS  = 2000;
 const SGR_A_BLACK_HOLE_RING_AU = 3_200;
 const SGR_A_BLACK_HOLE_FOCUS_AU = 50_000;
+const LIGHT_YEARS_PER_PARSEC = 3.26156;
+const NEARBY_STAR_FOCUS_MIN_AU = 0.35;
+const NEARBY_STAR_FOCUS_MAX_AU = 24;
+const NEARBY_STAR_FOCUS_DISTANCE_RATIO = 0.004;
 // Active substep size (yr) — changed via Settings panel.
 // Larger steps = faster simulation but reduced moon accuracy.
 let simSubstepYr = MAX_SUBSTEP_YR; // default: 15 min (precise)
@@ -647,6 +651,35 @@ async function main(): Promise<void> {
     },
   });
 
+  function nearbyStarId(star: NearbyStarLabel): string {
+    return `nearby:${star.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+  }
+
+  function nearbyStarFocusDistance(star: NearbyStarLabel): number {
+    const distanceAu = Math.hypot(star.x, star.y, star.z);
+    return Math.min(
+      NEARBY_STAR_FOCUS_MAX_AU,
+      Math.max(NEARBY_STAR_FOCUS_MIN_AU, distanceAu * NEARBY_STAR_FOCUS_DISTANCE_RATIO),
+    );
+  }
+
+  function focusNearbyStar(star: NearbyStarLabel): void {
+    const distanceLy = star.distPc * LIGHT_YEARS_PER_PARSEC;
+    setExoplanetBodies(null);
+    nav.selectCatalogStar({
+      id: nearbyStarId(star),
+      label: star.name,
+      subtitle: `${star.distPc.toFixed(star.distPc < 10 ? 2 : 1)} pc · ${distanceLy.toFixed(distanceLy < 20 ? 1 : 0)} ly`,
+      x: star.x,
+      y: star.y,
+      z: star.z,
+      focusDistance: nearbyStarFocusDistance(star),
+      color: [0.70, 0.84, 1.00],
+    });
+    renderer.uploadBodies(bodies);
+    renderer.uploadSelectedStar([star.x, star.y, star.z]);
+  }
+
   // ── Canvas click → select body ────────────────────────────────────────────
   const contextMenu = new ContextMenu();
 
@@ -1107,7 +1140,7 @@ async function main(): Promise<void> {
     renderer.draw(trails);
 
     labels.update(bodies, camUniforms.viewProj, focusedMembers, camUniforms.eye, bodyVisibility);
-    labels.updateNearbyStarLabels(NEARBY_STAR_LABELS, camUniforms.viewProj, camUniforms.eye, sunWorldPos);
+    labels.updateNearbyStarLabels(NEARBY_STAR_LABELS, camUniforms.viewProj, camUniforms.eye, sunWorldPos, focusNearbyStar);
     labels.updateConstellationLabels(constellationLabels, camUniforms.viewProj, showConstellations);
     labels.updateGalacticCenterLabel(SGR_A_STAR_POS, camUniforms.viewProj, () => {
       nav.clearFocusedBody();

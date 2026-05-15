@@ -706,13 +706,23 @@
         font-size: 9px;
         color: rgba(180, 210, 255, 0.80);
         white-space: nowrap;
-        pointer-events: none;
+        pointer-events: auto;
         user-select: none;
+        cursor: pointer;
         letter-spacing: 0.06em;
         /* Opaque dark pad — stays crisp on any bright background */
         background: rgba(0, 0, 0, 0.70);
         padding: 1px 3px;
         border-radius: 2px;
+        transition: color 0.15s, background 0.15s, border-color 0.15s;
+        border: 1px solid transparent;
+      }
+      .nearby-star-label:hover,
+      .nearby-star-label:focus-visible {
+        color: rgba(225, 240, 255, 0.96);
+        background: rgba(0, 0, 0, 0.84);
+        border-color: rgba(170, 215, 255, 0.38);
+        outline: none;
       }
 
       /* ── Constellation titles ── */
