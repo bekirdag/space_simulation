@@ -8,8 +8,8 @@
 //   Tier 2  (50–400 pc)  — arm stars, Betelgeuse, Antares, Canopus …
 //   Tier 3  (400+ pc)    — very distant landmarks, Deneb, Rigel …
 //
-// Positions are in compressed ecliptic J2000 AU (AU_PER_PARSEC = 80).
-// Raw data: RA/Dec J2000 degrees + distance parsecs → ecliptic via obliquity ε=23.44°.
+// Positions are in compressed equatorial J2000 render AU (AU_PER_PARSEC = 80).
+// This matches the HYG x/y/z render buffer and exoplanet-host catalog stars.
 
 export interface NearbyStarLabel {
   name:   string;
@@ -20,9 +20,6 @@ export interface NearbyStarLabel {
   tier:   number;
 }
 
-const EPS = 23.4393 * Math.PI / 180;
-const CE  = Math.cos(EPS);   // 0.91745
-const SE  = Math.sin(EPS);   // 0.39778
 export const NEARBY_STAR_AU_PER_PARSEC = 80; // must match build-visible-stars.mjs
 const APc = NEARBY_STAR_AU_PER_PARSEC;
 
@@ -32,7 +29,7 @@ function p(ra: number, dec: number, d: number): [number, number, number] {
   const xe = d * Math.cos(dc) * Math.cos(r);
   const ye = d * Math.cos(dc) * Math.sin(r);
   const ze = d * Math.sin(dc);
-  return [xe * APc, (ye * CE + ze * SE) * APc, (-ye * SE + ze * CE) * APc];
+  return [xe * APc, ye * APc, ze * APc];
 }
 
 // ── Galactic centre — Sgr A* ─────────────────────────────────────────────────
