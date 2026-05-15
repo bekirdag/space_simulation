@@ -27,7 +27,7 @@ help from Claude and Codex 5.5.
 - 200,000 Milky Way background stars and a 100,000-entry galaxy layer.
 - NASA SVS constellation lines and titles.
 - High-resolution visual Galactic dust map layer derived from NASA/GSFC LAMBDA
-  data.
+  data and anchored so its Galactic center aligns with Sagittarius A*.
 - Visual Sagittarius A* black-hole lensing approximation using the physical
   event-horizon radius derived from a 4.3-million-solar-mass black hole.
 - Camera-distance adjusted apparent brightness mode for bodies, Milky Way
@@ -112,7 +112,9 @@ after install:
   `public/cache/nasa/constellations.meta.json`: NASA SVS Deep Star Maps 2020
   source reference for the constellation layer.
 - `public/data/dust-map-mf2015.bin`: high-resolution visual dust overlay
-  derived from NASA/GSFC LAMBDA Meisner & Finkbeiner 2015 data.
+  derived from NASA/GSFC LAMBDA Meisner & Finkbeiner 2015 data. Its all-sky
+  Galactic coordinate center is placed at the simulation's Sagittarius A*
+  position using the same 8,000 AU/kpc Milky Way scale as the star field.
 
 Horizons data is loaded in this order: committed cache file, browser
 `localStorage`, then live NASA/JPL Horizons fetch if no cache is available.
@@ -134,7 +136,9 @@ astrophysical solver.
   derived from a 4.3-million-solar-mass black hole. The lensing/accretion
   visuals are still illustrative and are not a relativistic ray tracer.
 - Galactic dust currently affects the visual overlay only; it does not change
-  star brightness or physics.
+  star brightness or physics. The NASA/GSFC LAMBDA source is a 2D total
+  line-of-sight map, so CosmosMap renders it as a fixed Galactic sky shell,
+  not as a true 3D dust-volume model.
 
 ## Culling And LOD
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Downsamples the NASA/GSFC LAMBDA Meisner & Finkbeiner 2015 E(B-V) dust map
-// into the compact 8-float billboard format used by src/gpu/dust.wgsl.
+// into the compact 8-float world-anchored billboard format used by src/gpu/dust.wgsl.
 //
 // Raw FITS input is cached locally under public/cache/nasa and ignored by git.
 // Generated outputs:
@@ -34,7 +34,9 @@ const GRID_SCALE = readGridScale();
 const OUT_W = BASE_OUT_W * GRID_SCALE;
 const OUT_H = BASE_OUT_H * GRID_SCALE;
 const DUST_FLOATS = 8;
-const SHELL_RADIUS_AU = 85_000;
+const MW_KPC_AU = 8_000;
+const SUN_GALACTIC_RADIUS_KPC = 8.5;
+const SHELL_RADIUS_AU = MW_KPC_AU * SUN_GALACTIC_RADIUS_KPC;
 const SQRT2 = Math.SQRT2;
 
 const GAL_TO_ECL = [
@@ -232,6 +234,7 @@ for (const c of candidates) {
 
 const out = new Float32Array(cells);
 writeFileSync(OUT_BIN, Buffer.from(out.buffer));
+const galacticCenterWorldAU = galacticDirectionToEcliptic(0, 0);
 
 const meta = {
   schema: "physics_sim.dust-map.v1",
@@ -241,7 +244,18 @@ const meta = {
   fitsUrl: FITS_URL,
   ipacDustServiceUrl: IPAC_DUST_URL,
   generatedAt: new Date().toISOString(),
-  projection: "Mollweide all-sky source, converted to ecliptic J2000 sky-shell billboards",
+  projection: "Mollweide all-sky source, converted to world-anchored render-space Galactic shell billboards",
+  anchoring: {
+    type: "sun-observed all-sky shell",
+    note: "Galactic longitude 0 and latitude 0 are placed on the simulation Milky Way center / Sagittarius A* position.",
+    milkyWayScaleAUPerKpc: MW_KPC_AU,
+    sunGalacticRadiusKpc: SUN_GALACTIC_RADIUS_KPC,
+    galacticCenterWorldAU: {
+      x: galacticCenterWorldAU[0],
+      y: galacticCenterWorldAU[1],
+      z: galacticCenterWorldAU[2],
+    },
+  },
   sourceGrid: { width: image.width, height: image.height },
   downsampleGrid: {
     width: OUT_W,
@@ -257,6 +271,7 @@ const meta = {
   ebvPercentiles: { p95, p99 },
   notes: [
     "This is a 2D total line-of-sight Galactic reddening visualization, not a 3D dust volume.",
+    "The runtime layer is fixed in world space so the map center tracks the Milky Way center instead of the camera.",
     "Raw FITS is cached locally under public/cache/nasa and ignored by git; generated binary is the runtime asset.",
   ],
 };

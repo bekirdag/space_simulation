@@ -1,7 +1,7 @@
 // Galactic dust map renderer.
 //
 // Buffer layout per cell (32 bytes):
-//   vec4 pos_size:    xyz = ecliptic AU position on a sky shell, w = billboard radius AU
+//   vec4 pos_size:    xyz = world AU position on the Galactic sky shell, w = billboard radius AU
 //   vec4 color_alpha: rgb = dust colour, w = base alpha
 
 struct Camera {
@@ -32,8 +32,6 @@ var<private> quad: array<vec2<f32>, 6> = array<vec2<f32>, 6>(
   vec2(-1.0, 1.0), vec2(1.0,-1.0), vec2( 1.0,1.0),
 );
 
-const DUST_SKY_RADIUS_AU: f32 = 20000000.0;
-
 @vertex
 fn vs_main(
   @builtin(vertex_index)   vi:  u32,
@@ -41,10 +39,8 @@ fn vs_main(
 ) -> VertexOut {
   let cell = dust[idx];
   let uv = quad[vi];
-  let encoded_radius = max(length(cell.pos_size.xyz), 1.0);
-  let direction = cell.pos_size.xyz / encoded_radius;
-  let center = camera.eyeAndFlags.xyz + direction * DUST_SKY_RADIUS_AU;
-  let radius = (cell.pos_size.w / encoded_radius) * DUST_SKY_RADIUS_AU;
+  let center = cell.pos_size.xyz;
+  let radius = cell.pos_size.w;
   let clip_c = camera.viewProj * vec4(center, 1.0);
 
   var out: VertexOut;

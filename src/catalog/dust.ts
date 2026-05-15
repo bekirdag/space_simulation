@@ -2,14 +2,15 @@
 //
 // The checked-in binary is a compact high-resolution visual product derived
 // from the NASA/GSFC LAMBDA Meisner & Finkbeiner 2015 E(B-V) all-sky dust map.
-// Positions encode
-// sky directions on a nominal shell; the shader anchors that shell to the
-// camera so the 2D line-of-sight map behaves like a background, not a nearby
-// physical cloud. It is visual only: no body physics, extinction math, or star
-// photometry is changed here.
+// Positions encode a world-anchored Galactic shell using the same 8,000 AU/kpc
+// Milky Way scale as the background star field. Galactic l=0,b=0 lands on the
+// simulation's Sagittarius A* / Milky Way center direction. It is visual only:
+// no body physics, extinction math, or star photometry is changed here.
 
 export const DUST_FLOATS = 8;
-export const DUST_SHELL_RADIUS_AU = 85_000;
+export const DUST_MILKY_WAY_KPC_TO_AU = 8_000;
+export const DUST_SUN_GALACTIC_RADIUS_KPC = 8.5;
+export const DUST_SHELL_RADIUS_AU = DUST_MILKY_WAY_KPC_TO_AU * DUST_SUN_GALACTIC_RADIUS_KPC;
 
 const DUST_DATA_URL = "/data/dust-map-mf2015.bin";
 const DUST_META_URL = "/data/dust-map-mf2015.meta.json";
