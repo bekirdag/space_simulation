@@ -1,42 +1,99 @@
-import renderWGSL from "./render.wgsl?raw";
-import starWGSL   from "./star.wgsl?raw";
-import trailWGSL  from "./trail.wgsl?raw";
+import renderWGSL   from "./render.wgsl?raw";
+import starWGSL     from "./star.wgsl?raw";
+import milkywayWGSL from "./milkyway.wgsl?raw";
+import galaxyWGSL   from "./galaxy.wgsl?raw";
+import nebulaWGSL   from "./nebula.wgsl?raw";
+import trailWGSL    from "./trail.wgsl?raw";
 import { type GPUContext } from "./device";
 import { type Body, BODY_FLOATS } from "../physics/body";
 import { STAR_FLOATS } from "../catalog/stars";
-import { type TrailSystem, TRAIL_VTXFLOATS } from "../scene/trail-system";
+import { MW_FLOATS } from "../catalog/milkyway";
+import { GALAXY_FLOATS } from "../catalog/galaxies";
+import { NEBULA_FLOATS } from "../catalog/nebulas";
+import { type TrailSystem, TRAIL_VTXFLOATS, TRAIL_SLOT_BYTES } from "../scene/trail-system";
+import { type OctantRange } from "./sky-cull";
 import { type CameraUniforms } from "../scene/camera";
 
 // Camera uniform: mat4 (64) + vec4 rightAndMNR (16) + vec4 upAndFocal (16) = 96 bytes
 const CAMERA_BYTES = 96;
 
-const TRAIL_VTXBUF_BYTES = 128 * 1500 * TRAIL_VTXFLOATS * 4; // ~6 MB (128 bodies × 1500 pts)
+const TRAIL_MAX_BODIES   = 64;
+const TRAIL_VTXBUF_BYTES = TRAIL_MAX_BODIES * TRAIL_SLOT_BYTES; // 64 × fixed slot = ~31 MB
 
 export class Renderer {
-  private bodyPipeline!:  GPURenderPipeline;
-  private starPipeline!:  GPURenderPipeline;
-  private trailPipeline!: GPURenderPipeline;
+  private bodyPipeline!:    GPURenderPipeline;
+  private starPipeline!:    GPURenderPipeline;
+  private mwPipeline!:      GPURenderPipeline;
+  private galaxyPipeline!:  GPURenderPipeline;
+  private nebulaPipeline!:  GPURenderPipeline;
+  private trailPipeline!:   GPURenderPipeline;
 
   private cameraBuffer!:      GPUBuffer;
   private bodyBuffer!:        GPUBuffer;
   private starBuffer!:        GPUBuffer;
+  private mwStarBuffer!:      GPUBuffer;
+  private galaxyBuffer!:      GPUBuffer;
+  private nebulaBuffer!:      GPUBuffer;
   private trailVertexBuffer!: GPUBuffer;
 
-  private bodyBindGroup!:  GPUBindGroup;
-  private starBindGroup!:  GPUBindGroup;
-  private trailBindGroup!: GPUBindGroup;
-  private starBGL!:        GPUBindGroupLayout;
+  private bodyBindGroup!:   GPUBindGroup;
+  private starBindGroup!:   GPUBindGroup;
+  private mwBindGroup!:     GPUBindGroup;
+  private galaxyBindGroup!: GPUBindGroup;
+  private nebulaBindGroup!: GPUBindGroup;
+  private trailBindGroup!:  GPUBindGroup;
+  private starBGL!:         GPUBindGroupLayout;
+  private mwBGL!:           GPUBindGroupLayout;
+  private galaxyBGL!:       GPUBindGroupLayout;
+  private nebulaBGL!:       GPUBindGroupLayout;
+  private selectedStarBuffer!: GPUBuffer;
+  private starLodBuffer!:   GPUBuffer;  // 16-byte uniform: x=fade for HYG stars
+  private mwLodBuffer!:     GPUBuffer;  // 16-byte uniform: x=fade for MW stars
 
-  private bodyCount = 0;
-  private starCount = 0;
+  private bodyCount    = 0;
+  private starCount    = 0;
+  private mwStarCount  = 0;
+  private galaxyCount  = 0;
+  private nebulaCount  = 0;
   private starCapacity = 0;
+
+  // Octant ranges for CPU-side culling (set after catalog sort, null = draw all)
+  private starOctants:   OctantRange[] | null = null;
+  private mwOctants:     OctantRange[] | null = null;
+  private galaxyOctants: OctantRange[] | null = null;
+  private visOctantMask  = 0xff; // all 8 octants visible by default
+
+  // Fixed GPU-buffer slots per body (assigned on first seen, never moved).
+  // Slot i occupies bytes [i * TRAIL_SLOT_BYTES, (i+1) * TRAIL_SLOT_BYTES).
+  private trailSlot      = new Map<number, number>(); // bodyId → slot index
+  private trailSlotCount = 0;
+  // Last-drawn vertex count per slot — needed to call pass.draw with the right count.
+  private trailDrawCount = new Map<number, number>(); // bodyId → vertex count
+
+  // Performance / display settings
+  private _starLimit    = Infinity;
+  private _mwStarLimit  = Infinity;
+  private _galaxyLimit  = Infinity;
+  private _showTrails   = true;
+
+  applySettings(s: {
+    starLimit?:   number;
+    mwStarLimit?: number;
+    galaxyLimit?: number;
+    showTrails?:  boolean;
+  }): void {
+    if (s.starLimit   !== undefined) this._starLimit   = s.starLimit;
+    if (s.mwStarLimit !== undefined) this._mwStarLimit = s.mwStarLimit;
+    if (s.galaxyLimit !== undefined) this._galaxyLimit = s.galaxyLimit;
+    if (s.showTrails  !== undefined) this._showTrails  = s.showTrails;
+  }
 
   constructor(
     private ctx: GPUContext,
     private canvasCtx: GPUCanvasContext,
   ) {}
 
-  init(maxBodies: number, maxStars = 1): void {
+  init(maxBodies: number, maxStars = 1, maxGalaxies = 1): void {
     const { device, format } = this.ctx;
 
     this.cameraBuffer = device.createBuffer({
@@ -55,6 +112,19 @@ export class Renderer {
     this.starBuffer = device.createBuffer({
       label: "catalog-star-storage",
       size:  this.starCapacity * STAR_FLOATS * 4,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+
+    this.galaxyBuffer = device.createBuffer({
+      label: "galaxy-storage",
+      size:  Math.max(1, maxGalaxies) * GALAXY_FLOATS * 4,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+
+    // Nebula buffer: fixed-size (≤ 1 600 nebulas × 64 bytes = 102 kB — still tiny)
+    this.nebulaBuffer = device.createBuffer({
+      label: "nebula-storage",
+      size:  1_600 * NEBULA_FLOATS * 4,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
 
@@ -97,12 +167,42 @@ export class Renderer {
       primitive: { topology: "triangle-list" },
     });
 
+    // ── Selected-star uniform (xyz pos + w=active flag, 16 bytes) ─────────────
+    this.selectedStarBuffer = device.createBuffer({
+      label: "selected-star",
+      size:  16,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    device.queue.writeBuffer(this.selectedStarBuffer, 0, new Float32Array([0, 0, 0, 0]));
+
+    // ── LOD fade uniforms — 16-byte each (x=fade 0..1) ────────────────────
+    this.starLodBuffer = device.createBuffer({
+      label: "star-lod", size: 16,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    this.mwLodBuffer = device.createBuffer({
+      label: "mw-lod", size: 16,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    // HYG starts fully visible; MW stars always fully visible (LOD via frustum culling only)
+    device.queue.writeBuffer(this.starLodBuffer, 0, new Float32Array([1, 0, 0, 0]));
+    device.queue.writeBuffer(this.mwLodBuffer,   0, new Float32Array([1, 0, 0, 0]));
+
+    // ── Milky Way background star buffer (fixed 100k capacity) ────────────
+    this.mwStarBuffer = device.createBuffer({
+      label: "mw-star-storage",
+      size:  200_000 * MW_FLOATS * 4,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+
     // ── Static catalog star pipeline ───────────────────────────────────────
     this.starBGL = device.createBindGroupLayout({
       label: "catalog-star-bgl",
       entries: [
         { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
         { binding: 1, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "read-only-storage" } },
+        { binding: 2, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
+        { binding: 3, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
       ],
     });
     this.starBindGroup = device.createBindGroup({
@@ -110,6 +210,8 @@ export class Renderer {
       entries: [
         { binding: 0, resource: { buffer: this.cameraBuffer } },
         { binding: 1, resource: { buffer: this.starBuffer } },
+        { binding: 2, resource: { buffer: this.selectedStarBuffer } },
+        { binding: 3, resource: { buffer: this.starLodBuffer } },
       ],
     });
     const starShader = device.createShaderModule({ code: starWGSL });
@@ -122,6 +224,108 @@ export class Renderer {
         targets: [{
           format,
           blend: {
+            color: { srcFactor: "src-alpha", dstFactor: "one", operation: "add" },
+            alpha: { srcFactor: "one",       dstFactor: "one", operation: "add" },
+          },
+        }],
+      },
+      primitive: { topology: "triangle-list" },
+    });
+
+    // ── Milky Way background star pipeline ────────────────────────────────
+    this.mwBGL = device.createBindGroupLayout({
+      label: "mw-star-bgl",
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
+        { binding: 1, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "read-only-storage" } },
+        { binding: 2, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
+      ],
+    });
+    this.mwBindGroup = device.createBindGroup({
+      label: "mw-star-bg", layout: this.mwBGL,
+      entries: [
+        { binding: 0, resource: { buffer: this.cameraBuffer } },
+        { binding: 1, resource: { buffer: this.mwStarBuffer } },
+        { binding: 2, resource: { buffer: this.mwLodBuffer } },
+      ],
+    });
+    const mwShader = device.createShaderModule({ code: milkywayWGSL });
+    this.mwPipeline = device.createRenderPipeline({
+      label: "mw-star-pipeline",
+      layout: device.createPipelineLayout({ bindGroupLayouts: [this.mwBGL] }),
+      vertex:   { module: mwShader, entryPoint: "vs_main" },
+      fragment: {
+        module: mwShader, entryPoint: "fs_main",
+        targets: [{
+          format,
+          blend: {
+            color: { srcFactor: "src-alpha", dstFactor: "one", operation: "add" },
+            alpha: { srcFactor: "one",       dstFactor: "one", operation: "add" },
+          },
+        }],
+      },
+      primitive: { topology: "triangle-list" },
+    });
+
+    // ── Galaxy pipeline ────────────────────────────────────────────────────
+    this.galaxyBGL = device.createBindGroupLayout({
+      label: "galaxy-bgl",
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
+        { binding: 1, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "read-only-storage" } },
+      ],
+    });
+    this.galaxyBindGroup = device.createBindGroup({
+      label: "galaxy-bg", layout: this.galaxyBGL,
+      entries: [
+        { binding: 0, resource: { buffer: this.cameraBuffer } },
+        { binding: 1, resource: { buffer: this.galaxyBuffer } },
+      ],
+    });
+    const galaxyShader = device.createShaderModule({ code: galaxyWGSL });
+    this.galaxyPipeline = device.createRenderPipeline({
+      label: "galaxy-pipeline",
+      layout: device.createPipelineLayout({ bindGroupLayouts: [this.galaxyBGL] }),
+      vertex:   { module: galaxyShader, entryPoint: "vs_main" },
+      fragment: {
+        module: galaxyShader, entryPoint: "fs_main",
+        targets: [{
+          format,
+          blend: {
+            color: { srcFactor: "src-alpha", dstFactor: "one", operation: "add" },
+            alpha: { srcFactor: "one",       dstFactor: "one", operation: "add" },
+          },
+        }],
+      },
+      primitive: { topology: "triangle-list" },
+    });
+
+    // ── Nebula pipeline (alpha blend — drawn BEFORE stars, AFTER galaxies) ───
+    this.nebulaBGL = device.createBindGroupLayout({
+      label: "nebula-bgl",
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
+        { binding: 1, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "read-only-storage" } },
+      ],
+    });
+    this.nebulaBindGroup = device.createBindGroup({
+      label: "nebula-bg", layout: this.nebulaBGL,
+      entries: [
+        { binding: 0, resource: { buffer: this.cameraBuffer } },
+        { binding: 1, resource: { buffer: this.nebulaBuffer } },
+      ],
+    });
+    const nebulaShader = device.createShaderModule({ code: nebulaWGSL });
+    this.nebulaPipeline = device.createRenderPipeline({
+      label: "nebula-pipeline",
+      layout: device.createPipelineLayout({ bindGroupLayouts: [this.nebulaBGL] }),
+      vertex:   { module: nebulaShader, entryPoint: "vs_main" },
+      fragment: {
+        module: nebulaShader, entryPoint: "fs_main",
+        targets: [{
+          format,
+          blend: {
+            // Additive blending makes emission nebulas glow correctly
             color: { srcFactor: "src-alpha", dstFactor: "one", operation: "add" },
             alpha: { srcFactor: "one",       dstFactor: "one", operation: "add" },
           },
@@ -170,6 +374,57 @@ export class Renderer {
     });
   }
 
+  /** Store pre-sorted octant ranges for a catalog after sortIntoOctants(). */
+  setStarOctants(ranges: OctantRange[]): void   { this.starOctants   = ranges; }
+  setMwOctants(ranges: OctantRange[]): void     { this.mwOctants     = ranges; }
+  setGalaxyOctants(ranges: OctantRange[]): void { this.galaxyOctants = ranges; }
+
+  /**
+   * Update which octants are visible this frame.
+   * Call once per frame from the render loop with the current camera state.
+   */
+  setVisibleOctantMask(mask: number): void { this.visOctantMask = mask; }
+
+  /** Call after TrailSystem.clear() so slots are reassigned from scratch. */
+  resetTrailSlots(): void {
+    this.trailSlot.clear();
+    this.trailSlotCount = 0;
+    this.trailDrawCount.clear();
+  }
+
+  /** Upload the selected catalog star position (or null to deactivate). */
+  uploadSelectedStar(pos: [number, number, number] | null): void {
+    const data = pos
+      ? new Float32Array([pos[0], pos[1], pos[2], 1.0])
+      : new Float32Array([0, 0, 0, 0]);
+    this.ctx.device.queue.writeBuffer(this.selectedStarBuffer, 0, data);
+  }
+
+  /** Upload 100k Milky Way background stars (once on catalog load). */
+  uploadMilkywayStars(stars: Float32Array): void {
+    this.mwStarCount = stars.length / MW_FLOATS;
+    this.ctx.device.queue.writeBuffer(this.mwStarBuffer, 0, stars as GPUAllowSharedBufferSource);
+  }
+
+  /**
+   * Update LOD fade factor for the nearby HYG star catalog.
+   * MW stars are always fully visible (no distance-based fade).
+   * @param lodHYG  0..1 — 1=full brightness, 0=invisible when camera is far from origin
+   */
+  updateLOD(lodHYG: number): void {
+    this.ctx.device.queue.writeBuffer(this.starLodBuffer, 0, new Float32Array([lodHYG, 0, 0, 0]));
+  }
+
+  uploadGalaxies(galaxies: Float32Array): void {
+    this.galaxyCount = galaxies.length / GALAXY_FLOATS;
+    this.ctx.device.queue.writeBuffer(this.galaxyBuffer, 0, galaxies as GPUAllowSharedBufferSource);
+  }
+
+  uploadNebulas(nebulas: Float32Array): void {
+    this.nebulaCount = nebulas.length / NEBULA_FLOATS;
+    this.ctx.device.queue.writeBuffer(this.nebulaBuffer, 0, nebulas as GPUAllowSharedBufferSource);
+  }
+
   uploadStars(stars: Float32Array): void {
     if (stars.length % STAR_FLOATS !== 0) {
       throw new Error("Star buffer length must be a multiple of STAR_FLOATS.");
@@ -214,6 +469,8 @@ export class Renderer {
       entries: [
         { binding: 0, resource: { buffer: this.cameraBuffer } },
         { binding: 1, resource: { buffer: this.starBuffer } },
+        { binding: 2, resource: { buffer: this.selectedStarBuffer } },
+        { binding: 3, resource: { buffer: this.starLodBuffer } },
       ],
     });
   }
@@ -248,26 +505,96 @@ export class Renderer {
       }],
     });
 
-    // ── Static catalog stars ───────────────────────────────────────────────
-    if (this.starCount > 0) {
-      pass.setPipeline(this.starPipeline);
-      pass.setBindGroup(0, this.starBindGroup);
-      pass.draw(6, this.starCount, 0, 0);
+    // Helper: draw visible octants of a catalog, or fall back to full draw.
+    const drawOctants = (
+      octants: OctantRange[] | null,
+      limit:   number,
+      fullCount: number,
+      drawFull: () => void,
+    ) => {
+      const cap = Math.min(fullCount, limit);
+      if (cap <= 0) return;
+      if (!octants) { drawFull(); return; }
+      // Proportion of each octant to draw (for Settings-based LOD limits).
+      // Each octant is scaled equally — avoids the "cap - first" cutoff bug
+      // that zeroed out octants with high buffer indices.
+      const ratio = fullCount > 0 ? cap / fullCount : 1;
+      for (let q = 0; q < 8; q++) {
+        if (!(this.visOctantMask & (1 << q))) continue;
+        const oct = octants[q]!;
+        if (oct.count <= 0) continue;
+        const count = Math.max(1, Math.round(oct.count * ratio));
+        pass.draw(6, count, 0, oct.first);
+      }
+    };
+
+    // ── Galaxies (furthest layer) ──────────────────────────────────────────
+    pass.setPipeline(this.galaxyPipeline);
+    pass.setBindGroup(0, this.galaxyBindGroup);
+    drawOctants(
+      this.galaxyOctants, this._galaxyLimit, this.galaxyCount,
+      () => pass.draw(6, Math.min(this.galaxyCount, this._galaxyLimit), 0, 0),
+    );
+
+    // ── Nebulas (inside Milky Way — between galaxies and stars) ───────────
+    if (this.nebulaCount > 0) {
+      pass.setPipeline(this.nebulaPipeline);
+      pass.setBindGroup(0, this.nebulaBindGroup);
+      pass.draw(6, this.nebulaCount, 0, 0);
     }
 
+    // ── Milky Way background stars (galaxy-scale LOD layer) ───────────────
+    pass.setPipeline(this.mwPipeline);
+    pass.setBindGroup(0, this.mwBindGroup);
+    drawOctants(
+      this.mwOctants, this._mwStarLimit, this.mwStarCount,
+      () => pass.draw(6, Math.min(this.mwStarCount, this._mwStarLimit), 0, 0),
+    );
+
+    // ── Static catalog stars (nearby HYG, fades out when camera is far) ───
+    pass.setPipeline(this.starPipeline);
+    pass.setBindGroup(0, this.starBindGroup);
+    drawOctants(
+      this.starOctants, this._starLimit, this.starCount,
+      () => pass.draw(6, Math.min(this.starCount, this._starLimit), 0, 0),
+    );
+
     // ── Trails ────────────────────────────────────────────────────────────
-    pass.setPipeline(this.trailPipeline);
-    pass.setBindGroup(0, this.trailBindGroup);
-    let trailOffset = 0;
-    for (const bodyId of trails.bodyIds) {
-      const verts = trails.buildVertices(bodyId);
-      if (!verts) continue;
-      const bytes = verts.byteLength;
-      if (trailOffset + bytes > TRAIL_VTXBUF_BYTES) break;
-      device.queue.writeBuffer(this.trailVertexBuffer, trailOffset, new Float32Array(verts));
-      pass.setVertexBuffer(0, this.trailVertexBuffer, trailOffset, bytes);
-      pass.draw(verts.length / TRAIL_VTXFLOATS);
-      trailOffset += bytes;
+    // Each body owns a fixed slot in the GPU buffer (assigned once, never moved).
+    // Only dirty bodies — those where a new point was recorded this frame — trigger
+    // a writeBuffer call.  Unchanged trails are drawn from the existing GPU data
+    // at zero upload cost: on a paused or slow-timewarp frame this is essentially free.
+    if (this._showTrails) {
+      // Upload only dirty trails
+      for (const bodyId of trails.bodyIds) {
+        if (!trails.isDirty(bodyId)) continue;
+
+        // Assign slot on first encounter
+        if (!this.trailSlot.has(bodyId)) {
+          if (this.trailSlotCount >= TRAIL_MAX_BODIES) continue;
+          this.trailSlot.set(bodyId, this.trailSlotCount++);
+        }
+
+        const verts = trails.buildVertices(bodyId);
+        trails.clearDirty(bodyId);
+        if (!verts || verts.length < 2 * TRAIL_VTXFLOATS) continue;
+
+        const slot       = this.trailSlot.get(bodyId)!;
+        const byteOffset = slot * TRAIL_SLOT_BYTES;
+        device.queue.writeBuffer(this.trailVertexBuffer, byteOffset, verts as GPUAllowSharedBufferSource);
+        this.trailDrawCount.set(bodyId, verts.length / TRAIL_VTXFLOATS);
+      }
+
+      // Draw all known trails using their cached GPU data
+      pass.setPipeline(this.trailPipeline);
+      pass.setBindGroup(0, this.trailBindGroup);
+      for (const bodyId of trails.bodyIds) {
+        const slot  = this.trailSlot.get(bodyId);
+        const count = this.trailDrawCount.get(bodyId) ?? 0;
+        if (slot === undefined || count < 2) continue;
+        pass.setVertexBuffer(0, this.trailVertexBuffer, slot * TRAIL_SLOT_BYTES, count * TRAIL_VTXFLOATS * 4);
+        pass.draw(count);
+      }
     }
 
     // ── Bodies ────────────────────────────────────────────────────────────

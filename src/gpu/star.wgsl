@@ -3,6 +3,10 @@
 // Star storage (32 bytes = 2 x vec4):
 //   vec4 pos_size    - xyz = compressed catalog position, w = visual size multiplier
 //   vec4 color_alpha - rgb = star color, w = alpha
+//
+// Binding 2: selectedStar (16 bytes)
+//   xyz = world-space position of selected star, w = 1.0 if active else 0.0
+//   When a star matches, its size is boosted 20× so it fills the view.
 
 struct Camera {
   viewProj:    mat4x4<f32>,
@@ -15,14 +19,17 @@ struct Star {
   color_alpha: vec4<f32>,
 };
 
-@group(0) @binding(0) var<uniform>       camera: Camera;
-@group(0) @binding(1) var<storage, read> stars: array<Star>;
+@group(0) @binding(0) var<uniform>       camera:       Camera;
+@group(0) @binding(1) var<storage, read> stars:        array<Star>;
+@group(0) @binding(2) var<uniform>       selectedStar: vec4<f32>; // xyz=pos, w=active
+@group(0) @binding(3) var<uniform>       lodFade:      vec4<f32>; // x=fade 0..1, yzw unused
 
 struct VertexOut {
   @builtin(position) clip_pos: vec4<f32>,
   @location(0)       uv:       vec2<f32>,
   @location(1)       color:    vec3<f32>,
   @location(2)       alpha:    f32,
+  @location(3)       selected: f32, // 1.0 if this is the selected star
 };
 
 var<private> quad: array<vec2<f32>, 6> = array<vec2<f32>, 6>(
@@ -30,32 +37,87 @@ var<private> quad: array<vec2<f32>, 6> = array<vec2<f32>, 6>(
   vec2(-1.0, 1.0), vec2(1.0,-1.0), vec2( 1.0,1.0),
 );
 
+fn smoother01(v: f32) -> f32 {
+  let t = clamp(v, 0.0, 1.0);
+  return t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
+}
+
+fn hash13(p: vec3<f32>) -> f32 {
+  return fract(sin(dot(p, vec3<f32>(127.1, 311.7, 74.7))) * 43758.5453);
+}
+
 @vertex
 fn vs_main(
   @builtin(vertex_index)   vi:  u32,
   @builtin(instance_index) idx: u32,
 ) -> VertexOut {
-  let star = stars[idx];
-  let uv = quad[vi];
+  let star   = stars[idx];
+  let uv     = quad[vi];
   let center = star.pos_size.xyz;
   let clip_c = camera.viewProj * vec4(center, 1.0);
 
   var out: VertexOut;
-  out.uv = uv;
-  out.color = star.color_alpha.xyz;
-  out.alpha = star.color_alpha.w;
+  out.uv       = uv;
+  out.color    = star.color_alpha.xyz;
+  out.alpha    = star.color_alpha.w;
+  out.selected = 0.0;
+
+  // ── LOD fade ──────────────────────────────────────────────────────────────
+  // lodFade.x = 0 when camera is far from origin (galaxy view); fade stars out.
+  // A tiny per-star phase offset prevents the whole catalog from blinking as
+  // one sheet when wheel zoom jumps across the transition distance.
+  let baseFade = smoother01(lodFade.x);
+  let phase = hash13(center) * 0.22;
+  out.alpha *= smoother01((baseFade - phase) / 0.78);
 
   if clip_c.w <= 0.0 {
     out.clip_pos = vec4(10.0, 10.0, 10.0, 1.0);
     return out;
   }
 
-  let pxRadius = camera.rightAndMNR.w * star.pos_size.w;
+  // ── Frustum culling ────────────────────────────────────────────────────────
+  // Cull stars whose center projects well outside the visible frame. Keeping a
+  // wider margin avoids edge popping for the larger nearby-star billboards.
+  let ndcX = clip_c.x / clip_c.w;
+  let ndcY = clip_c.y / clip_c.w;
+  if abs(ndcX) > 1.45 || abs(ndcY) > 1.45 {
+    out.clip_pos = vec4(10.0, 10.0, 10.0, 1.0);
+    return out;
+  }
+
   let focalY = camera.upAndFocal.w;
+
+  // Selected star: render as a PHYSICAL SPHERE so it grows as you zoom in.
+  // A fixed-NDC billboard stays the same size regardless of distance, which
+  // makes zoom feel broken. A sphere with radius ≈ 1 solar radius in our
+  // compressed coordinate system creates the natural "approaching a star" sensation.
+  if selectedStar.w > 0.5 {
+    let distToSel = length(center - selectedStar.xyz);
+    if distToSel < 0.5 {
+      out.selected = 1.0;
+
+      // Physical radius ≈ 1 solar radius = 0.005 AU in compressed coordinates.
+      // At 0.5 AU camera distance: apparent radius ≈ 24px. At 0.05 AU: ≈ 240px.
+      let physRadius = 0.005;
+      let physNdcR   = physRadius * focalY / clip_c.w;
+      // Never shrink below 3× the base minimum so the star stays visible at range.
+      let worldR = max(physNdcR, camera.rightAndMNR.w * 3.0) * clip_c.w / focalY;
+
+      out.clip_pos = camera.viewProj * vec4(
+        center + uv.x * camera.rightAndMNR.xyz * worldR
+               + uv.y * camera.upAndFocal.xyz  * worldR,
+        1.0,
+      );
+      return out;
+    }
+  }
+
+  // Normal (non-selected) stars: enforce minimum pixel radius (fixed-NDC billboard).
+  let pxRadius    = camera.rightAndMNR.w * max(star.pos_size.w * 1.8, 0.6);
   let worldRadius = pxRadius * clip_c.w / focalY;
-  let world_pos = center
+  let world_pos   = center
     + uv.x * camera.rightAndMNR.xyz * worldRadius
-    + uv.y * camera.upAndFocal.xyz * worldRadius;
+    + uv.y * camera.upAndFocal.xyz  * worldRadius;
 
   out.clip_pos = camera.viewProj * vec4(world_pos, 1.0);
   return out;
@@ -66,8 +128,30 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   let d = length(in.uv);
   if d > 1.0 { discard; }
 
-  let core = 1.0 - smoothstep(0.0, 0.42, d);
-  let halo = 1.0 - smoothstep(0.35, 1.0, d);
-  let alpha = (core * 0.75 + halo * 0.25) * in.alpha;
-  return vec4<f32>(in.color * alpha, alpha);
+  // ── Physically realistic stellar PSF ─────────────────────────────────────
+  // Real stars have a Lorentzian (power-law) halo, not a smoothstep.
+  // Combination of tight Gaussian core + Lorentzian wings closely matches
+  // what a real star looks like on a CCD or to the dark-adapted human eye.
+  let d2    = d * d;
+  let core  = exp(-d2 * 22.0);                            // tight Gaussian nucleus
+  let wings = max(0.0, 1.0 / (1.0 + d2 * 10.0) - 0.09); // Lorentzian halo
+
+  // ── Core bleaching ────────────────────────────────────────────────────────
+  // Bright stars saturate to near-white in their centres (CCDs overexpose,
+  // the eye bleaches at peak brightness). Faint stars retain their hue fully.
+  var col    = in.color;
+  let bleach = clamp(core * in.alpha * 1.6, 0.0, 1.0);
+  col = mix(col, vec3<f32>(1.0, 0.97, 0.94), bleach * 0.65);
+
+  var alpha = clamp((core * 0.80 + wings * 0.55) * in.alpha * 2.8, 0.0, 1.0);
+
+  // ── Selected star: glowing physical sphere ────────────────────────────────
+  if in.selected > 0.5 {
+    let glow  = exp(-d2 * 4.0);
+    let bloom = max(0.0, 1.0 - d);
+    col   = col + vec3<f32>(glow * 0.5);
+    alpha = clamp(glow * 0.9 + bloom * bloom * 0.35, 0.0, 1.0);
+  }
+
+  return vec4<f32>(col * alpha, alpha);
 }

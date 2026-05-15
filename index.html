@@ -77,7 +77,7 @@
       /* ── HUD ── */
       #hud {
         position: fixed;
-        top: 16px;
+        top: 58px;
         left: 16px;
         color: rgba(255,255,255,0.5);
         font-family: 'SF Mono', 'Fira Code', monospace;
@@ -89,12 +89,52 @@
       #hud .hud-title { color: rgba(255,255,255,0.9); letter-spacing: 0.12em; font-size: 12px; }
       #hud-time {
         color: rgba(255,255,255,0.8);
-        display: block;
-        width: 12ch;
+        display: inline;
         font-size: 12px;
         font-variant-numeric: tabular-nums;
-        text-align: right;
         white-space: nowrap;
+      }
+      #hud-clock {
+        color: rgba(255,255,255,0.45);
+        display: inline;
+        font-size: 11px;
+        font-variant-numeric: tabular-nums;
+        margin-left: 6px;
+        white-space: nowrap;
+        letter-spacing: 0.02em;
+      }
+      #hud-galactic {
+        font-size: 9px;
+        color: rgba(255,255,255,0.28);
+        margin-top: 1px;
+        white-space: nowrap;
+      }
+
+      /* ── Fullscreen button ── */
+      #btn-fullscreen {
+        position: fixed;
+        top: 16px;
+        left: 16px;
+        background: rgba(255,255,255,0.06);
+        border: 1px solid rgba(255,255,255,0.14);
+        border-radius: 6px;
+        color: rgba(255,255,255,0.55);
+        font-size: 15px;
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        z-index: 10;
+        transition: background 0.15s, color 0.15s, border-color 0.15s;
+        line-height: 1;
+        padding: 0;
+      }
+      #btn-fullscreen:hover {
+        background: rgba(255,255,255,0.14);
+        color: rgba(255,255,255,0.9);
+        border-color: rgba(255,255,255,0.28);
       }
 
       /* ── Bottom controls ── */
@@ -130,19 +170,9 @@
       /* Slider block */
       .slider-block {
         display: flex;
-        flex-direction: column;
-        gap: 3px;
-        flex-shrink: 0;
-      }
-      .slider-row {
-        display: flex;
         align-items: center;
         gap: 6px;
-      }
-      .slider-row input[type="range"] {
-        width: 300px;
-        accent-color: #88aaff;
-        cursor: pointer;
+        flex-shrink: 0;
       }
       .tw-cap {
         color: rgba(255,255,255,0.25);
@@ -152,13 +182,28 @@
         white-space: nowrap;
       }
 
-      /* Tick labels beneath the slider */
-      .tick-row {
+      /* Wrapper that holds both the input and the ticks — always the same width */
+      .slider-wrap {
         position: relative;
-        /* match the slider track width: input width minus thumb padding (~14px each side) */
-        width: 300px;
-        margin-left: calc(6px + 14px); /* gap + half-thumb offset */
-        height: 12px;
+        width: 480px;
+        flex-shrink: 0;
+        padding-bottom: 16px; /* make room for the tick-row below */
+      }
+      .slider-wrap input[type="range"] {
+        display: block;
+        width: 100%;
+        accent-color: #88aaff;
+        cursor: pointer;
+      }
+
+      /* Tick labels — absolutely positioned inside .slider-wrap so they share
+         the exact same coordinate space as the input element */
+      .tick-row {
+        position: absolute;
+        top: calc(100% - 14px); /* just below the input */
+        left: 0;
+        width: 100%;
+        height: 14px;
         pointer-events: none;
       }
       .tick-row span {
@@ -178,6 +223,14 @@
         background: rgba(255,255,255,0.2);
         margin: 0 auto 1px;
       }
+      /* Center tick (real-time) is brighter */
+      .tick-row span.tick-center {
+        color: rgba(136,170,255,0.65);
+      }
+      .tick-row span.tick-center::before {
+        background: rgba(136,170,255,0.45);
+        height: 6px;
+      }
 
       #timescale-display {
         color: #88aaff;
@@ -186,7 +239,13 @@
         min-width: 100px;
         text-align: left;
         flex-shrink: 0;
+        background: none;
+        border: none;
+        padding: 0;
+        cursor: pointer;
+        transition: color 0.15s;
       }
+      #timescale-display:hover { color: #aaccff; }
 
       /* ── Nav panel (top-right) ── */
       #nav-wrapper {
@@ -374,6 +433,158 @@
 
       .nav-bottom-pad { height: 8px; }
 
+      /* ── Settings link at bottom of nav ── */
+      #nav-settings-btn {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        width: 100%;
+        padding: 7px 14px;
+        background: none;
+        border: none;
+        border-top: 1px solid rgba(255,255,255,0.07);
+        color: rgba(255,255,255,0.45);
+        font-family: 'SF Mono', 'Fira Code', monospace;
+        font-size: 11px;
+        cursor: pointer;
+        text-align: left;
+        letter-spacing: 0.04em;
+        transition: color 0.15s, background 0.15s;
+        margin-top: 4px;
+      }
+      #nav-settings-btn:hover { color: rgba(255,255,255,0.88); background: rgba(255,255,255,0.05); }
+
+      /* ── Settings modal ── */
+      #settings-modal {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 50;
+        background: rgba(0,0,0,0.45);
+        align-items: center;
+        justify-content: center;
+      }
+      #settings-modal.open { display: flex; }
+      #settings-panel {
+        background: rgba(8,10,22,0.97);
+        border: 1px solid rgba(255,255,255,0.13);
+        border-radius: 12px;
+        width: 340px;
+        max-width: calc(100vw - 32px);
+        padding: 0;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.7);
+        overflow: hidden;
+        font-family: 'SF Mono', 'Fira Code', monospace;
+      }
+      .settings-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 18px 12px;
+        border-bottom: 1px solid rgba(255,255,255,0.08);
+      }
+      .settings-title {
+        font-size: 12px;
+        letter-spacing: 0.12em;
+        color: rgba(255,255,255,0.85);
+      }
+      #settings-close {
+        background: none;
+        border: none;
+        color: rgba(255,255,255,0.40);
+        font-size: 14px;
+        cursor: pointer;
+        padding: 2px 6px;
+        border-radius: 4px;
+        transition: color 0.15s;
+      }
+      #settings-close:hover { color: rgba(255,255,255,0.9); }
+      .settings-section {
+        padding: 12px 18px;
+        border-bottom: 1px solid rgba(255,255,255,0.06);
+      }
+      .settings-section:last-child { border-bottom: none; }
+      .settings-section-label {
+        font-size: 9px;
+        letter-spacing: 0.14em;
+        color: rgba(255,255,255,0.28);
+        margin-bottom: 10px;
+      }
+      .settings-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 4px 0;
+        min-height: 28px;
+      }
+      .settings-row-label {
+        font-size: 11px;
+        color: rgba(255,255,255,0.62);
+      }
+      /* Toggle switch */
+      .s-toggle {
+        position: relative;
+        width: 36px;
+        height: 20px;
+        flex-shrink: 0;
+      }
+      .s-toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
+      .s-track {
+        position: absolute;
+        inset: 0;
+        background: rgba(255,255,255,0.12);
+        border-radius: 20px;
+        cursor: pointer;
+        transition: background 0.2s;
+      }
+      .s-track::after {
+        content: '';
+        position: absolute;
+        left: 2px;
+        top: 2px;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: rgba(255,255,255,0.50);
+        transition: transform 0.2s, background 0.2s;
+      }
+      .s-toggle input:checked + .s-track { background: rgba(80,160,255,0.55); }
+      .s-toggle input:checked + .s-track::after {
+        transform: translateX(16px);
+        background: #7bbfff;
+      }
+      /* Radio chip group */
+      .s-chips {
+        display: flex;
+        gap: 4px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+      .s-chips label {
+        display: flex;
+        align-items: center;
+        cursor: pointer;
+      }
+      .s-chips input[type=radio] { display: none; }
+      .s-chip {
+        padding: 2px 8px;
+        font-size: 10px;
+        font-family: 'SF Mono', 'Fira Code', monospace;
+        color: rgba(255,255,255,0.40);
+        background: rgba(255,255,255,0.06);
+        border: 1px solid rgba(255,255,255,0.10);
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.15s;
+        white-space: nowrap;
+      }
+      .s-chips input[type=radio]:checked + .s-chip {
+        color: #7bbfff;
+        background: rgba(80,140,255,0.15);
+        border-color: rgba(80,140,255,0.40);
+      }
+      .s-chips label:hover .s-chip { border-color: rgba(255,255,255,0.22); color: rgba(255,255,255,0.65); }
+
       /* Moon sub-items */
       .nav-moon { font-size: 11px; padding: 4px 14px; }
       .nav-parent {
@@ -383,34 +594,160 @@
         padding-left: 6px;
       }
 
+      /* ── Canvas context menu ── */
+      #ctx-menu {
+        position: fixed;
+        display: none;
+        background: rgba(8,10,22,0.96);
+        border: 1px solid rgba(255,255,255,0.13);
+        border-radius: 9px;
+        backdrop-filter: blur(14px);
+        min-width: 170px;
+        max-width: 250px;
+        z-index: 30;
+        padding: 5px 0;
+        box-shadow: 0 10px 32px rgba(0,0,0,0.6), 0 0 0 0.5px rgba(255,255,255,0.06);
+        pointer-events: auto;
+        user-select: none;
+      }
+      .ctx-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        padding: 5px 14px;
+        background: none;
+        border: none;
+        color: rgba(255,255,255,0.78);
+        font-size: 11px;
+        font-family: 'SF Mono', 'Fira Code', monospace;
+        cursor: pointer;
+        text-align: left;
+        white-space: nowrap;
+        transition: background 0.1s;
+      }
+      .ctx-item:hover  { background: rgba(255,255,255,0.1); color: #fff; }
+      .ctx-item:active { background: rgba(255,255,255,0.18); }
+      .ctx-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        flex-shrink: 0;
+        box-shadow: 0 0 4px currentColor;
+      }
+      .ctx-label { flex: 1; }
+      .ctx-sub {
+        font-size: 9px;
+        color: rgba(255,255,255,0.28);
+        flex-shrink: 0;
+      }
+      .ctx-sep {
+        height: 1px;
+        background: rgba(255,255,255,0.08);
+        margin: 4px 10px;
+      }
+
+      /* ── Catalog star label (selected exoplanet host star) ── */
+      .catalog-star-label {
+        position: fixed;
+        pointer-events: none;
+        user-select: none;
+        z-index: 6;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .csl-name {
+        font-family: 'SF Mono', 'Fira Code', monospace;
+        font-size: 11px;
+        color: rgba(255,220,100,0.95);
+        text-shadow: 0 0 8px rgba(255,200,60,0.4), 0 1px 3px rgba(0,0,0,0.9);
+        white-space: nowrap;
+        letter-spacing: 0.05em;
+      }
+      .csl-sub {
+        font-family: 'SF Mono', 'Fira Code', monospace;
+        font-size: 9px;
+        color: rgba(255,200,80,0.5);
+        white-space: nowrap;
+      }
+
+      /* ── Galactic-center label — always visible, clickable ── */
+      .galactic-center-label {
+        position: fixed;
+        font-family: 'SF Mono', 'Fira Code', monospace;
+        font-size: 10px;
+        color: rgba(255, 165, 60, 0.92);
+        background: rgba(0, 0, 0, 0.78);
+        padding: 1px 5px;
+        border-radius: 3px;
+        border: 1px solid rgba(255, 150, 50, 0.32);
+        white-space: nowrap;
+        user-select: none;
+        cursor: pointer;
+        z-index: 7;
+        letter-spacing: 0.06em;
+        transition: color 0.15s, border-color 0.15s;
+      }
+      .galactic-center-label:hover {
+        color: rgba(255, 210, 100, 1.0);
+        border-color: rgba(255, 190, 80, 0.60);
+      }
+      .galactic-center-label.pinned {
+        transform: translate(-50%, -50%);
+      }
+
+      /* ── Nearby-star labels (shown at galaxy-scale zoom) ── */
+      .nearby-star-label {
+        position: absolute;
+        font-family: 'SF Mono', 'Fira Code', monospace;
+        font-size: 9px;
+        color: rgba(180, 210, 255, 0.80);
+        white-space: nowrap;
+        pointer-events: none;
+        user-select: none;
+        letter-spacing: 0.06em;
+        /* Opaque dark pad — stays crisp on any bright background */
+        background: rgba(0, 0, 0, 0.70);
+        padding: 1px 3px;
+        border-radius: 2px;
+      }
+
       /* ── Body labels ── */
       .body-label {
         position: absolute;
         font-family: 'SF Mono', 'Fira Code', monospace;
         font-size: 10px;
-        color: rgba(255,255,255,0.22);
+        color: rgba(255,255,255,0.70);
         white-space: nowrap;
         pointer-events: none;
         user-select: none;
-        transition: color 0.18s, text-shadow 0.18s;
-        text-shadow: 0 1px 3px rgba(0,0,0,0.9);
+        transition: color 0.15s;
         letter-spacing: 0.04em;
+        /* Solid dark backing — text never blurs against bright star/planet glow */
+        background: rgba(0, 0, 0, 0.72);
+        padding: 1px 4px;
+        border-radius: 2px;
       }
       .body-label.pinned {
         transform: translate(-50%, -50%);
-        padding: 2px 6px;
-        border: 1px solid rgba(136,170,255,0.18);
+        padding: 2px 7px;
+        border: 1px solid rgba(136,170,255,0.22);
         border-radius: 999px;
-        background: rgba(8,12,24,0.72);
-        color: rgba(210,225,255,0.58);
+        background: rgba(6,10,22,0.82);
+        color: rgba(210,225,255,0.72);
       }
       .body-label.system {
-        color: rgba(230,238,255,0.88);
-        text-shadow: 0 0 10px rgba(136,170,255,0.42), 0 1px 3px rgba(0,0,0,0.9);
+        color: rgba(230,238,255,0.95);
+        background: rgba(0,0,0,0.80);
       }
       .body-label.hovered {
-        color: rgba(255,255,255,0.92);
-        text-shadow: 0 0 8px rgba(136,170,255,0.45), 0 1px 3px rgba(0,0,0,0.9);
+        color: rgba(255,255,255,0.98);
+        background: rgba(0,0,0,0.85);
+      }
+      .body-label.sun {
+        color: rgba(255, 90, 60, 1.0) !important;
+        background: rgba(0, 0, 0, 0.80) !important;
       }
 
       /* ── Jump-to-date modal ── */
@@ -514,6 +851,11 @@
   <body>
     <canvas id="canvas"></canvas>
 
+    <!-- Context menu — shown on left-click near a celestial body -->
+    <div id="ctx-menu">
+      <div id="ctx-menu-list"></div>
+    </div>
+
     <!-- Jump-to-date modal -->
     <div id="date-modal">
       <div class="modal-box">
@@ -550,11 +892,14 @@
       </p>
     </div>
 
+    <button id="btn-fullscreen" title="Toggle fullscreen">⛶</button>
+
     <div id="hud">
       <div class="hud-title">CELESTIA</div>
       <div id="hud-fps">FPS —</div>
       <div id="hud-bodies">Bodies —</div>
-      <div id="hud-time">—</div>
+      <div><span id="hud-time">—</span><span id="hud-clock">—</span></div>
+      <div id="hud-galactic"></div>
       <div id="hud-source" style="font-size:9px;margin-top:2px;color:rgba(255,255,255,0.3)">J2000.0 preset</div>
     </div>
 
@@ -633,6 +978,81 @@
 
           <div class="nav-bottom-pad"></div>
         </div><!-- #nav-scroll -->
+
+        <button id="nav-settings-btn">⚙ Settings</button>
+      </div>
+    </div>
+
+    <!-- Settings modal -->
+    <div id="settings-modal">
+      <div id="settings-panel">
+        <div class="settings-header">
+          <span class="settings-title">SETTINGS</span>
+          <button id="settings-close">✕</button>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-label">DISPLAY</div>
+          <div class="settings-row">
+            <span class="settings-row-label">Object labels</span>
+            <label class="s-toggle">
+              <input type="checkbox" id="set-labels" checked>
+              <span class="s-track"></span>
+            </label>
+          </div>
+          <div class="settings-row">
+            <span class="settings-row-label">Orbital trails</span>
+            <label class="s-toggle">
+              <input type="checkbox" id="set-trails" checked>
+              <span class="s-track"></span>
+            </label>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-label">SIMULATION PRECISION</div>
+          <div class="settings-row">
+            <span class="settings-row-label">Physics step size</span>
+            <div class="s-chips">
+              <label title="15 min — max ~3.4 yr/s. All moons highly accurate.">
+                <input type="radio" name="sim-step" value="precise" checked><span class="s-chip">Precise</span>
+              </label>
+              <label title="1 hr — max ~13.7 yr/s. Planets perfect, inner moons ~0.2°/orbit.">
+                <input type="radio" name="sim-step" value="balanced"><span class="s-chip">Balanced</span>
+              </label>
+              <label title="6 hr — max ~82 yr/s. Planets accurate, inner moons ~3–7°/orbit.">
+                <input type="radio" name="sim-step" value="fast"><span class="s-chip">Fast</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-label">RENDERING — reduce if FPS is low</div>
+          <div class="settings-row">
+            <span class="settings-row-label">Milky Way stars</span>
+            <div class="s-chips">
+              <label><input type="radio" name="mw-stars" value="100000"><span class="s-chip">100k</span></label>
+              <label><input type="radio" name="mw-stars" value="200000" checked><span class="s-chip">200k</span></label>
+            </div>
+          </div>
+          <div class="settings-row">
+            <span class="settings-row-label">Nearby stars</span>
+            <div class="s-chips">
+              <label><input type="radio" name="nearby-stars" value="10000"><span class="s-chip">10k</span></label>
+              <label><input type="radio" name="nearby-stars" value="50000"><span class="s-chip">50k</span></label>
+              <label><input type="radio" name="nearby-stars" value="100000" checked><span class="s-chip">100k</span></label>
+            </div>
+          </div>
+          <div class="settings-row">
+            <span class="settings-row-label">Galaxies</span>
+            <div class="s-chips">
+              <label><input type="radio" name="galaxies" value="10000"><span class="s-chip">10k</span></label>
+              <label><input type="radio" name="galaxies" value="50000"><span class="s-chip">50k</span></label>
+              <label><input type="radio" name="galaxies" value="100000" checked><span class="s-chip">100k</span></label>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -641,36 +1061,33 @@
       <button id="btn-pause">⏸</button>
       <button id="btn-reset">↺ Reset</button>
 
+      <!--
+        Slider: symmetric -8.5 → 8.5  (span = 17).
+        timewarp = sign(v) × 10^|v|  sim-seconds per real-second.
+        v = 0  → 1× real-time (center); ±8.5 → ±10 yr/s (ends).
+        Tick left% accounts for 7 px half-thumb:
+          left% = (7 + f × 466) / 480 × 100   where f = (v + 8.5) / 17
+      -->
+      <span class="tw-cap">◀ 10yr/s</span>
       <div class="slider-block">
-        <div class="slider-row">
-          <span class="tw-cap">◀◀ rev</span>
-          <!--
-            Slider range: -3.5 → 8.5  (total span = 12)
-            timewarp = sign(v) × 10^|v|  sim-seconds per real-second
-            v = 0 → 1× real-time
-            v = 1.78 → 60× = 1 min/s
-            v = 3.56 → 3600× = 1 hr/s
-            v = 4.94 → 86400× = 1 day/s
-            v = 7.50 → 31 557 600× = 1 yr/s
-            v = 8.50 → 315 576 000× ≈ 10 yr/s
-          -->
-          <input type="range" id="timescale" min="-3.5" max="8.5" step="0.05" value="0" />
-          <span class="tw-cap">10yr/s ▶▶</span>
-        </div>
-        <!--
-          Tick positions: left% = (v - (-3.5)) / 12 × 100
-          real(0)=29.2%  min(1.78)=44.0%  hr(3.56)=58.8%  day(4.94)=70.3%  yr(7.5)=91.7%  10yr(8.5)=100%
-        -->
-        <div class="tick-row">
-          <span style="left:29.2%">real</span>
-          <span style="left:44.0%">min/s</span>
-          <span style="left:58.8%">hr/s</span>
-          <span style="left:70.3%">day/s</span>
-          <span style="left:91.7%">yr/s</span>
+        <div class="slider-wrap">
+          <input type="range" id="timescale" min="-8.5" max="8.5" step="0.05" value="0" />
+          <div class="tick-row">
+            <span style="left: 7.2%">◀yr/s</span>
+            <span style="left:21.8%">◀day/s</span>
+            <span style="left:29.7%">◀hr/s</span>
+            <span style="left:39.8%">◀min/s</span>
+            <span style="left:50.0%" class="tick-center">real</span>
+            <span style="left:60.2%">min/s</span>
+            <span style="left:70.3%">hr/s</span>
+            <span style="left:78.2%">day/s</span>
+            <span style="left:92.8%">yr/s</span>
+          </div>
         </div>
       </div>
+      <span class="tw-cap">10yr/s ▶</span>
 
-      <span id="timescale-display">▶ real-time</span>
+      <button id="timescale-display" title="Click to return to real-time">▶ real-time</button>
       <button id="btn-jump" title="Jump to a specific date">🗓 Jump</button>
     </div>
 

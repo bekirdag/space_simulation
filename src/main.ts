@@ -1,9 +1,10 @@
 import { initGPU } from "./gpu/device";
 import { Renderer } from "./gpu/renderer";
 import { Camera } from "./scene/camera";
-import { HUD, simToCalendar } from "./ui/hud";
+import { HUD } from "./ui/hud";
 import { NavPanel } from "./ui/nav";
 import { LabelManager } from "./ui/labels";
+import { ContextMenu } from "./ui/context-menu";
 import { TrailSystem } from "./scene/trail-system";
 import { stepLeapfrog } from "./physics/integrator";
 import { solarSystem, binaryStars } from "./physics/presets";
@@ -14,11 +15,11 @@ import {
   stepGalacticOrigin,
   type GalacticOriginState,
 } from "./physics/galactic-frame";
-import { createSecondaryBody } from "./physics/moons";
+import { createSecondaryBody, SYSTEM_VIEW } from "./physics/moons";
 import { fetchStatesForDate, utcDateStr, dateStrToMs, TOTAL_BODIES } from "./services/horizons";
 import { type Body } from "./physics/body";
 import { type HorizonsResult } from "./services/horizons";
-import { SECONDS_PER_YEAR, MAX_SUBSTEP_YR } from "./physics/constants";
+import { SECONDS_PER_YEAR, MAX_SUBSTEP_YR, BodyType } from "./physics/constants";
 import {
   DEFAULT_VISIBLE_STAR_COUNT,
   STAR_FLOATS,
@@ -31,13 +32,43 @@ import {
   type CatalogStar,
   type StarBuffer,
 } from "./catalog/stars";
+import {
+  EXOPLANET_CATALOG,
+  EXOPLANET_VISUAL_RADIUS_AU,
+  exoplanetColor,
+  initialPhase,
+  planetWorldPos,
+  planetsForHost,
+  searchExoplanets,
+  type ExoplanetData,
+} from "./catalog/exoplanets";
+import {
+  GALAXY_FLOATS,
+  loadGalaxyCatalog,
+  searchGalaxies,
+  type GalaxyBuffer,
+  type NamedGalaxy,
+} from "./catalog/galaxies";
+import { loadMilkywayStars } from "./catalog/milkyway";
+import { NEARBY_STAR_LABELS, SGR_A_STAR_POS } from "./catalog/nearby-stars";
+import { sortIntoOctants, visibleOctantMask } from "./gpu/sky-cull";
+import {
+  buildNebulaBuffer,
+  nebulaPositions,
+  NEB_COLOR,
+  type NebulaDet,
+} from "./catalog/nebulas";
 
 const MAX_BODIES = 1024;
-const MAX_CATALOG_STARS = DEFAULT_VISIBLE_STAR_COUNT + 8_000;
-// 1-hour sub-steps + 27 bodies: at 10 yr/s → simDt≈61 days → 61×24=1464 steps.
-// Cap at 2000 so extreme timewarps stay responsive (capped subDt ≈ 44 min).
+const MAX_CATALOG_STARS  = DEFAULT_VISIBLE_STAR_COUNT + 8_000;
+const MAX_CATALOG_GALAXIES = 100_000;
 const MAX_STEPS  = 2000;
-const STARTUP_TRAIL_YEARS = 4;
+// Active substep size (yr) — changed via Settings panel.
+// Larger steps = faster simulation but reduced moon accuracy.
+let simSubstepYr = MAX_SUBSTEP_YR; // default: 15 min (precise)
+// With angle-based trail recording, startup years determines arc coverage for outer planets.
+// 50 yr: Saturn ~1.7 orbits, Uranus ~0.6 orbit, Neptune ~0.3 orbit; adds ~0.6s to load.
+const STARTUP_TRAIL_YEARS = 50;
 const STARTUP_TRAIL_STEP_YR = 1 / 365.25;
 const STARTUP_TRAIL_STEPS = Math.round(STARTUP_TRAIL_YEARS / STARTUP_TRAIL_STEP_YR);
 const STARTUP_TRAIL_BODIES = new Set([
@@ -50,6 +81,12 @@ const STARTUP_TRAIL_BODIES = new Set([
   "Saturn",
   "Uranus",
   "Neptune",
+  // Dwarf planets — seeded if Horizons loaded them; silently skipped otherwise
+  "Pluto",
+  "Eris",
+  "Ceres",
+  "Haumea",
+  "Makemake",
 ]);
 
 // ── Loading overlay ───────────────────────────────────────────────────────────
@@ -68,6 +105,15 @@ function setLoadProg(n: number, t: number) {
 function hideLoading() {
   loadingEl.classList.add("hidden");
   setTimeout(() => loadingEl.classList.add("gone"), 450);
+}
+
+function clamp01(v: number): number {
+  return Math.max(0, Math.min(1, v));
+}
+
+function smootherStep01(v: number): number {
+  const t = clamp01(v);
+  return t * t * t * (t * (t * 6 - 15) + 10);
 }
 
 function horizonsSourceLabel(result: HorizonsResult, dateStr: string): string {
@@ -132,16 +178,16 @@ function seedStartupTrails(
   }
 
   let historyTime = -STARTUP_TRAIL_STEPS * STARTUP_TRAIL_STEP_YR;
-  trails.record(historyBodies, historyTime);
+  trails.record(historyBodies);
 
   for (let i = 1; i < STARTUP_TRAIL_STEPS; i++) {
     stepSimulationState(historyBodies, historyOrigin, STARTUP_TRAIL_STEP_YR);
     historyTime += STARTUP_TRAIL_STEP_YR;
-    trails.record(historyBodies, historyTime);
+    trails.record(historyBodies);
   }
 
   // End on the exact loaded state rather than the numerically round-tripped clone.
-  trails.record(recordedCurrentBodies, 0);
+  trails.record(recordedCurrentBodies);
 }
 
 async function main(): Promise<void> {
@@ -157,6 +203,64 @@ async function main(): Promise<void> {
   resizeCanvas();
   window.addEventListener("resize", resizeCanvas);
 
+  // ── Fullscreen toggle ─────────────────────────────────────────────────────
+  const btnFS = document.getElementById("btn-fullscreen")!;
+  function updateFSIcon() {
+    btnFS.textContent = document.fullscreenElement ? "✕" : "⛶";
+    (btnFS as HTMLButtonElement).title = document.fullscreenElement
+      ? "Exit fullscreen" : "Enter fullscreen";
+  }
+  btnFS.addEventListener("click", () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    } else {
+      document.exitFullscreen().catch(() => {});
+    }
+  });
+  document.addEventListener("fullscreenchange", updateFSIcon);
+
+  // ── Settings panel ────────────────────────────────────────────────────────
+  const settingsModal   = document.getElementById("settings-modal")!;
+  const settingsCloseBtn = document.getElementById("settings-close")!;
+  const navSettingsBtn  = document.getElementById("nav-settings-btn")!;
+
+  function openSettings()  { settingsModal.classList.add("open"); }
+  function closeSettings() { settingsModal.classList.remove("open"); }
+
+  navSettingsBtn.addEventListener("click",  openSettings);
+  settingsCloseBtn.addEventListener("click", closeSettings);
+  settingsModal.addEventListener("click", e => { if (e.target === settingsModal) closeSettings(); });
+  document.addEventListener("keydown", e => { if (e.key === "Escape") closeSettings(); });
+
+  function applySettings(): void {
+    const showLabels = (document.getElementById("set-labels") as HTMLInputElement).checked;
+    const showTrails = (document.getElementById("set-trails") as HTMLInputElement).checked;
+    const mwVal      = parseInt((document.querySelector('input[name="mw-stars"]:checked') as HTMLInputElement)?.value ?? "200000");
+    const nearbyVal  = parseInt((document.querySelector('input[name="nearby-stars"]:checked') as HTMLInputElement)?.value ?? "100000");
+    const galVal     = parseInt((document.querySelector('input[name="galaxies"]:checked') as HTMLInputElement)?.value ?? "100000");
+    const stepPreset = (document.querySelector('input[name="sim-step"]:checked') as HTMLInputElement)?.value ?? "precise";
+
+    // Map preset to substep size in years
+    const stepMap: Record<string, number> = {
+      precise:  1 / (365.25 * 24 * 4),   // 15 min
+      balanced: 1 / (365.25 * 24),        // 1 hr
+      fast:     6 / (365.25 * 24),        // 6 hr
+    };
+    simSubstepYr   = stepMap[stepPreset] ?? MAX_SUBSTEP_YR;
+    physicsAccumYr = 0; // reset accumulator when step size changes
+
+    labels.setVisible(showLabels);
+    renderer.applySettings({
+      showTrails,
+      mwStarLimit:  mwVal,
+      starLimit:    nearbyVal,
+      galaxyLimit:  galVal,
+    });
+  }
+
+  // Apply on any change inside the modal
+  settingsModal.addEventListener("change", applySettings);
+
   let gpu: Awaited<ReturnType<typeof initGPU>>;
   try {
     gpu = await initGPU(canvas);
@@ -168,7 +272,7 @@ async function main(): Promise<void> {
   }
 
   const renderer = new Renderer(gpu.ctx, gpu.canvasCtx);
-  renderer.init(MAX_BODIES, MAX_CATALOG_STARS);
+  renderer.init(MAX_BODIES, MAX_CATALOG_STARS, MAX_CATALOG_GALAXIES);
 
   const camera = new Camera();
   camera.attach(canvas);
@@ -190,6 +294,10 @@ async function main(): Promise<void> {
   void loadVisibleStarField().then(({ data, source }) => {
     visibleStarBuffer = data;
     uploadCatalogStars();
+    // Sort the HYG star buffer into octants for CPU-side frustum culling
+    const combined = combineStarBuffers(visibleStarBuffer, exoplanetHostBuffer);
+    renderer.setStarOctants(sortIntoOctants(combined));
+    renderer.uploadStars(combined);
     console.info(`Loaded ${data.length / STAR_FLOATS} visible stars from ${source}.`);
   }).catch(err => {
     console.warn("Visible star catalog failed:", err);
@@ -206,6 +314,75 @@ async function main(): Promise<void> {
     console.warn("Exoplanet host catalog failed:", err);
   });
 
+  // ── Galaxy catalog ─────────────────────────────────────────────────────────
+  let galaxyBuffer: GalaxyBuffer = new Float32Array(0);
+  let galaxyNames:  NamedGalaxy[] = [];
+
+  void loadGalaxyCatalog().then(({ data, names, source }) => {
+    galaxyBuffer = data;
+    galaxyNames  = names;
+    renderer.setGalaxyOctants(sortIntoOctants(data));
+    renderer.uploadGalaxies(data);
+    console.info(`Loaded ${data.length / GALAXY_FLOATS} galaxies from ${source}`);
+  }).catch(err => {
+    console.warn("Galaxy catalog failed:", err);
+  });
+
+  // ── Milky Way background star catalog (galaxy-scale LOD layer) ───────────
+  void loadMilkywayStars().then(({ data, source }) => {
+    renderer.setMwOctants(sortIntoOctants(data));
+    renderer.uploadMilkywayStars(data);
+    console.info(`Loaded ${data.length / 8} Milky Way background stars from ${source}`);
+  }).catch(err => {
+    console.warn("Milky Way star catalog failed:", err);
+  });
+
+  // ── Nebula catalog (Milky Way gas clouds) ─────────────────────────────────
+  const nebulaBuf = buildNebulaBuffer();
+  renderer.uploadNebulas(nebulaBuf);
+  const nebulaDets: NebulaDet[] = nebulaPositions();
+  console.info(`Loaded ${nebulaDets.length} Milky Way nebulas`);
+
+  // ── Exoplanet visual bodies ───────────────────────────────────────────────
+  // These are NOT in the physics simulation. They are added to `bodies` for
+  // rendering + label display only, and are excluded by the integrator.
+  let exoplanetBodyIds = new Set<number>(); // ids of current exoplanet entries in bodies
+  let exoBodyIdCounter = 90_000;            // unique ids above physics bodies
+
+  function getStarWorldPos(hostName: string): [number, number, number] | null {
+    const star = exoplanetHosts.find(s => s.name === hostName);
+    return star ? [star.x, star.y, star.z] : null;
+  }
+
+  function setExoplanetBodies(hostName: string | null): void {
+    // Remove old exoplanet bodies
+    for (const id of exoplanetBodyIds) {
+      const idx = bodies.findIndex(b => b.id === id);
+      if (idx !== -1) bodies.splice(idx, 1);
+    }
+    exoplanetBodyIds.clear();
+
+    if (!hostName) return;
+    const sp = getStarWorldPos(hostName);
+    if (!sp) return;
+
+    const planets = planetsForHost(hostName);
+    for (const p of planets) {
+      const [x, y, z] = planetWorldPos(sp[0], sp[1], sp[2], p, simYears);
+      const body: Body = {
+        id:     exoBodyIdCounter++,
+        name:   p.name,
+        mass:   0,
+        radius: EXOPLANET_VISUAL_RADIUS_AU,
+        color:  exoplanetColor(p.radiusEarth),
+        type:   BodyType.Exoplanet,
+        x, y, z, vx: 0, vy: 0, vz: 0,
+      };
+      bodies.push(body);
+      exoplanetBodyIds.add(body.id);
+    }
+  }
+
   // ── Simulation state ──────────────────────────────────────────────────────
   let bodies: Body[] = solarSystem();
   let simYears = 0;
@@ -213,6 +390,13 @@ async function main(): Promise<void> {
   let paused   = false;
   let pausedTW = timewarp;
   let galacticOrigin = createGalacticOriginState();
+
+  // Accumulates "owed" simulation time when at fast timewarp and using fixed
+  // 15-min steps (so the average rate matches the slider even though we advance
+  // in discrete chunks).  Reset on direction change or pause.
+  let physicsAccumYr = 0;
+  let lastTwSign     = 1;
+  let actualSimRate  = 0; // smoothed actual simulation rate in yr/s
 
   // ── Load ephemeris from Horizons (or fall back to J2000.0) ────────────────
   async function loadEphemeris(dateStr: string, msg: string): Promise<boolean> {
@@ -225,7 +409,26 @@ async function main(): Promise<void> {
       simYears = 0;
       loadTextEl.textContent = `Calculating ${STARTUP_TRAIL_YEARS} years of starter trails...`;
       loadProgEl.textContent = `${STARTUP_TRAIL_BODIES.size} tracked bodies`;
+      renderer.resetTrailSlots();
       seedStartupTrails(trails, bodies, galacticOrigin);
+
+      // ── Advance from UTC midnight to the current second ──────────────────
+      // Horizons positions are at 00:00:00 UTC of dateStr.  Simulate forward
+      // so the displayed time and body positions match right now.
+      // At most 86 400 s ÷ 900 s/step = 96 steps — completes in milliseconds.
+      const elapsedMs = Date.now() - result.epochMs;
+      if (elapsedMs > 0 && elapsedMs < 86_400_000) {
+        loadTextEl.textContent = 'Advancing to current time of day…';
+        const elapsedYr = elapsedMs / 1000 / SECONDS_PER_YEAR;
+        const nSteps    = Math.ceil(elapsedYr / MAX_SUBSTEP_YR);
+        for (let i = 0; i < nSteps; i++) {
+          const dt = Math.min(MAX_SUBSTEP_YR, elapsedYr - i * MAX_SUBSTEP_YR);
+          stepSimulationState(bodies, galacticOrigin, dt);
+          simYears += dt;
+        }
+        trails.record(bodies);
+      }
+
       renderer.uploadBodies(bodies);
 
       sourceEl.textContent = horizonsSourceLabel(result, dateStr);
@@ -246,6 +449,7 @@ async function main(): Promise<void> {
       hud.epochMs = dateStrToMs(dateStr);
       galacticOrigin = createGalacticOriginState(hud.epochMs);
       simYears = 0;
+      renderer.resetTrailSlots();
       seedStartupTrails(trails, bodies, galacticOrigin);
       renderer.uploadBodies(bodies);
       sourceEl.textContent = `J2000.0 preset (offline)`;
@@ -261,6 +465,8 @@ async function main(): Promise<void> {
   // ── Nav panel ──────────────────────────────────────────────────────────────
   function loadPreset(name: string) {
     if (name === "solar-system") {
+      nav.clearFocusedBody();
+      simYears = 0;
       bodies = solarSystem();
       camera.travelTo(0, 0, 0, 55);
       void loadEphemeris(utcDateStr(new Date()), "Fetching current planetary positions...");
@@ -274,41 +480,209 @@ async function main(): Promise<void> {
     }
     simYears = 0;
     trails.clear();
+    renderer.resetTrailSlots();
     renderer.uploadBodies(bodies);
-    trails.record(bodies, simYears - 1);
+    trails.record(bodies);
   }
 
   const nav = new NavPanel(camera, () => bodies, loadPreset, {
-    searchCatalog: (query) => searchCatalogStars(exoplanetHosts, query, 8),
+    // Combine host-star search with individual exoplanet search
+    searchCatalog: (query) => {
+      const starHits = searchCatalogStars(exoplanetHosts, query, 5);
+      const exoHits  = searchExoplanets(query, getStarWorldPos, simYears, 5);
+      return [
+        ...starHits,
+        // Map exoplanet results to StarSearchResult shape
+        ...exoHits.map(r => ({
+          id:            `exo:${r.planet.hostName}:${r.planet.name}`,
+          label:         r.label,
+          subtitle:      r.subtitle,
+          x: r.x, y: r.y, z: r.z,
+          focusDistance: r.focusDistance,
+          color:         exoplanetColor(r.planet.radiusEarth),
+        })),
+      ];
+    },
     getCatalogStatus: () => catalogStatus,
+    // Called whenever a catalog search result is clicked.
+    // If the id encodes an exoplanet, load that star's planet bodies.
+    onCatalogItemClick: (id: string) => {
+      if (id.startsWith("exo:")) {
+        const hostName = id.split(":")[1] ?? null;
+        setExoplanetBodies(hostName);
+      } else {
+        // Clicked a host star → load its exoplanets too
+        const star = exoplanetHosts.find(s => s.id === id);
+        setExoplanetBodies(star?.name ?? null);
+      }
+      renderer.uploadBodies(bodies);
+    },
   });
 
   // ── Canvas click → select body ────────────────────────────────────────────
-  // Distinguishes a click (< 5px movement) from a drag.
-  let pointerDownAt = { x: 0, y: 0 };
+  const contextMenu = new ContextMenu();
+
+  // ── Left-click: direct navigation ─────────────────────────────────────────
+  // Single click → system view; double-click → close-up zoom.
+  let pointerDownAt    = { x: 0, y: 0 };
+  let rightDownAt      = { x: 0, y: 0 };
+  let lastClickMs      = 0;
+  // Flag set during mousemove while right button is held; cleared on next
+  // right-mousedown. Used to suppress the context menu after a drag.
+  let rightDragHappened = false;
+
   canvas.addEventListener("mousedown", e => {
-    pointerDownAt = { x: e.clientX, y: e.clientY };
+    if (e.button === 0) pointerDownAt = { x: e.clientX, y: e.clientY };
+    if (e.button === 2) {
+      rightDownAt     = { x: e.clientX, y: e.clientY };
+      rightDragHappened = false;
+    }
   });
+
+  window.addEventListener("mousemove", e => {
+    if (rightDragHappened || !(e.buttons & 2)) return;
+    const dx = e.clientX - rightDownAt.x;
+    const dy = e.clientY - rightDownAt.y;
+    if (dx * dx + dy * dy > 25) rightDragHappened = true; // > 5 px
+  });
+
   canvas.addEventListener("mouseup", e => {
-    if (e.button !== 0) return; // left button only
+    if (e.button !== 0) return;
     const dx = e.clientX - pointerDownAt.x;
     const dy = e.clientY - pointerDownAt.y;
-    if (Math.sqrt(dx*dx + dy*dy) > 5) {
-      nav.clearFocusedBody();
-      return; // was a drag — ignore
-    }
+    if (Math.sqrt(dx*dx + dy*dy) > 5) return;
+
+    contextMenu.hide();
+
+    const now = Date.now();
+    const isDbl = now - lastClickMs < 300;
+    lastClickMs = now;
 
     const body = labels.findBodyAtScreen(e.clientX, e.clientY);
-    if (!body) return;
+    if (!body) { nav.clearFocusedBody(); return; }
 
-    // Navigation chooses a system-scale view for planets and moons.
-    nav.travelToSystem(body.name);
+    if (isDbl) nav.travelToClose(body.name);
+    else       nav.travelToSystem(body.name);
   });
 
-  canvas.addEventListener("dblclick", e => {
-    const body = labels.findBodyAtScreen(e.clientX, e.clientY);
-    if (!body) return;
-    nav.travelToClose(body.name);
+  // ── Right-click: context menu ─────────────────────────────────────────────
+  // Always suppress the native browser menu.
+  canvas.addEventListener("contextmenu", e => e.preventDefault());
+
+  // Show our custom menu on right-button RELEASE — but only when no drag
+  // occurred.  mouseup fires after all mousemove events, so rightDragHappened
+  // is already authoritative by the time this runs.  This is cross-platform
+  // reliable; using the 'contextmenu' event is not (macOS fires it at mousedown).
+  function openContextMenuAt(cx: number, cy: number): void {
+    const half = 20; // 40×40 px detection box
+
+    // ── Simulation bodies ──────────────────────────────────────────────────
+    const nearby = labels.findBodiesAtScreen(cx, cy, half);
+
+    // ── Catalog stars (exoplanet hosts) ───────────────────────────────────
+    const nearbyStars: CatalogStar[] = [];
+    if (lastViewProj && exoplanetHosts.length > 0) {
+      const vp   = lastViewProj;
+      const cssW = window.innerWidth;
+      const cssH = window.innerHeight;
+      for (const star of exoplanetHosts) {
+        const sx_ = vp[0]!*star.x + vp[4]!*star.y + vp[8]! *star.z + vp[12]!;
+        const sy_ = vp[1]!*star.x + vp[5]!*star.y + vp[9]! *star.z + vp[13]!;
+        const sw  = vp[3]!*star.x + vp[7]!*star.y + vp[11]!*star.z + vp[15]!;
+        if (sw <= 0) continue;
+        const sx = (sx_ / sw + 1) * 0.5 * cssW;
+        const sy = (1 - sy_ / sw) * 0.5 * cssH;
+        if (Math.abs(cx - sx) <= half && Math.abs(cy - sy) <= half) nearbyStars.push(star);
+      }
+    }
+
+    // ── Galaxies ──────────────────────────────────────────────────────────
+    interface GalaxyHit { name: string; dist: number; x: number; y: number; z: number }
+    const nearbyGalaxies: GalaxyHit[] = [];
+    if (lastViewProj && galaxyBuffer.length > 0) {
+      const vp   = lastViewProj;
+      const cssW = window.innerWidth;
+      const cssH = window.innerHeight;
+      const n    = galaxyBuffer.length / GALAXY_FLOATS;
+      for (let i = 0; i < n; i++) {
+        const o  = i * GALAXY_FLOATS;
+        const gx = galaxyBuffer[o]!, gy = galaxyBuffer[o+1]!, gz = galaxyBuffer[o+2]!;
+        const sx_ = vp[0]!*gx + vp[4]!*gy + vp[8]! *gz + vp[12]!;
+        const sy_ = vp[1]!*gx + vp[5]!*gy + vp[9]! *gz + vp[13]!;
+        const sw  = vp[3]!*gx + vp[7]!*gy + vp[11]!*gz + vp[15]!;
+        if (sw <= 0) continue;
+        const sx = (sx_ / sw + 1) * 0.5 * cssW;
+        const sy = (1 - sy_ / sw) * 0.5 * cssH;
+        if (Math.abs(cx - sx) <= half && Math.abs(cy - sy) <= half) {
+          const named = galaxyNames.find(g => g.index === i);
+          nearbyGalaxies.push({ name: named?.name ?? "Galaxy", dist: named?.dist ?? 0, x: gx, y: gy, z: gz });
+        }
+      }
+    }
+
+    // ── Nebulas ───────────────────────────────────────────────────────────
+    interface NebHit { name: string; type: number; x: number; y: number; z: number }
+    const nearbyNebulas: NebHit[] = [];
+    if (lastViewProj) {
+      const vp   = lastViewProj;
+      const cssW = window.innerWidth;
+      const cssH = window.innerHeight;
+      for (const neb of nebulaDets) {
+        const sx_ = vp[0]!*neb.x + vp[4]!*neb.y + vp[8]! *neb.z + vp[12]!;
+        const sy_ = vp[1]!*neb.x + vp[5]!*neb.y + vp[9]! *neb.z + vp[13]!;
+        const sw  = vp[3]!*neb.x + vp[7]!*neb.y + vp[11]!*neb.z + vp[15]!;
+        if (sw <= 0) continue;
+        const sx = (sx_ / sw + 1) * 0.5 * cssW;
+        const sy = (1 - sy_ / sw) * 0.5 * cssH;
+        if (Math.abs(cx - sx) <= half && Math.abs(cy - sy) <= half) {
+          nearbyNebulas.push({ name: neb.name, type: neb.type, x: neb.x, y: neb.y, z: neb.z });
+        }
+      }
+    }
+
+    if (nearby.length === 0 && nearbyStars.length === 0 && nearbyGalaxies.length === 0 && nearbyNebulas.length === 0) {
+      contextMenu.hide();
+      return;
+    }
+
+    contextMenu.show(
+      cx, cy,
+      nearby,
+      (body) => nav.travelToSystem(body.name),
+      nearbyStars,
+      (star) => {
+        const distAu    = Math.sqrt(star.x**2 + star.y**2 + star.z**2);
+        const focusDist = Math.min(5, Math.max(0.5, distAu * 5e-4));
+        const distLabel = star.distancePc != null
+          ? `${star.distancePc < 100 ? star.distancePc.toFixed(1) : Math.round(star.distancePc)} pc`
+          : "distance unknown";
+        nav.selectCatalogStar({
+          id: star.id, label: star.name,
+          subtitle: `${star.planetCount} planet${star.planetCount===1?'':'s'} · ${distLabel}`,
+          x: star.x, y: star.y, z: star.z,
+          focusDistance: focusDist, color: star.color,
+        });
+        renderer.uploadSelectedStar([star.x, star.y, star.z]);
+      },
+      nearbyGalaxies,
+      (gal) => {
+        const r = Math.sqrt(gal.x**2 + gal.y**2 + gal.z**2);
+        nav.clearFocusedBody();
+        camera.travelTo(gal.x, gal.y, gal.z, Math.min(10_000, Math.max(500, r * 0.02)));
+      },
+      nearbyNebulas,
+      (neb) => {
+        const r = Math.sqrt(neb.x**2 + neb.y**2 + neb.z**2);
+        nav.clearFocusedBody();
+        camera.travelTo(neb.x, neb.y, neb.z, Math.max(200, r * 0.005));
+      },
+    );
+  }
+
+  canvas.addEventListener("mouseup", e => {
+    if (e.button !== 2) return;
+    if (rightDragHappened) { rightDragHappened = false; return; }
+    openContextMenuAt(e.clientX, e.clientY);
   });
 
   // ── Time control ──────────────────────────────────────────────────────────
@@ -321,10 +695,25 @@ async function main(): Promise<void> {
   function sliderToTW(v: number): number {
     return Math.sign(v || 1) * Math.pow(10, Math.abs(v));
   }
+  function rateLabel(yrPerSec: number): string {
+    const sec = Math.abs(yrPerSec) * SECONDS_PER_YEAR;
+    if (sec < 1.5)     return 'real-time';
+    if (sec < 90)      return `${sec.toFixed(0)} s/s`;
+    if (sec < 5_400)   return `${(sec/60).toFixed(0)} min/s`;
+    if (sec < 129_600) return `${(sec/3_600).toFixed(0)} hr/s`;
+    if (sec < SECONDS_PER_YEAR) return `${(sec/86_400).toFixed(1)} day/s`;
+    return `${(sec/SECONDS_PER_YEAR).toFixed(2)} yr/s`;
+  }
+
   function formatTW(tw: number): string {
     if (paused) return "⏸ paused";
+    const dir     = tw < 0 ? "◀ " : "▶ ";
+    const reqRate = Math.abs(tw) / SECONDS_PER_YEAR;  // yr/s requested
+    // If actual rate is significantly below requested, show actual + ⚡ cap marker
+    if (actualSimRate > 0.001 && reqRate > 0.001 && actualSimRate < reqRate * 0.90) {
+      return `${dir}${rateLabel(actualSimRate)} ⚡`;
+    }
     const abs = Math.abs(tw);
-    const dir = tw < 0 ? "◀ " : "▶ ";
     if (abs < 1.5)              return `${dir}real-time`;
     if (abs < 90)               return `${dir}${abs.toFixed(0)} s/s`;
     if (abs < 5_400)            return `${dir}${(abs/60).toFixed(0)} min/s`;
@@ -343,10 +732,23 @@ async function main(): Promise<void> {
     twDisplay.textContent = formatTW(timewarp);
   });
 
+  // Clicking the timewarp label snaps back to 1× real-time
+  twDisplay.addEventListener("click", () => {
+    sliderTW.value = "0";
+    if (paused) {
+      pausedTW = 1;
+    } else {
+      timewarp = 1;
+    }
+    physicsAccumYr = 0;
+    twDisplay.textContent = formatTW(paused ? pausedTW : timewarp);
+  });
+
   btnPause.addEventListener("click", () => {
     paused = !paused;
     if (paused) {
       pausedTW = timewarp; timewarp = 0;
+      physicsAccumYr = 0;   // discard any buffered fast-path debt
       btnPause.textContent = "▶"; btnPause.classList.add("paused");
     } else {
       timewarp = pausedTW;
@@ -413,6 +815,11 @@ async function main(): Promise<void> {
   });
 
   // ── Render loop ───────────────────────────────────────────────────────────
+  // Last computed viewProj matrix — used by the contextmenu handler to project
+  // catalog stars on right-click without needing to run inside the render loop.
+  let lastViewProj: Float32Array | null = null;
+  let hygCatalogFade = 1;
+
   let lastTime = performance.now();
 
   function frame(now: number): void {
@@ -421,24 +828,173 @@ async function main(): Promise<void> {
     hud.recordFrame(wallDt);
 
     if (!paused && timewarp !== 0) {
-      const simDt = (wallDt * timewarp) / SECONDS_PER_YEAR;
-      const steps = Math.max(1, Math.min(MAX_STEPS, Math.ceil(Math.abs(simDt) / MAX_SUBSTEP_YR)));
-      const subDt = simDt / steps;
-      for (let s = 0; s < steps; s++) {
+      // ── Hybrid integration ────────────────────────────────────────────────
+      //
+      // SLOW path  (|simDt| ≤ MAX_SUBSTEP_YR, i.e. timewarp < ~14 hr/s):
+      //   One proportional step per frame.  Covers real-time (1 s = 1 s) up to
+      //   ~half-a-day/s.  At 1× real-time this advances ~17 ms of simulated time
+      //   per frame — exactly correct.  Variable wallDt causes negligible error
+      //   at these speeds (round-trip drift invisible even after years).
+      //
+      // FAST path  (|simDt| > MAX_SUBSTEP_YR, i.e. timewarp ≥ ~14 hr/s):
+      //   Fixed MAX_SUBSTEP_YR (15 min) steps for accuracy and time-reversibility.
+      //   An accumulator carries over "owed" time so the average rate matches the
+      //   slider even though we advance in discrete 15-min chunks.
+      //   At extreme timewarp (>3.4 yr/s) MAX_STEPS caps the per-frame budget;
+      //   the accumulator drains over subsequent frames.
+      const dir        = timewarp > 0 ? 1 : -1;
+      const absSimDtYr = Math.abs(wallDt * timewarp) / SECONDS_PER_YEAR;
+
+      // Reset accumulator when direction changes
+      if (dir !== lastTwSign) { physicsAccumYr = 0; lastTwSign = dir; }
+
+      const simYearsBefore = simYears;
+
+      if (absSimDtYr <= simSubstepYr) {
+        // ── Slow / real-time path ─────────────────────────────────────────
+        physicsAccumYr = 0;
+        const subDt = dir * absSimDtYr;
         stepSimulationState(bodies, galacticOrigin, subDt);
+        simYears += subDt;
+        trails.record(bodies);
+      } else {
+        // ── Fast path: fixed simSubstepYr steps with accumulator ──────────
+        physicsAccumYr += absSimDtYr;
+        physicsAccumYr = Math.min(physicsAccumYr, (MAX_STEPS + 1) * simSubstepYr);
+        let stepped = 0;
+        const subDt = dir * simSubstepYr;
+        while (physicsAccumYr >= simSubstepYr && stepped < MAX_STEPS) {
+          stepSimulationState(bodies, galacticOrigin, subDt);
+          simYears += subDt;
+          trails.record(bodies);
+          physicsAccumYr -= simSubstepYr;
+          stepped++;
+        }
       }
-      simYears += simDt;
+
+      // ── Measure actual simulation rate for display ─────────────────────
+      const simAdvanced = Math.abs(simYears - simYearsBefore);
+      const rawRate     = wallDt > 0 ? simAdvanced / wallDt : 0;
+      actualSimRate     = actualSimRate * 0.92 + rawRate * 0.08; // smoothed EMA
+      twDisplay.textContent = formatTW(timewarp);
+
       renderer.uploadBodies(bodies);
-      trails.record(bodies, simYears);
     }
 
-    const aspect      = canvas.width / canvas.height;
+    // Update exoplanet orbital positions each frame (driven by simYears, not physics)
+    if (exoplanetBodyIds.size > 0) {
+      let needsUpload = false;
+      for (const id of exoplanetBodyIds) {
+        const b = bodies.find(b2 => b2.id === id);
+        if (!b) continue;
+        const pData = EXOPLANET_CATALOG.find(p => p.name === b.name);
+        if (!pData) continue;
+        const sp = getStarWorldPos(pData.hostName);
+        if (!sp) continue;
+        const [nx, ny, nz] = planetWorldPos(sp[0], sp[1], sp[2], pData, simYears);
+        b.x = nx; b.y = ny; b.z = nz;
+        needsUpload = true;
+      }
+      if (needsUpload && (paused || timewarp === 0)) {
+        renderer.uploadBodies(bodies); // ensure GPU sees updated positions even when paused
+      }
+    }
+
+    const aspect = canvas.width / canvas.height;
+
+    // ── Auto-snap / auto-release ──────────────────────────────────────────
+    // AUTO-RELEASE: user scrolled out far beyond the system view → release focus
+    // so cursor-zoom is re-enabled for free exploration.
+    // Uses camera.distance (NOT target-to-body distance, which is always ~0
+    // because updateFocusedBody() keeps target pinned to the body every frame).
+    const currentFocus = nav.focusedBodyName;
+    if (currentFocus) {
+      const systemDist = SYSTEM_VIEW[currentFocus] ?? 0.05;
+      if (camera.distance > systemDist * 10) {
+        nav.clearFocusedBody(); // releases lockTarget, re-enables cursor-zoom
+      }
+    }
+
+    // AUTO-SNAP: when cursor-zoom brings camera target near a planet AND
+    // the camera distance is already close enough to that planet's vicinity
+    // (prevents false snap when traversing through a planet's zone en-route elsewhere).
+    if (!camera.lockTarget) {
+      for (const b of bodies) {
+        if (b.type !== BodyType.Planet && b.type !== BodyType.DwarfPlanet) continue;
+        const systemDist  = SYSTEM_VIEW[b.name] ?? 0.05;
+        const snapTargetD = systemDist * 2;           // target within 2× system view
+        const snapCameraD = systemDist * 10;          // camera closer than 10× system view
+        const distToBody  = Math.hypot(b.x - camera.target[0], b.y - camera.target[1], b.z - camera.target[2]);
+        if (distToBody < snapTargetD && camera.distance < snapCameraD) {
+          nav.travelToSystem(b.name); // snaps to correct orbit showing all moons
+          break;
+        }
+      }
+    }
+
     nav.updateFocusedBody();
+
+    // Lock camera on selected catalog star.
+    // Without this, any scroll event (lockTarget=false) would shift camera.target
+    // away from the star via zoom-to-cursor, breaking centering.
+    // Catalog stars have no simulation body, so updateFocusedBody doesn't help them.
+    {
+      const selStar = nav.selectedCatalogStar;
+      if (selStar && !nav.focusedBodyName) {
+        camera.target[0] = selStar.x;
+        camera.target[1] = selStar.y;
+        camera.target[2] = selStar.z;
+        camera.lockTarget = true; // scroll only changes orbit radius, not target
+      }
+    }
+
     const camUniforms = camera.update(aspect);
+    lastViewProj = camUniforms.viewProj;
     renderer.updateCamera(camUniforms, canvas.height);
+
+    // ── CPU-side octant culling ─────────────────────────────────────────────
+    // Compute which sky octants overlap the camera frustum and tell the
+    // renderer to skip draw calls for invisible octants.
+    {
+      const e = camUniforms.eye;
+      // Forward = -(right × up) = up × right  (camera looks toward target)
+      const r = camUniforms.camRight, u = camUniforms.camUp;
+      const fwd: [number,number,number] = [
+        u[1]*r[2] - u[2]*r[1],
+        u[2]*r[0] - u[0]*r[2],
+        u[0]*r[1] - u[1]*r[0],
+      ];
+      const fovH = Math.PI / 4;   // 45° half-FOV horizontal
+      const fovV = Math.atan(Math.tan(fovH) / (canvas.width / canvas.height));
+      const mask = visibleOctantMask(e, fwd, camUniforms.camRight, camUniforms.camUp, fovH, fovV);
+      renderer.setVisibleOctantMask(mask);
+    }
+
+    // ── Star catalog LOD — based on camera distance from solar system origin ─
+    // HYG nearby stars fade out when zoomed out to galaxy scale; the Milky Way
+    // background layer fades in at the same time.
+    // Fade out the nearby HYG catalog when zoomed out to galaxy scale — they
+    // all cluster at the same pixel and add noise. MW stars stay visible always.
+    const eyeDist = Math.hypot(camUniforms.eye[0], camUniforms.eye[1], camUniforms.eye[2]);
+    const targetHygFade = smootherStep01(1 - (eyeDist - 500) / 29_500);
+    const fadeBlend = 1 - Math.exp(-wallDt / 0.28);
+    hygCatalogFade += (targetHygFade - hygCatalogFade) * fadeBlend;
+    if (Math.abs(hygCatalogFade - targetHygFade) < 0.001) hygCatalogFade = targetHygFade;
+    renderer.updateLOD(hygCatalogFade);
+
+    const sel = nav.selectedCatalogStar;
+    renderer.uploadSelectedStar(sel ? [sel.x, sel.y, sel.z] : null);
     renderer.draw(trails);
 
-    labels.update(bodies, camUniforms.viewProj, nav.focusedSystemMembers());
+    const solarClustered = labels.update(bodies, camUniforms.viewProj, nav.focusedSystemMembers(), camUniforms.eye);
+    labels.updateNearbyStarLabels(NEARBY_STAR_LABELS, camUniforms.viewProj, solarClustered);
+    labels.updateGalacticCenterLabel(SGR_A_STAR_POS, camUniforms.viewProj, () => {
+      nav.clearFocusedBody();
+      // Orbit the galactic centre at ~50 000 AU — shows the surrounding star field
+      camera.travelTo(SGR_A_STAR_POS[0], SGR_A_STAR_POS[1], SGR_A_STAR_POS[2], 50_000);
+    });
+    labels.updateCatalogStarLabel(nav.selectedCatalogStar, camUniforms.viewProj);
+    hud.galacticSpeedKms = galacticSpeedKmS(galacticOrigin);
     hud.update(bodies.length, simYears);
 
     requestAnimationFrame(frame);

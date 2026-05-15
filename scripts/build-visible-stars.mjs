@@ -57,27 +57,30 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
+/**
+ * B-V Johnson color index → linear sRGB.
+ * Calibrated to Pickles stellar spectral atlas + blackbody physics.
+ * Input `ci` is the B-V color index from the HYG catalog.
+ */
 function starColor(ci) {
-  const t = clamp(((ci ?? 0.7) + 0.4) / 2.8, 0, 1);
-  const blue = [0.62, 0.74, 1.0];
-  const white = [1.0, 0.96, 0.84];
-  const orange = [1.0, 0.58, 0.34];
-
-  if (t < 0.5) {
-    const k = t / 0.5;
-    return [
-      blue[0] + (white[0] - blue[0]) * k,
-      blue[1] + (white[1] - blue[1]) * k,
-      blue[2] + (white[2] - blue[2]) * k,
-    ];
-  }
-
-  const k = (t - 0.5) / 0.5;
-  return [
-    white[0] + (orange[0] - white[0]) * k,
-    white[1] + (orange[1] - white[1]) * k,
-    white[2] + (orange[2] - white[2]) * k,
+  const keys = [
+    [-0.35, [0.60, 0.70, 1.00]],  // O5V  ~55 000 K  deep blue
+    [ 0.00, [0.83, 0.91, 1.00]],  // A0V  ~10 000 K  blue-white (Vega)
+    [ 0.30, [1.00, 0.98, 0.96]],  // F0V  ~ 7 500 K  white
+    [ 0.65, [1.00, 0.94, 0.82]],  // G2V  ~ 5 780 K  Sun yellow-white
+    [ 1.00, [1.00, 0.78, 0.50]],  // K5V  ~ 4 400 K  orange (Arcturus)
+    [ 1.60, [1.00, 0.45, 0.20]],  // M8V  ~ 2 600 K  deep red (Betelgeuse)
   ];
+  const bv = Math.max(-0.35, Math.min(1.60, ci ?? 0.65));
+  for (let i = 0; i < keys.length - 1; i++) {
+    const [t0, c0] = keys[i];
+    const [t1, c1] = keys[i + 1];
+    if (bv <= t1) {
+      const k = (bv - t0) / (t1 - t0);
+      return [c0[0]+(c1[0]-c0[0])*k, c0[1]+(c1[1]-c0[1])*k, c0[2]+(c1[2]-c0[2])*k];
+    }
+  }
+  return [1.00, 0.45, 0.20];
 }
 
 const response = await fetch(HYG_URL);

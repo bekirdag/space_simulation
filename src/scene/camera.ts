@@ -5,7 +5,7 @@ import {
 
 const FOV_Y = Math.PI / 4; // 45° vertical field of view
 const NEAR  = 1e-8;        // AU, allows close body fly-ins without clipping
-const FAR   = 180_000;     // AU, includes compressed nearby-star catalog
+const FAR   = 1_200_000;   // AU — extended for galaxy catalog (100k galaxies up to 850 Mpc visual)
 const MIN_DISTANCE = 1e-7; // AU
 const MAX_DISTANCE = FAR;
 const CLOSEUP_VIEW_FILL = 0.88;
@@ -26,6 +26,7 @@ export interface CameraUniforms {
   camRight:   Vec3;
   camUp:      Vec3;
   focalY:     number; // = 1 / tan(fovY/2), for perspective-correct min size
+  eye:        Vec3;   // camera world-space position (for distance-based fades)
 }
 
 export class Camera {
@@ -35,6 +36,13 @@ export class Camera {
   azimuth    = 0.6;            // radians, horizontal orbit angle
   elevation  = 0.5;            // radians, above ecliptic plane
 
+  /**
+   * When true (body is focused/tracked), scroll zoom only changes orbit radius.
+   * When false (free exploration), scroll zooms toward the screen point under the cursor.
+   * Set by NavPanel.setFocusedBody / clearFocusedBody.
+   */
+  lockTarget = false;
+
   // Computed each frame by update()
   private _uniforms!: CameraUniforms;
 
@@ -43,9 +51,9 @@ export class Camera {
     let panning  = false;
     let lastX = 0, lastY = 0;
 
-    // Mouse wheel button drag = orbit
+    // Middle-click or right-click + drag = orbit; left-click drag = pan
     canvas.addEventListener("mousedown", (e) => {
-      if (e.button === 1) {
+      if (e.button === 1 || e.button === 2) {
         orbiting = true;
         lastX = e.clientX; lastY = e.clientY;
         e.preventDefault();
@@ -57,13 +65,12 @@ export class Camera {
       }
     });
 
-    // Prevent middle-click scroll / context-menu
-    canvas.addEventListener("contextmenu",   (e) => e.preventDefault());
-    canvas.addEventListener("auxclick",      (e) => e.preventDefault());
+    // Prevent middle-click scroll; native context menu is suppressed by main.ts
+    canvas.addEventListener("auxclick", (e) => e.preventDefault());
 
     window.addEventListener("mouseup", (e) => {
-      if (e.button === 1) { orbiting = false; canvas.style.cursor = "default"; }
-      if (e.button === 0) { panning  = false; canvas.style.cursor = "default"; }
+      if (e.button === 1 || e.button === 2) { orbiting = false; canvas.style.cursor = "default"; }
+      if (e.button === 0)                   { panning  = false; canvas.style.cursor = "default"; }
     });
 
     window.addEventListener("mousemove", (e) => {
@@ -94,7 +101,28 @@ export class Camera {
     canvas.addEventListener("wheel", (e) => {
       e.preventDefault();
       const factor = e.deltaY < 0 ? 0.9 : 1.1;
-      this.distance = clampDistance(this.distance * factor);
+      const oldDist = this.distance;
+      this.distance  = clampDistance(oldDist * factor);
+
+      // Zoom toward cursor when free-exploring (no body lock).
+      // Shifts target so the world point under the cursor stays fixed —
+      // standard behaviour in Blender, UE, every 3D viewport.
+      if (!this.lockTarget && this._uniforms) {
+        const delta = oldDist - this.distance; // positive = zoomed in
+        if (Math.abs(delta) > 1e-12) {
+          const cssW  = window.innerWidth;
+          const cssH  = window.innerHeight;
+          const mx    = (e.clientX / cssW)  * 2 - 1;   // NDC x, right = +1
+          const my    = -(e.clientY / cssH) * 2 + 1;   // NDC y, up = +1
+          const shift = delta / this._uniforms.focalY;
+          const asp   = cssW / cssH;
+          const r     = this._uniforms.camRight;
+          const u     = this._uniforms.camUp;
+          this.target[0] += (mx * asp * r[0] + my * u[0]) * shift;
+          this.target[1] += (mx * asp * r[1] + my * u[1]) * shift;
+          this.target[2] += (mx * asp * r[2] + my * u[2]) * shift;
+        }
+      }
     }, { passive: false });
   }
 
@@ -140,6 +168,7 @@ export class Camera {
       camRight: right,
       camUp:    up,
       focalY:   1 / Math.tan(FOV_Y / 2),
+      eye,
     };
     return this._uniforms;
   }

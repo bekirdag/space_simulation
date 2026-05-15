@@ -54,9 +54,9 @@ const DATA: Record<string, Datum> = {
   Charon:    { mass:1.587e21,  radiusKm: 606.0, color:[0.72,0.68,0.65], type:BodyType.Moon },
 
   // ── Other dwarf planets ───────────────────────────────────────────────────
-  Eris:      { mass:1.660e22,  radiusKm:1163.0, color:[0.92,0.90,0.88], type:BodyType.DwarfPlanet },
+  Eris:      { mass:1.6466e22, radiusKm:1163.0, color:[0.92,0.90,0.88], type:BodyType.DwarfPlanet },
   Ceres:     { mass:9.384e20,  radiusKm: 469.7, color:[0.58,0.55,0.52], type:BodyType.DwarfPlanet },
-  Haumea:    { mass:4.006e21,  radiusKm: 780.0, color:[0.88,0.86,0.84], type:BodyType.DwarfPlanet },
+  Haumea:    { mass:4.006e21,  radiusKm: 716.0, color:[0.88,0.86,0.84], type:BodyType.DwarfPlanet },
   Makemake:  { mass:3.100e21,  radiusKm: 715.0, color:[0.80,0.72,0.65], type:BodyType.DwarfPlanet },
 };
 

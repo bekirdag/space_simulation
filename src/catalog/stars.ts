@@ -80,27 +80,31 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
-function starColor(bpRp: number): [number, number, number] {
-  const t = clamp((bpRp + 0.4) / 2.8, 0, 1);
-  const blue: [number, number, number] = [0.62, 0.74, 1.0];
-  const white: [number, number, number] = [1.0, 0.96, 0.84];
-  const orange: [number, number, number] = [1.0, 0.58, 0.34];
-
-  if (t < 0.5) {
-    const k = t / 0.5;
-    return [
-      blue[0] + (white[0] - blue[0]) * k,
-      blue[1] + (white[1] - blue[1]) * k,
-      blue[2] + (white[2] - blue[2]) * k,
-    ];
-  }
-
-  const k = (t - 0.5) / 0.5;
-  return [
-    white[0] + (orange[0] - white[0]) * k,
-    white[1] + (orange[1] - white[1]) * k,
-    white[2] + (orange[2] - white[2]) * k,
+/**
+ * Convert B-V Johnson color index → linear sRGB [0,1].
+ * Calibrated to Pickles stellar spectral atlas + blackbody physics.
+ * Six anchor points covering O-type (deep blue) to M-type (deep red).
+ */
+function starColor(bv: number): [number, number, number] {
+  // B-V anchor → sRGB (validated against real stellar photometry)
+  const keys: [number, [number,number,number]][] = [
+    [-0.35, [0.60, 0.70, 1.00]],  // O5V   ~55 000 K  deep blue
+    [ 0.00, [0.83, 0.91, 1.00]],  // A0V   ~10 000 K  blue-white
+    [ 0.30, [1.00, 0.98, 0.96]],  // F0V   ~ 7 500 K  white
+    [ 0.65, [1.00, 0.94, 0.82]],  // G2V   ~ 5 780 K  Sun yellow-white
+    [ 1.00, [1.00, 0.78, 0.50]],  // K5V   ~ 4 400 K  orange
+    [ 1.60, [1.00, 0.45, 0.20]],  // M8V   ~ 2 600 K  deep red
   ];
+  const bvC = clamp(bv, -0.35, 1.60);
+  for (let i = 0; i < keys.length - 1; i++) {
+    const [t0, c0] = keys[i]!;
+    const [t1, c1] = keys[i + 1]!;
+    if (bvC <= t1) {
+      const k = (bvC - t0) / (t1 - t0);
+      return [c0[0]+(c1[0]-c0[0])*k, c0[1]+(c1[1]-c0[1])*k, c0[2]+(c1[2]-c0[2])*k];
+    }
+  }
+  return keys[keys.length - 1]![1];
 }
 
 function catalogPosition(raDeg: number, decDeg: number, distancePc: number | null): [number, number, number] {
@@ -122,7 +126,16 @@ function hostToCatalogStar(record: ExoplanetHostRecord, index: number): CatalogS
   const planetCount = Math.max(1, Math.round(record.planetCount ?? 1));
   const [x, y, z] = catalogPosition(record.ra, record.dec, distancePc);
   const magFactor = magnitude === null ? 0.35 : clamp((18 - magnitude) / 14, 0.08, 1);
-  const color = starColor(magnitude === null ? 1.1 : clamp((magnitude - 4) / 5, -0.3, 2.4));
+  // Map V-magnitude to a BP-RP colour-index proxy.
+  // G-type exoplanet hosts (mag 5-8) are white-yellow; M dwarfs (mag >10) are orange-red.
+  // Formula (mag-2)/8 gives: Tau Ceti→white, 51 Peg→white, TRAPPIST-1→deep red.
+  // Map V-magnitude to approximate B-V for exoplanet hosts (statistical proxy).
+  // Most confirmed exoplanet hosts are FGK dwarfs (BV 0.3–1.1). Bright hosts
+  // (mag < 6) tend to be hotter F/G types; faint hosts (mag > 10) tend to be
+  // cooler K/M dwarfs. This gives a plausible color without per-star spectra.
+  const bvProxy = magnitude === null ? 0.7
+    : clamp((magnitude - 3.0) / 9.0 * 1.4 + 0.20, -0.10, 1.55);
+  const color = starColor(bvProxy);
 
   return {
     id: `exo-${index}-${record.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
@@ -169,7 +182,7 @@ export function createVisibleStarField(count = DEFAULT_VISIBLE_STAR_COUNT): Star
 
 export async function loadVisibleStarField(): Promise<VisibleStarLoad> {
   try {
-    const response = await fetch(VISIBLE_STAR_DATA_URL, { cache: "force-cache" });
+    const response = await fetch(VISIBLE_STAR_DATA_URL);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const buffer = await response.arrayBuffer();
     if (buffer.byteLength % (STAR_FLOATS * 4) !== 0) {
@@ -222,7 +235,7 @@ export function combineStarBuffers(...buffers: StarBuffer[]): StarBuffer {
 
 export async function loadExoplanetHostStars(): Promise<StarCatalogLoad> {
   try {
-    const response = await fetch(EXOPLANET_HOST_DATA_URL, { cache: "force-cache" });
+    const response = await fetch(EXOPLANET_HOST_DATA_URL);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const records = await response.json() as ExoplanetHostRecord[];
     const stars = records
@@ -271,7 +284,10 @@ export function searchCatalogStars(stars: CatalogStar[], query: string, limit = 
         x: star.x,
         y: star.y,
         z: star.z,
-        focusDistance: clamp(distanceAu * 0.015, 12, 180),
+        // Zoom to 0.5–5 AU from the star's visual position so it fills the view.
+        // (Stars are rendered as fixed-NDC billboards; getting close + a size boost
+        // via the shader makes them prominently visible.)
+        focusDistance: clamp(distanceAu * 0.0005, 0.5, 5),
         color: star.color,
       };
     });

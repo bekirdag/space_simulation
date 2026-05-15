@@ -1,0 +1,10 @@
+{
+  "source": "Simbad TAP (real) + procedural",
+  "realCount": 49990,
+  "procCount": 50010,
+  "count": 100000,
+  "distMaxMpc": 638,
+  "FLOATS": 8,
+  "galaxyBaseAU": 200000,
+  "galaxyLogScaleAU": 50000
+}

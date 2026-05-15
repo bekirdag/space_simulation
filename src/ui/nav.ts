@@ -15,8 +15,10 @@ const MOON_SYSTEM_VIEW_FILL = 0.82;
 type TravelMode = "system" | "close";
 
 interface CatalogSearchOptions {
-  searchCatalog: (query: string) => StarSearchResult[];
-  getCatalogStatus: () => string;
+  searchCatalog:      (query: string) => StarSearchResult[];
+  getCatalogStatus:   () => string;
+  /** Called when any catalog search result is clicked, with its id. */
+  onCatalogItemClick?: (id: string) => void;
 }
 
 export class NavPanel {
@@ -24,9 +26,20 @@ export class NavPanel {
   private toggle:  HTMLElement;
   private search:  HTMLInputElement;
   private catalogResults: HTMLElement;
-  private focusedBodyName: string | null = null;
+  private _focusedBodyName: string | null = null;
   private focusedSystemCenterName: string | null = null;
+  private _selectedCatalogStar: StarSearchResult | null = null;
   private open     = true;
+
+  /** The catalog star (exoplanet host) most recently selected from search results. */
+  get selectedCatalogStar(): StarSearchResult | null { return this._selectedCatalogStar; }
+
+  /** Select a catalog star externally (e.g. from the right-click context menu). */
+  selectCatalogStar(hit: StarSearchResult): void {
+    this.clearFocusedBody();
+    this._selectedCatalogStar = hit;
+    this.camera.travelTo(hit.x, hit.y, hit.z, hit.focusDistance);
+  }
 
   constructor(
     private camera:    Camera,
@@ -99,6 +112,9 @@ export class NavPanel {
     return this.systemDistanceFor(name, body) ?? this.travelDistanceFor(name);
   }
 
+  /** Public read access so main.ts can implement auto-snap/release logic. */
+  get focusedBodyName(): string | null { return this._focusedBodyName; }
+
   focusedSystemMembers(): ReadonlySet<string> {
     if (!this.focusedSystemCenterName) return new Set();
     return new Set(systemMembersForBody(this.focusedSystemCenterName));
@@ -113,24 +129,32 @@ export class NavPanel {
   }
 
   private setFocusedBody(name: string): void {
-    this.focusedBodyName = name;
+    this._focusedBodyName = name;
+    this._selectedCatalogStar = null; // simulation body takes over; dismiss star selection
     this.setFocusedSystem(name);
+    this.camera.lockTarget = true; // scroll zooms orbit radius, not toward cursor
+    let focusedEl: HTMLElement | undefined;
     this.panel.querySelectorAll<HTMLElement>("[data-travel]").forEach(el => {
-      el.classList.toggle("focused", el.dataset["travel"] === name);
+      const isFocused = el.dataset["travel"] === name;
+      el.classList.toggle("focused", isFocused);
+      if (isFocused) focusedEl = el;
     });
+    if (focusedEl) (focusedEl as HTMLElement).scrollIntoView({ block: "nearest", behavior: "smooth" });
   }
 
   clearFocusedBody(): void {
-    this.focusedBodyName = null;
+    this._focusedBodyName = null;
+    this._selectedCatalogStar = null; // clear star selection when focusing a body
     this.clearFocusedSystem();
+    this.camera.lockTarget = false; // re-enable zoom-toward-cursor
     this.panel.querySelectorAll<HTMLElement>("[data-travel].focused").forEach(el => {
       el.classList.remove("focused");
     });
   }
 
   updateFocusedBody(): void {
-    if (!this.focusedBodyName) return;
-    const body = this.bodyByName(this.focusedBodyName);
+    if (!this._focusedBodyName) return;
+    const body = this.bodyByName(this._focusedBodyName!);
     if (!body) {
       this.clearFocusedBody();
       return;
@@ -192,9 +216,18 @@ export class NavPanel {
     if (!query) return;
 
     if (hits.length === 0) {
+      const status = this.catalogSearch?.getCatalogStatus() ?? "";
+      const isLoading = status.startsWith("Loading");
       const empty = document.createElement("div");
       empty.className = "catalog-search-empty";
-      empty.textContent = this.catalogSearch?.getCatalogStatus() ?? "No catalog results";
+      if (isLoading) {
+        empty.textContent = status;
+      } else {
+        empty.innerHTML =
+          `No match for "<b>${query}</b>".<br>` +
+          `Catalog: exoplanet host stars only.<br>` +
+          `Try: <em>TRAPPIST-1, Proxima, 51 Peg, HD 209, Kepler</em>`;
+      }
       this.catalogResults.appendChild(empty);
       return;
     }
@@ -224,9 +257,12 @@ export class NavPanel {
       btn.append(swatch, copy);
       btn.addEventListener("click", () => {
         this.clearFocusedBody();
+        this._selectedCatalogStar = hit;
         this.camera.travelTo(hit.x, hit.y, hit.z, hit.focusDistance);
         this.search.value = hit.label;
         this.renderCatalogResults("", []);
+        // Notify main.ts so it can load exoplanet bodies for this star/planet
+        this.catalogSearch?.onCatalogItemClick?.(hit.id);
       });
 
       this.catalogResults.appendChild(btn);

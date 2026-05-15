@@ -36,6 +36,7 @@ struct VertexOut {
   @location(1)       color:    vec3<f32>,
   @location(2)       btype:    f32,
   @location(3)       clamped:  f32,
+  @location(4)       fade:     f32,  // 1.0 = fully visible, 0.0 = hidden
 };
 
 var<private> quad: array<vec2<f32>, 6> = array<vec2<f32>, 6>(
@@ -66,6 +67,7 @@ fn vs_main(
   out.color   = b.col_id.xyz;
   out.btype   = b.acc_type.w;
   out.clamped = 0.0;
+  out.fade    = 1.0;
 
   // Discard body behind the camera
   if clip_c.w <= 0.0 {
@@ -77,13 +79,29 @@ fn vs_main(
   let r_ndc = r_phys * focalY / clip_c.w;
   var r_eff  = r_phys;
 
+  // Moons (btype=2): fade out as camera moves away; hard-discard beyond 2 AU.
   if (out.btype > 1.5 && out.btype < 2.5) {
-    mnr = max(mnr, camera.rightAndMNR.w * 1.8);
+    if clip_c.w > 2.0 {
+      out.clip_pos = vec4(10.0, 10.0, 10.0, 1.0);
+      return out;
+    }
+    out.fade = clamp(1.0 - (clip_c.w - 0.3) / 1.2, 0.0, 1.0);
+    mnr = max(mnr, camera.rightAndMNR.w * 7.0);
+  }
+
+  // Exoplanets (btype=5): catalog bodies orbiting distant stars.
+  // Same fade window as moons; slightly smaller minimum dot for visual distinction.
+  if (out.btype > 4.5 && out.btype < 5.5) {
+    if clip_c.w > 2.0 {
+      out.clip_pos = vec4(10.0, 10.0, 10.0, 1.0);
+      return out;
+    }
+    out.fade = clamp(1.0 - (clip_c.w - 0.1) / 1.4, 0.0, 1.0);
+    mnr = max(mnr, camera.rightAndMNR.w * 5.0);
   }
 
   if r_ndc < mnr {
-    // Scale up billboard to maintain minimum pixel size
-    r_eff      = mnr * clip_c.w / focalY;
+    r_eff       = mnr * clip_c.w / focalY;
     out.clamped = 1.0;
   }
 
@@ -98,17 +116,25 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   let d = length(in.uv);
   if d > 1.0 { discard; }
 
-  // Too-small bodies: crisp dot, no glow
+  // Minimum-size (clamped) bodies
   if in.clamped > 0.5 {
-    let a = 1.0 - smoothstep(0.5, 1.0, d);
-    return vec4<f32>(in.color * a, a);
+    let a = (1.0 - smoothstep(0.45, 1.0, d)) * in.fade;
+    var col = in.color;
+    // Boost dark moons so they read against black space
+    if in.btype > 1.5 && in.btype < 2.5 {
+      col = clamp(col * 1.8 + vec3(0.12), vec3(0.0), vec3(1.0));
+    }
+    // Exoplanets: bright distinct dot with subtle ring highlight
+    if in.btype > 4.5 && in.btype < 5.5 {
+      col = clamp(col * 2.0 + vec3(0.15), vec3(0.0), vec3(1.0));
+    }
+    return vec4<f32>(col * a, a);
   }
 
   // Full-size body
-  let a = 1.0 - smoothstep(0.75, 1.0, d);
+  let a = (1.0 - smoothstep(0.75, 1.0, d)) * in.fade;
   var col = in.color;
   if in.btype < 0.5 {
-    // Stars: subtle bright core only
     let core = 1.0 - smoothstep(0.0, 0.35, d);
     col = col + vec3(core * 0.2);
   }
