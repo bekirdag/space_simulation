@@ -10,6 +10,8 @@ const MOON_LABEL_MAX_DIST = 1.5;
 const LIGHT_YEARS_PER_PARSEC = 3.26156;
 const NEARBY_STAR_AU_PER_LIGHT_YEAR = NEARBY_STAR_AU_PER_PARSEC / LIGHT_YEARS_PER_PARSEC;
 const NEARBY_STAR_MIN_OPACITY = 0.025;
+const GALAXY_LABEL_MIN_OPACITY = 0.035;
+const MILKY_WAY_LABEL_MIN_OPACITY = 0.035;
 
 const ALWAYS_VISIBLE_BODY_NAMES = new Set([
   // Planets
@@ -43,6 +45,23 @@ function nearbyStarShellOpacity(star: NearbyStarLabel, cameraDistanceLy: number)
   const fadeIn  = smoother01((cameraDistanceLy - fadeInStartLy) / (fadeInEndLy - fadeInStartLy));
   const fadeOut = 1 - smoother01((cameraDistanceLy - fadeOutStartLy) / (fadeOutEndLy - fadeOutStartLy));
   return fadeIn * fadeOut;
+}
+
+function galaxyShellOpacity(galaxyDistanceAu: number, cameraDistanceAu: number): number {
+  const d = Math.max(galaxyDistanceAu, 1);
+  const fadeInStartAu  = Math.max(220_000, d * 0.22);
+  const fadeInEndAu    = Math.max(fadeInStartAu + 80_000, d * 0.52);
+  const fadeOutStartAu = Math.max(fadeInEndAu + 220_000, d * 2.20);
+  const fadeOutEndAu   = Math.max(fadeOutStartAu + 500_000, d * 3.35);
+  const fadeIn = smoother01((cameraDistanceAu - fadeInStartAu) / (fadeInEndAu - fadeInStartAu));
+  const fadeOut = 1 - smoother01((cameraDistanceAu - fadeOutStartAu) / (fadeOutEndAu - fadeOutStartAu));
+  return fadeIn * fadeOut;
+}
+
+function milkyWayLabelOpacity(cameraDistanceFromCenterAu: number, milkyWayRadiusAu: number): number {
+  const startAu = Math.max(180_000, milkyWayRadiusAu * 2.15);
+  const endAu = Math.max(startAu + 120_000, milkyWayRadiusAu * 3.65);
+  return smoother01((cameraDistanceFromCenterAu - startAu) / (endAu - startAu));
 }
 
 function pinToViewport(nx: number, ny: number, cssW: number, cssH: number): ProjectedPoint {
@@ -104,6 +123,16 @@ export interface CatalogStarInfo {
 
 export type NearbyStarClickHandler = (star: NearbyStarLabel) => void;
 
+export interface GalaxyNameLabel {
+  id: string;
+  name: string;
+  dist: number;
+  x: number; y: number; z: number;
+  focusDistance: number;
+}
+
+export type GalaxyNameClickHandler = (galaxy: GalaxyNameLabel) => void;
+
 export class LabelManager {
   private container:  HTMLDivElement;
   private spans     = new Map<number, HTMLSpanElement>();
@@ -114,10 +143,14 @@ export class LabelManager {
 
   // Nearby-star label spans keyed by star name
   private nearbyStarSpans = new Map<string, HTMLSpanElement>();
+  // Local Group galaxy title spans keyed by galaxy id
+  private galaxyNameSpans = new Map<string, HTMLSpanElement>();
   // Constellation title spans keyed by constellation id
   private constellationSpans = new Map<string, HTMLSpanElement>();
   // Sgr A* permanent label
   private galacticCenterEl: HTMLSpanElement | null = null;
+  // Large-scale Milky Way label, shown after Sgr A* stops being useful.
+  private milkyWayEl: HTMLSpanElement | null = null;
   // Whether all labels are visible (controlled by settings)
   private _visible = true;
 
@@ -126,8 +159,10 @@ export class LabelManager {
     if (!v) {
       for (const sp of this.spans.values()) sp.style.display = 'none';
       for (const sp of this.nearbyStarSpans.values()) sp.style.display = 'none';
+      for (const sp of this.galaxyNameSpans.values()) sp.style.display = 'none';
       for (const sp of this.constellationSpans.values()) sp.style.display = 'none';
       if (this.galacticCenterEl) this.galacticCenterEl.style.display = 'none';
+      if (this.milkyWayEl) this.milkyWayEl.style.display = 'none';
       if (this.starLabelEl) this.starLabelEl.style.display = 'none';
     }
   }
@@ -463,6 +498,144 @@ export class LabelManager {
     }
   }
 
+  updateMilkyWayLabel(
+    worldPos: [number, number, number],
+    viewProj: Mat4,
+    cameraEye: Vec3,
+    milkyWayRadiusAu: number,
+    visible: boolean,
+    onClick: () => void,
+  ): number {
+    if (!visible || !this._visible) {
+      if (this.milkyWayEl) this.milkyWayEl.style.display = 'none';
+      return 0;
+    }
+
+    const cameraDistanceFromCenterAu = Math.hypot(
+      cameraEye[0] - worldPos[0],
+      cameraEye[1] - worldPos[1],
+      cameraEye[2] - worldPos[2],
+    );
+    const opacity = milkyWayLabelOpacity(cameraDistanceFromCenterAu, milkyWayRadiusAu);
+    if (opacity <= MILKY_WAY_LABEL_MIN_OPACITY) {
+      if (this.milkyWayEl) this.milkyWayEl.style.display = 'none';
+      return opacity;
+    }
+
+    if (!this.milkyWayEl) {
+      const el = document.createElement('span');
+      el.className = 'galaxy-name-label milky-way-label';
+      el.textContent = 'Milky Way';
+      el.title = 'Focus Milky Way';
+      el.setAttribute('role', 'button');
+      el.tabIndex = 0;
+      el.addEventListener('click', event => {
+        event.preventDefault();
+        event.stopPropagation();
+        onClick();
+      });
+      el.addEventListener('keydown', event => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        event.stopPropagation();
+        onClick();
+      });
+      this.container.appendChild(el);
+      this.milkyWayEl = el;
+    }
+
+    const cssW = window.innerWidth;
+    const cssH = window.innerHeight;
+    const pos = project(worldPos[0], worldPos[1], worldPos[2], viewProj, cssW, cssH, true);
+    if (!pos) {
+      this.milkyWayEl.style.display = 'none';
+      return opacity;
+    }
+
+    this.milkyWayEl.style.display = 'block';
+    this.milkyWayEl.style.opacity = opacity.toFixed(3);
+    this.milkyWayEl.classList.toggle('pinned', pos.pinned);
+    this.milkyWayEl.style.left = `${Math.round(pos.pinned ? pos.x : pos.x + 12)}px`;
+    this.milkyWayEl.style.top  = `${Math.round(pos.pinned ? pos.y : pos.y - 8)}px`;
+    return opacity;
+  }
+
+  updateGalaxyNameLabels(
+    galaxies: readonly GalaxyNameLabel[],
+    viewProj: Mat4,
+    cameraEye: Vec3,
+    milkyWayCenter: Vec3,
+    visible: boolean,
+    onGalaxyClick?: GalaxyNameClickHandler,
+  ): void {
+    if (!visible || !this._visible || galaxies.length === 0) {
+      for (const sp of this.galaxyNameSpans.values()) sp.style.display = 'none';
+      return;
+    }
+
+    const cssW = window.innerWidth;
+    const cssH = window.innerHeight;
+    const cameraDistanceAu = Math.hypot(
+      cameraEye[0] - milkyWayCenter[0],
+      cameraEye[1] - milkyWayCenter[1],
+      cameraEye[2] - milkyWayCenter[2],
+    );
+    const active = new Set<string>();
+
+    for (const galaxy of galaxies) {
+      active.add(galaxy.id);
+      const galaxyDistanceAu = Math.hypot(
+        galaxy.x - milkyWayCenter[0],
+        galaxy.y - milkyWayCenter[1],
+        galaxy.z - milkyWayCenter[2],
+      );
+      const opacity = galaxyShellOpacity(galaxyDistanceAu, cameraDistanceAu);
+      if (opacity <= GALAXY_LABEL_MIN_OPACITY) {
+        const sp = this.galaxyNameSpans.get(galaxy.id);
+        if (sp) sp.style.display = 'none';
+        continue;
+      }
+
+      let sp = this.galaxyNameSpans.get(galaxy.id);
+      if (!sp) {
+        sp = document.createElement('span');
+        sp.className = 'galaxy-name-label';
+        sp.textContent = galaxy.name;
+        sp.title = `Focus ${galaxy.name}`;
+        sp.setAttribute('role', 'button');
+        sp.tabIndex = 0;
+        sp.addEventListener('click', event => {
+          event.preventDefault();
+          event.stopPropagation();
+          onGalaxyClick?.(galaxy);
+        });
+        sp.addEventListener('keydown', event => {
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          event.preventDefault();
+          event.stopPropagation();
+          onGalaxyClick?.(galaxy);
+        });
+        this.container.appendChild(sp);
+        this.galaxyNameSpans.set(galaxy.id, sp);
+      }
+
+      const pt = project(galaxy.x, galaxy.y, galaxy.z, viewProj, cssW, cssH, false);
+      if (!pt) {
+        sp.style.display = 'none';
+        continue;
+      }
+
+      sp.style.display = 'block';
+      sp.style.opacity = opacity.toFixed(3);
+      sp.style.left = `${Math.round(pt.x + 9)}px`;
+      sp.style.top  = `${Math.round(pt.y - 6)}px`;
+    }
+
+    for (const [id, sp] of this.galaxyNameSpans) {
+      if (!active.has(id)) sp.style.display = 'none';
+    }
+  }
+
   /**
    * Always-visible Sgr A* label pinned to the viewport edge when off-screen.
    * Clickable: calls onClick() to navigate the camera to the galactic centre.
@@ -472,8 +645,13 @@ export class LabelManager {
     worldPos: [number, number, number],
     viewProj: Mat4,
     onClick:  () => void,
+    visible = true,
+    opacity = 1,
   ): void {
-    if (!this._visible) return;
+    if (!this._visible || !visible || opacity <= 0.04) {
+      if (this.galacticCenterEl) this.galacticCenterEl.style.display = 'none';
+      return;
+    }
     // Create element once
     if (!this.galacticCenterEl) {
       const el = document.createElement('span');
@@ -495,6 +673,7 @@ export class LabelManager {
     }
 
     this.galacticCenterEl.style.display = 'block';
+    this.galacticCenterEl.style.opacity = clamp(opacity, 0, 1).toFixed(3);
     this.galacticCenterEl.classList.toggle('pinned', pos.pinned);
     this.galacticCenterEl.style.left = `${Math.round(pos.pinned ? pos.x : pos.x + 8)}px`;
     this.galacticCenterEl.style.top  = `${Math.round(pos.pinned ? pos.y : pos.y - 5)}px`;

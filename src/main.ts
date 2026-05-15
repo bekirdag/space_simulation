@@ -4,7 +4,7 @@ import { Camera } from "./scene/camera";
 import { HUD } from "./ui/hud";
 import { ScaleBar } from "./ui/scale-bar";
 import { NavPanel } from "./ui/nav";
-import { LabelManager } from "./ui/labels";
+import { LabelManager, type GalaxyNameLabel } from "./ui/labels";
 import { ContextMenu } from "./ui/context-menu";
 import { TrailSystem } from "./scene/trail-system";
 import { stepLeapfrog } from "./physics/integrator";
@@ -47,6 +47,8 @@ import {
 } from "./catalog/exoplanets";
 import {
   GALAXY_FLOATS,
+  LOCAL_GROUP_GALAXY_LABELS,
+  MILKY_WAY_RADIUS_AU,
   loadGalaxyCatalog,
   searchGalaxies,
   type GalaxyBuffer,
@@ -744,6 +746,29 @@ async function main(): Promise<void> {
     renderer.uploadSelectedStar([star.x, star.y, star.z]);
   }
 
+  function focusMilkyWay(): void {
+    setExoplanetBodies(null);
+    nav.clearFocusedBody();
+    renderer.uploadSelectedStar(null);
+    setFocusTitle("Milky Way", "home galaxy · center at Sagittarius A*");
+    camera.travelTo(
+      SGR_A_STAR_POS[0],
+      SGR_A_STAR_POS[1],
+      SGR_A_STAR_POS[2],
+      camera.distanceForViewRadius(MILKY_WAY_RADIUS_AU * 1.18, 0.70),
+    );
+    renderer.uploadBodies(bodies);
+  }
+
+  function focusGalaxyLabel(galaxy: GalaxyNameLabel): void {
+    setExoplanetBodies(null);
+    nav.clearFocusedBody();
+    renderer.uploadSelectedStar(null);
+    setFocusTitle(galaxy.name, galaxyFocusSubtitle(galaxy.dist));
+    camera.travelTo(galaxy.x, galaxy.y, galaxy.z, galaxy.focusDistance);
+    renderer.uploadBodies(bodies);
+  }
+
   // ── Canvas click → select body ────────────────────────────────────────────
   const contextMenu = new ContextMenu();
 
@@ -1215,12 +1240,32 @@ async function main(): Promise<void> {
     labels.update(bodies, camUniforms.viewProj, focusedMembers, camUniforms.eye, bodyVisibility);
     labels.updateNearbyStarLabels(NEARBY_STAR_LABELS, camUniforms.viewProj, camUniforms.eye, sunWorldPos, focusNearbyStar);
     labels.updateConstellationLabels(constellationLabels, camUniforms.viewProj, showConstellations);
+    const milkyWayLabelOpacity = labels.updateMilkyWayLabel(
+      SGR_A_STAR_POS,
+      camUniforms.viewProj,
+      camUniforms.eye,
+      MILKY_WAY_RADIUS_AU,
+      showGalaxies,
+      focusMilkyWay,
+    );
+    labels.updateGalaxyNameLabels(
+      LOCAL_GROUP_GALAXY_LABELS,
+      camUniforms.viewProj,
+      camUniforms.eye,
+      SGR_A_STAR_POS,
+      showGalaxies,
+      focusGalaxyLabel,
+    );
     labels.updateGalacticCenterLabel(SGR_A_STAR_POS, camUniforms.viewProj, () => {
       setExoplanetBodies(null);
       nav.selectCatalogStar(SGR_A_SEARCH_RESULT);
       renderer.uploadBodies(bodies);
-    });
-    labels.updateCatalogStarLabel(nav.selectedCatalogStar, camUniforms.viewProj);
+    }, true, 1 - milkyWayLabelOpacity);
+    const selectedCatalogLabel =
+      nav.selectedCatalogStar?.id === "blackhole:sgr-a" && milkyWayLabelOpacity > 0.55
+        ? null
+        : nav.selectedCatalogStar;
+    labels.updateCatalogStarLabel(selectedCatalogLabel, camUniforms.viewProj);
     hud.galacticSpeedKms = galacticSpeedKmS(galacticOrigin);
     hud.update(bodies.length, simYears);
 

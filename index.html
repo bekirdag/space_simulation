@@ -833,6 +833,40 @@
         outline: none;
       }
 
+      /* ── Local Group galaxy labels ── */
+      .galaxy-name-label {
+        position: absolute;
+        font-family: 'SF Mono', 'Fira Code', monospace;
+        font-size: 9px;
+        color: rgba(215, 226, 255, 0.82);
+        white-space: nowrap;
+        pointer-events: auto;
+        user-select: none;
+        cursor: pointer;
+        letter-spacing: 0.06em;
+        background: rgba(0, 0, 0, 0.70);
+        padding: 1px 4px;
+        border-radius: 2px;
+        border: 1px solid rgba(150, 175, 255, 0.18);
+        transition: color 0.15s, background 0.15s, border-color 0.15s;
+      }
+      .galaxy-name-label:hover,
+      .galaxy-name-label:focus-visible {
+        color: rgba(238, 244, 255, 0.98);
+        background: rgba(0, 0, 0, 0.84);
+        border-color: rgba(185, 205, 255, 0.45);
+        outline: none;
+      }
+      .galaxy-name-label.pinned {
+        transform: translate(-50%, -50%);
+      }
+      .milky-way-label {
+        font-size: 11px;
+        color: rgba(255, 222, 150, 0.94);
+        border-color: rgba(255, 200, 120, 0.32);
+        text-shadow: 0 0 8px rgba(255, 210, 130, 0.25);
+      }
+
       /* ── Constellation titles ── */
       .constellation-label {
         position: absolute;
