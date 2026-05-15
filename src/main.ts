@@ -65,6 +65,7 @@ import {
   NEB_COLOR,
   type NebulaDet,
 } from "./catalog/nebulas";
+import { BackendUnavailableError, backendAssetUrl, backendFetch, readBackendJson } from "./services/backend";
 
 const MAX_BODIES = 1024;
 const MAX_CATALOG_STARS  = DEFAULT_VISIBLE_STAR_COUNT + 8_000;
@@ -387,26 +388,31 @@ async function main(): Promise<void> {
     setObjectInfoStatus("Loading NASA data...");
     showObjectInfoModal(true);
 
-    const url = new URL("/api/object-info", window.location.origin);
-    url.searchParams.set("title", focus.title);
-    url.searchParams.set("type", focus.objectType);
-    if (focus.subtitle) url.searchParams.set("subtitle", focus.subtitle);
+    const params = new URLSearchParams({
+      title: focus.title,
+      type: focus.objectType,
+    });
+    if (focus.subtitle) params.set("subtitle", focus.subtitle);
 
     try {
-      const response = await fetch(url);
-      const payload = await response.json() as NasaObjectInfo;
+      const response = await backendFetch(`/api/object-info?${params}`);
+      const payload = await readBackendJson<NasaObjectInfo>(response);
+      payload.imageUrl = backendAssetUrl(payload.imageUrl, response.url);
       if (seq !== objectInfoRequestSeq) return;
       if (!response.ok) {
         renderObjectInfo(payload, focus);
         return;
       }
       renderObjectInfo(payload, focus);
-    } catch {
+    } catch (err) {
       if (seq !== objectInfoRequestSeq) return;
+      const backendMessage = err instanceof BackendUnavailableError
+        ? "This page is not connected to the CosmosMap backend. Start the app with npm run dev and open the CosmosMap dev server URL."
+        : "The local CosmosMap NASA information service is not reachable.";
       renderObjectInfo({
         title: focus.title,
         objectType: focus.objectType,
-        description: "The local CosmosMap NASA information service is not reachable.",
+        description: backendMessage,
         sourceUrl: "https://images.nasa.gov/",
         sourceTitle: "NASA Image and Video Library",
         error: "service_unreachable",

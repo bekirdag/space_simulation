@@ -3,6 +3,7 @@ import { createServer as createHttpServer } from "node:http";
 import { stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { handleHealthRequest } from "./health.mjs";
 import { handleHorizonsRequest } from "./horizons.mjs";
 import { handleObjectInfoRequest } from "./object-info.mjs";
 
@@ -134,6 +135,7 @@ async function listenOnAvailablePort(makeServer, preferredPort, host) {
 function makeServer() {
   return createHttpServer(async (req, res) => {
     setIsolationHeaders(res);
+    if (handleHealthRequest(req, res)) return;
     if (await handleHorizonsRequest(req, res)) return;
     if (await handleObjectInfoRequest(req, res)) return;
     await serveStatic(req, res);

@@ -1,5 +1,6 @@
 import { createServer as createHttpServer } from "node:http";
 import { createServer as createViteServer } from "vite";
+import { handleHealthRequest } from "./health.mjs";
 import { handleHorizonsRequest } from "./horizons.mjs";
 import { handleObjectInfoRequest } from "./object-info.mjs";
 
@@ -51,6 +52,7 @@ const vite = await createViteServer({
 function makeServer() {
   return createHttpServer(async (req, res) => {
     setIsolationHeaders(res);
+    if (handleHealthRequest(req, res)) return;
     if (await handleHorizonsRequest(req, res)) return;
     if (await handleObjectInfoRequest(req, res)) return;
     vite.middlewares(req, res, () => {

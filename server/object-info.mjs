@@ -68,8 +68,12 @@ function extFromMime(contentType, fallbackUrl = "") {
 
 function sendJson(res, statusCode, payload) {
   res.writeHead(statusCode, {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, OPTIONS",
+    "Access-Control-Allow-Headers": "Accept, Content-Type",
     "Content-Type": "application/json; charset=utf-8",
     "Cache-Control": "no-store",
+    "Cross-Origin-Resource-Policy": "cross-origin",
     "Cross-Origin-Opener-Policy": "same-origin",
     "Cross-Origin-Embedder-Policy": "require-corp",
   });
@@ -78,6 +82,9 @@ function sendJson(res, statusCode, payload) {
 
 function sendMethodNotAllowed(res) {
   res.writeHead(405, {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, OPTIONS",
+    "Access-Control-Allow-Headers": "Accept, Content-Type",
     "Allow": "GET, OPTIONS",
     "Content-Type": "application/json; charset=utf-8",
   });
@@ -343,7 +350,13 @@ async function objectInfoResponse(params) {
 
 async function serveCachedImage(req, res, url) {
   if (req.method === "OPTIONS") {
-    res.writeHead(204, { "Allow": "GET, OPTIONS" });
+    res.writeHead(204, {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, OPTIONS",
+      "Access-Control-Allow-Headers": "Accept, Content-Type",
+      "Access-Control-Max-Age": "86400",
+      "Allow": "GET, OPTIONS",
+    });
     res.end();
     return true;
   }
@@ -374,9 +387,12 @@ async function serveCachedImage(req, res, url) {
   }
 
   res.writeHead(200, {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, OPTIONS",
+    "Access-Control-Allow-Headers": "Accept, Content-Type",
     "Content-Type": mimeFromExt(imagePath),
     "Cache-Control": "public, max-age=604800, immutable",
-    "Cross-Origin-Resource-Policy": "same-origin",
+    "Cross-Origin-Resource-Policy": "cross-origin",
     "Cross-Origin-Opener-Policy": "same-origin",
     "Cross-Origin-Embedder-Policy": "require-corp",
   });
@@ -394,7 +410,13 @@ export async function handleObjectInfoRequest(req, res) {
   if (url.pathname !== "/api/object-info") return false;
 
   if (req.method === "OPTIONS") {
-    res.writeHead(204, { "Allow": "GET, OPTIONS" });
+    res.writeHead(204, {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, OPTIONS",
+      "Access-Control-Allow-Headers": "Accept, Content-Type",
+      "Access-Control-Max-Age": "86400",
+      "Allow": "GET, OPTIONS",
+    });
     res.end();
     return true;
   }

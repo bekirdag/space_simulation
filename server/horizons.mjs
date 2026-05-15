@@ -304,8 +304,12 @@ async function horizonsResponse(dateStr, refresh) {
 
 function sendJson(res, statusCode, payload, cacheable = false) {
   res.writeHead(statusCode, {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, OPTIONS",
+    "Access-Control-Allow-Headers": "Accept, Content-Type",
     "Content-Type": "application/json; charset=utf-8",
     "Cache-Control": cacheable ? "public, max-age=86400, stale-while-revalidate=604800" : "no-store",
+    "Cross-Origin-Resource-Policy": "cross-origin",
     "Cross-Origin-Opener-Policy": "same-origin",
     "Cross-Origin-Embedder-Policy": "require-corp",
   });
@@ -314,6 +318,9 @@ function sendJson(res, statusCode, payload, cacheable = false) {
 
 function sendMethodNotAllowed(res) {
   res.writeHead(405, {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, OPTIONS",
+    "Access-Control-Allow-Headers": "Accept, Content-Type",
     "Allow": "GET, OPTIONS",
     "Content-Type": "application/json; charset=utf-8",
   });
@@ -325,7 +332,13 @@ export async function handleHorizonsRequest(req, res) {
   if (url.pathname !== "/api/horizons") return false;
 
   if (req.method === "OPTIONS") {
-    res.writeHead(204, { "Allow": "GET, OPTIONS" });
+    res.writeHead(204, {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, OPTIONS",
+      "Access-Control-Allow-Headers": "Accept, Content-Type",
+      "Access-Control-Max-Age": "86400",
+      "Allow": "GET, OPTIONS",
+    });
     res.end();
     return true;
   }
@@ -355,4 +368,3 @@ export async function handleHorizonsRequest(req, res) {
 
   return true;
 }
-

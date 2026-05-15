@@ -6,8 +6,9 @@
  * public cache files when available, and only then calls NASA/JPL Horizons.
  */
 
+import { backendFetch, readBackendJson } from "./backend";
+
 const HORIZONS_CACHE_SCHEMA = 'celestia.horizons.v1';
-const HORIZONS_API_URL = '/api/horizons';
 const PUBLIC_HORIZONS_CACHE_BASE_URL = '/cache/horizons';
 
 export interface HorizonsBodyTarget {
@@ -196,10 +197,10 @@ async function readPublicCache(dateStr: string): Promise<HorizonsSnapshot | null
 async function fetchBackendSnapshot(dateStr: string, refresh: boolean): Promise<HorizonsSnapshot> {
   const params = new URLSearchParams({ date: dateStr });
   if (refresh) params.set('refresh', '1');
-  const resp = await fetch(`${HORIZONS_API_URL}?${params}`, {
+  const resp = await backendFetch(`/api/horizons?${params}`, {
     cache: refresh ? 'no-store' : 'default',
   });
-  const payload = await resp.json() as unknown;
+  const payload = await readBackendJson<unknown>(resp);
   if (!resp.ok) {
     const message = typeof (payload as { message?: unknown }).message === 'string'
       ? (payload as { message: string }).message
