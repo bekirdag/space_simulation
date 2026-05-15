@@ -308,6 +308,7 @@ async function main(): Promise<void> {
     const showLabels = (document.getElementById("set-labels") as HTMLInputElement).checked;
     const showTrails = (document.getElementById("set-trails") as HTMLInputElement).checked;
     const showConstellations = (document.getElementById("set-constellations") as HTMLInputElement).checked;
+    const actualBodyBrightness = (document.getElementById("set-body-brightness") as HTMLInputElement).checked;
     showGalaxies    = (document.getElementById("set-galaxies") as HTMLInputElement).checked;
     const mwVal      = parseInt((document.querySelector('input[name="mw-stars"]:checked') as HTMLInputElement)?.value ?? "200000");
     const nearbyVal  = parseInt((document.querySelector('input[name="nearby-stars"]:checked') as HTMLInputElement)?.value ?? "100000");
@@ -331,6 +332,7 @@ async function main(): Promise<void> {
       mwStarLimit:  mwVal,
       starLimit:    nearbyVal,
       galaxyLimit:  galVal,
+      actualBodyBrightness,
     });
   }
 

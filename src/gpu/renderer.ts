@@ -7,6 +7,7 @@ import constellationWGSL from "./constellation.wgsl?raw";
 import trailWGSL    from "./trail.wgsl?raw";
 import { type GPUContext } from "./device";
 import { type Body, BODY_FLOATS } from "../physics/body";
+import { BodyType } from "../physics/constants";
 import { STAR_FLOATS } from "../catalog/stars";
 import { MW_FLOATS } from "../catalog/milkyway";
 import { GALAXY_FLOATS } from "../catalog/galaxies";
@@ -18,6 +19,30 @@ import { type CameraUniforms } from "../scene/camera";
 
 // Camera uniform: mat4 (64) + vec4 rightAndMNR (16) + vec4 upAndFocal (16) = 96 bytes
 const CAMERA_BYTES = 96;
+
+const EARTH_GEOMETRIC_ALBEDO = 0.367;
+const DEFAULT_REFLECTIVE_ALBEDO = 0.25;
+const REFLECTIVE_BODY_ALBEDO: Record<string, number> = {
+  Mercury: 0.142,
+  Venus: 0.689,
+  Earth: 0.367,
+  Mars: 0.170,
+  Jupiter: 0.538,
+  Saturn: 0.499,
+  Uranus: 0.488,
+  Neptune: 0.442,
+  Moon: 0.136,
+  Io: 0.63,
+  Europa: 0.67,
+  Ganymede: 0.43,
+  Callisto: 0.17,
+  Titan: 0.22,
+  Enceladus: 1.38,
+  Pluto: 0.49,
+  Charon: 0.37,
+  Eris: 0.96,
+  Ceres: 0.09,
+};
 
 const TRAIL_MAX_BODIES   = 64;
 const TRAIL_VTXBUF_BYTES = TRAIL_MAX_BODIES * TRAIL_SLOT_BYTES; // 64 × fixed slot = ~31 MB
@@ -85,6 +110,7 @@ export class Renderer {
   private _showTrails   = true;
   private _showGalaxies = true;
   private _showConstellations = true;
+  private _actualBodyBrightness = true;
 
   applySettings(s: {
     starLimit?:   number;
@@ -93,6 +119,7 @@ export class Renderer {
     showGalaxies?: boolean;
     showConstellations?: boolean;
     showTrails?:  boolean;
+    actualBodyBrightness?: boolean;
   }): void {
     if (s.starLimit   !== undefined) this._starLimit   = s.starLimit;
     if (s.mwStarLimit !== undefined) this._mwStarLimit = s.mwStarLimit;
@@ -100,6 +127,7 @@ export class Renderer {
     if (s.showGalaxies !== undefined) this._showGalaxies = s.showGalaxies;
     if (s.showConstellations !== undefined) this._showConstellations = s.showConstellations;
     if (s.showTrails  !== undefined) this._showTrails  = s.showTrails;
+    if (s.actualBodyBrightness !== undefined) this._actualBodyBrightness = s.actualBodyBrightness;
   }
 
   constructor(
@@ -500,19 +528,41 @@ export class Renderer {
   uploadBodies(bodies: Body[], visibility: ReadonlyMap<number, number> = new Map()): void {
     this.bodyCount = bodies.length;
     const data = new Float32Array(bodies.length * BODY_FLOATS);
+    const sun = bodies.find(b => b.name === "Sun" && b.type === BodyType.Star);
     for (let i = 0; i < bodies.length; i++) {
       const b = bodies[i]!;
       const o = i * BODY_FLOATS;
+      const brightness = this.bodyBrightnessFactor(b, sun);
       // vec4 pos_mass
       data[o+0]=b.x;  data[o+1]=b.y;  data[o+2]=b.z;  data[o+3]=b.mass;
       // vec4 vel_rad
       data[o+4]=b.vx; data[o+5]=b.vy; data[o+6]=b.vz; data[o+7]=b.radius;
-      // vec4 acc_type (xy reserved; z=render visibility; btype in .w)
-      data[o+8]=0; data[o+9]=0; data[o+10]=visibility.get(b.id) ?? 1; data[o+11]=b.type;
+      // vec4 acc_type (x=brightness; y reserved; z=render visibility; btype in .w)
+      data[o+8]=brightness; data[o+9]=0; data[o+10]=visibility.get(b.id) ?? 1; data[o+11]=b.type;
       // vec4 col_id
       data[o+12]=b.color[0]; data[o+13]=b.color[1]; data[o+14]=b.color[2]; data[o+15]=b.id;
     }
     this.ctx.device.queue.writeBuffer(this.bodyBuffer, 0, data);
+  }
+
+  private bodyBrightnessFactor(body: Body, sun: Body | undefined): number {
+    if (!this._actualBodyBrightness) return 1;
+    if (body.type === BodyType.Star) {
+      return body.name === "Sun" ? 48 : 32;
+    }
+    if (body.type === BodyType.Exoplanet) {
+      return 1.35;
+    }
+
+    const albedo = REFLECTIVE_BODY_ALBEDO[body.name] ?? DEFAULT_REFLECTIVE_ALBEDO;
+    const sunDistanceAU = sun
+      ? Math.hypot(body.x - sun.x, body.y - sun.y, body.z - sun.z)
+      : 1;
+    const illumination = 1 / Math.max(0.05, sunDistanceAU * sunDistanceAU);
+    const relativeSurfaceBrightness = (albedo / EARTH_GEOMETRIC_ALBEDO) * illumination;
+
+    // Compress the real dynamic range so dim bodies are still usable in the sim.
+    return Math.max(0.16, Math.min(4.0, Math.pow(relativeSurfaceBrightness, 0.45)));
   }
 
   private ensureStarCapacity(count: number): void {

@@ -8,7 +8,7 @@
 // Body storage (64 bytes = 4 × vec4, matches JS BODY_FLOATS=16):
 //   vec4 pos_mass  — x, y, z, mass
 //   vec4 vel_rad   — vx, vy, vz, radius
-//   vec4 acc_type  — ax, ay, render visibility, btype
+//   vec4 acc_type  — brightness, _reserved, render visibility, btype
 //   vec4 col_id    — r, g, b, id
 //
 // Billboard: quad vertices are offset from body center along camera right/up,
@@ -36,6 +36,7 @@ struct VertexOut {
   @location(1)       color:    vec3<f32>,
   @location(2)       btype:    f32,
   @location(3)       fade:     f32,  // 1.0 = fully visible, 0.0 = hidden
+  @location(4)       brightness: f32,
 };
 
 var<private> quad: array<vec2<f32>, 6> = array<vec2<f32>, 6>(
@@ -64,6 +65,7 @@ fn vs_main(
   out.color   = b.col_id.xyz;
   out.btype   = b.acc_type.w;
   out.fade    = clamp(b.acc_type.z, 0.0, 1.0);
+  out.brightness = max(b.acc_type.x, 0.0);
 
   // Discard body behind the camera or suppressed by screen-density reduction.
   if clip_c.w <= 0.0 || out.fade <= 0.001 {
@@ -71,9 +73,10 @@ fn vs_main(
     return out;
   }
 
-  // Expand billboard at the body's actual physical radius. Do not
-  // clamp to a minimum dot; distant bodies should become naturally tiny.
-  let world_pos = center + uv.x * camRight * r_phys + uv.y * camUp * r_phys;
+  // The core body keeps its actual physical radius. Brightness mode may expand
+  // the quad only for optical glow around that core.
+  let glowScale = clamp(1.0 + log2(max(out.brightness, 1.0)) * 0.65, 1.0, 8.0);
+  let world_pos = center + uv.x * camRight * r_phys * glowScale + uv.y * camUp * r_phys * glowScale;
   out.clip_pos  = camera.viewProj * vec4(world_pos, 1.0);
   return out;
 }
@@ -83,21 +86,40 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   let d = length(in.uv);
   if d > 1.0 { discard; }
 
-  let z = sqrt(max(0.0, 1.0 - d * d));
-  let edge = 1.0 - smoothstep(0.985, 1.0, d);
-  let a = edge * in.fade;
-  var col = in.color;
-  if in.btype < 0.5 {
-    let core = 1.0 - smoothstep(0.0, 0.55, d);
-    let limb = 0.76 + 0.24 * z;
-    col = col * (limb + core * 0.35) + vec3(core * 0.18);
+  let brightness = max(in.brightness, 0.0);
+  let glowScale = clamp(1.0 + log2(max(brightness, 1.0)) * 0.65, 1.0, 8.0);
+  let sphereD = d * glowScale;
+  let coreEdge = 1.0 - smoothstep(0.985, 1.0, sphereD);
+  var coreAlpha = coreEdge * in.fade;
+  var coreCol = in.color;
+  if sphereD <= 1.0 {
+    let z = sqrt(max(0.0, 1.0 - sphereD * sphereD));
+    if in.btype < 0.5 {
+      let core = 1.0 - smoothstep(0.0, 0.55, sphereD);
+      let limb = 0.76 + 0.24 * z;
+      let starLift = 1.0 + log2(max(brightness, 1.0)) * 0.18;
+      coreCol = coreCol * (limb + core * 0.35) * starLift + vec3(core * 0.18);
+    } else {
+      let sphereUv = in.uv * glowScale;
+      let normal = normalize(vec3(sphereUv.x, sphereUv.y, z));
+      let lightDir = normalize(vec3(-0.42, 0.34, 0.84));
+      let diffuse = max(dot(normal, lightDir), 0.0);
+      let rimShade = 0.78 + 0.22 * z;
+      let nightSide = 0.18;
+      coreCol = coreCol * (nightSide + diffuse * 0.82) * rimShade * brightness;
+    }
   } else {
-    let normal = normalize(vec3(in.uv.x, in.uv.y, z));
-    let lightDir = normalize(vec3(-0.42, 0.34, 0.84));
-    let diffuse = max(dot(normal, lightDir), 0.0);
-    let rimShade = 0.78 + 0.22 * z;
-    let nightSide = 0.18;
-    col = col * (nightSide + diffuse * 0.82) * rimShade;
+    coreAlpha = 0.0;
   }
-  return vec4<f32>(col * a, a);
+
+  let coreRadius = 1.0 / glowScale;
+  let glowPower = clamp(log2(max(brightness, 1.0)) * 0.10, 0.0, 0.55);
+  var haloAlpha = 0.0;
+  if glowPower > 0.0 && glowScale > 1.001 {
+    haloAlpha = (1.0 - smoothstep(coreRadius, 1.0, d)) * glowPower * in.fade;
+  }
+  let haloCol = in.color * (0.55 + glowPower * 1.5);
+  let outAlpha = max(coreAlpha, haloAlpha);
+  let outCol = coreCol * coreAlpha + haloCol * haloAlpha;
+  return vec4<f32>(outCol, outAlpha);
 }
