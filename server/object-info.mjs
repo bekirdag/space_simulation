@@ -11,9 +11,13 @@ const CACHE_ROOT = process.env.COSMOSMAP_OBJECT_INFO_CACHE_DIR
 const IMAGE_CACHE_DIR = path.join(CACHE_ROOT, "images");
 const NASA_IMAGES_API = "https://images-api.nasa.gov";
 const NASA_IMAGES_WEB = "https://images.nasa.gov";
-const OBJECT_INFO_CACHE_VERSION = 2;
+const NASA_SCIENCE_WEB = "https://science.nasa.gov";
+const NASA_SCIENCE_SEARCH_API = `${NASA_SCIENCE_WEB}/wp-json/wp/v2/search`;
+const OBJECT_INFO_CACHE_VERSION = 3;
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
 const DEFAULT_CACHE_TTL_DAYS = 30;
+const GENERAL_DESCRIPTION_MAX_LENGTH = 1400;
+const JSON_FETCH_TIMEOUT_MS = 10_000;
 const NASA_SCIENCE_OBJECT_PAGES = new Map([
   ["sun", "https://science.nasa.gov/sun/facts/"],
   ["mercury", "https://science.nasa.gov/mercury/facts/"],
@@ -58,12 +62,25 @@ function decodeHtmlEntities(value) {
     .replace(/&lsquo;/gi, "'")
     .replace(/&rdquo;/gi, "\"")
     .replace(/&ldquo;/gi, "\"")
+    .replace(/&hellip;/gi, "...")
     .replace(/&mdash;/gi, " - ")
     .replace(/&ndash;/gi, " - ");
 }
 
+function cleanExcerpt(value, maxLength = GENERAL_DESCRIPTION_MAX_LENGTH) {
+  return cleanText(value, maxLength)
+    .replace(/\s*\[\s*(?:\.{3}|\u2026)\s*\]\s*$/u, "")
+    .replace(/\s*(?:\.{3}|\u2026)\s*$/u, "")
+    .trim();
+}
+
 function objectLookupKey(value) {
-  return cleanText(value, 120)
+  return normalizeForMatch(value)
+    .slice(0, 120);
+}
+
+function normalizeForMatch(value) {
+  return cleanText(value, 240)
     .toLowerCase()
     .replace(/\*/g, "")
     .replace(/[^a-z0-9]+/g, " ")
@@ -171,6 +188,15 @@ function fallbackDescription(title, objectType) {
   return `NASA did not return a matching object record for ${title}. The object is still selectable in CosmosMap as a ${objectType}.`;
 }
 
+function cleanMediaDescription(value, title, objectType) {
+  const text = cleanText(value, GENERAL_DESCRIPTION_MAX_LENGTH)
+    .replace(/^NASA image release\s+[A-Za-z]+ \d{1,2}, \d{4}\s*/i, "")
+    .replace(/\s*NASA image use policy\..*$/i, "")
+    .replace(/\s*To read more go to:.*$/i, "")
+    .trim();
+  return text || fallbackDescription(title, objectType);
+}
+
 function normalizedSearchTerms(title, objectType, subtitle) {
   const lowerTitle = title.toLowerCase();
   const lowerType = objectType.toLowerCase();
@@ -200,19 +226,26 @@ function normalizedSearchTerms(title, objectType, subtitle) {
     queries.push(`${title} ${objectType}`.trim(), title);
   }
 
-  if (subtitle) queries.push(`${title} ${subtitle}`.replace(/[·;:,()[\]]+/g, " "));
+  if (subtitle) queries.push(`${title} ${subtitle}`.replace(/[\u00b7;:,()[\]]+/g, " "));
   return [...new Set(queries.map(q => cleanText(q, 120)).filter(Boolean))];
 }
 
 async function fetchJson(url) {
-  const response = await fetch(url, {
-    headers: {
-      "Accept": "application/json",
-      "User-Agent": "CosmosMap object-info cache (https://github.com/bekirdag/space_simulation)",
-    },
-  });
-  if (!response.ok) throw new Error(`NASA request failed: ${response.status} ${response.statusText}`);
-  return response.json();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), JSON_FETCH_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        "Accept": "application/json",
+        "User-Agent": "CosmosMap object-info cache (https://github.com/bekirdag/space_simulation)",
+      },
+    });
+    if (!response.ok) throw new Error(`NASA request failed: ${response.status} ${response.statusText}`);
+    return response.json();
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function fetchText(url) {
@@ -257,6 +290,92 @@ function pageTitle(html, fallback) {
     .replace(/\s*-\s*NASA Science$/i, "")
     .replace(/\s*\|\s*NASA$/i, "");
   return title || fallback;
+}
+
+function articleHtml(html) {
+  return html.match(/<article\b[\s\S]*?<\/article>/i)?.[0] ??
+    html.match(/<main\b[\s\S]*?<\/main>/i)?.[0] ??
+    html;
+}
+
+function removeNonContentHtml(html) {
+  return String(html ?? "")
+    .replace(/<script\b[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style\b[\s\S]*?<\/style>/gi, " ")
+    .replace(/<svg\b[\s\S]*?<\/svg>/gi, " ")
+    .replace(/<nav\b[\s\S]*?<\/nav>/gi, " ")
+    .replace(/<button\b[\s\S]*?<\/button>/gi, " ")
+    .replace(/<form\b[\s\S]*?<\/form>/gi, " ")
+    .replace(/<figure\b[\s\S]*?<\/figure>/gi, " ")
+    .replace(/<figcaption\b[\s\S]*?<\/figcaption>/gi, " ");
+}
+
+function htmlSectionByHeadingId(html, headingId) {
+  const escapedId = headingId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const heading = new RegExp(`<h[1-6]\\b[^>]*\\bid\\s*=\\s*["']${escapedId}["'][^>]*>[\\s\\S]*?<\\/h[1-6]>`, "i").exec(html);
+  if (!heading) return "";
+
+  const start = heading.index + heading[0].length;
+  const rest = html.slice(start);
+  const nextHeading = /<h[1-6]\b/i.exec(rest);
+  return nextHeading ? rest.slice(0, nextHeading.index) : rest;
+}
+
+function isUsefulInfoParagraph(text) {
+  if (text.length < 45) return false;
+  if (/^(?:explore this section|facts|resources|related|credits?)\b/i.test(text)) return false;
+  if (/\b(?:subscribe|newsletter|cookie|privacy policy|terms of use)\b/i.test(text)) return false;
+  if (/^(?:NASA|ESA|JPL|Caltech|STScI)(?:[\/\-\s]|$)/i.test(text) && text.length < 120) return false;
+  return true;
+}
+
+function paragraphTextsFromHtml(html) {
+  const cleanedHtml = removeNonContentHtml(html);
+  return [...cleanedHtml.matchAll(/<p\b[^>]*>([\s\S]*?)<\/p>/gi)]
+    .map(match => cleanText(match[1], 1000))
+    .filter(isUsefulInfoParagraph);
+}
+
+function joinDescriptionParagraphs(paragraphs, maxLength = GENERAL_DESCRIPTION_MAX_LENGTH) {
+  const selected = [];
+  const seen = new Set();
+  let length = 0;
+
+  for (const paragraph of paragraphs) {
+    const key = normalizeForMatch(paragraph);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+
+    const separatorLength = selected.length > 0 ? 2 : 0;
+    if (length + separatorLength + paragraph.length > maxLength) {
+      if (selected.length === 0) selected.push(paragraph.slice(0, maxLength).replace(/\s+\S*$/, "").trim());
+      break;
+    }
+    selected.push(paragraph);
+    length += separatorLength + paragraph.length;
+    if (selected.length >= 3) break;
+  }
+
+  return selected.join("\n\n").trim();
+}
+
+function scienceDescriptionFromHtml(html, fallback = "") {
+  const sourceHtml = articleHtml(html);
+  const sectionIds = ["h-introduction", "h-overview", "h-about", "h-in-depth"];
+  for (const sectionId of sectionIds) {
+    const sectionHtml = htmlSectionByHeadingId(sourceHtml, sectionId);
+    const description = joinDescriptionParagraphs(paragraphTextsFromHtml(sectionHtml));
+    if (description) return description;
+  }
+
+  const articleDescription = joinDescriptionParagraphs(paragraphTextsFromHtml(sourceHtml));
+  return articleDescription || cleanExcerpt(fallback);
+}
+
+function firstImageFromHtml(html) {
+  const tag = String(html ?? "").match(/<img\b[^>]*>/i)?.[0];
+  const src = tag ? htmlAttr(tag, "src") : "";
+  return src ? decodeHtmlEntities(src) : "";
 }
 
 function dataForItem(item) {
@@ -358,15 +477,113 @@ async function cachedImageFromNasa(imageUrl, title, objectType, nasaId) {
   return { filename, url: imageRouteFor(filename) };
 }
 
+function scienceSearchTerms(title, objectType, subtitle) {
+  const lowerTitle = title.toLowerCase();
+  const baseTitle = cleanText(title.replace(/\*/g, " "), 100);
+  const queries = [];
+
+  if (lowerTitle === "sgr a*" || lowerTitle.includes("sagittarius a")) {
+    queries.push("Sagittarius A black hole");
+  } else {
+    queries.push(baseTitle);
+  }
+
+  return [...new Set(queries
+    .map(query => cleanText(query, 120).replace(/[^\w\s-]/g, " ").replace(/\s+/g, " ").trim())
+    .filter(query => query.length >= 2))];
+}
+
+function scienceSearchHref(item) {
+  return item?._links?.self?.find(link => typeof link?.href === "string")?.href ?? "";
+}
+
+function scienceSearchItemScore(item, title, objectType) {
+  const href = scienceSearchHref(item);
+  if (!href) return -1000;
+
+  const normalizedTitle = normalizeForMatch(title);
+  const titleWords = normalizedTitle.split(" ").filter(word => word.length > 1);
+  const objectWords = normalizeForMatch(objectType).split(" ").filter(word => word.length > 2);
+  const itemTitle = normalizeForMatch(item?.title ?? "");
+  const itemUrl = String(item?.url ?? "").toLowerCase();
+  const blob = normalizeForMatch(`${item?.title ?? ""} ${item?.url ?? ""} ${item?.subtype ?? ""}`);
+  let score = 0;
+
+  if (item?.subtype === "topic") score += 35;
+  else if (item?.subtype === "page") score += 22;
+  else if (item?.subtype === "post") score += 12;
+  else if (["stma", "attachment", "page-ext"].includes(item?.subtype)) score -= 45;
+
+  if (itemTitle === normalizedTitle || itemTitle === `${normalizedTitle} facts`) score += 70;
+  if (normalizedTitle && blob.includes(normalizedTitle)) score += 45;
+  for (const word of titleWords) {
+    if (blob.includes(word)) score += 10;
+  }
+  for (const word of objectWords) {
+    if (blob.includes(word)) score += 5;
+  }
+  if (/\bfacts?\b/.test(itemTitle)) score += 12;
+  if (/\/(?:photojournal|asset)\//.test(itemUrl) || /\b(?:image|imaged|photo|gallery)\b/.test(itemTitle)) score -= 28;
+  return score;
+}
+
+function chooseScienceSearchItem(items, title, objectType) {
+  const ranked = (Array.isArray(items) ? items : [])
+    .map(item => ({ item, score: scienceSearchItemScore(item, title, objectType) }))
+    .sort((a, b) => b.score - a.score);
+  const best = ranked[0];
+  return best && best.score >= 20 ? best.item : null;
+}
+
+function scienceRecordImageUrl(record, contentHtml) {
+  return record?.featured_image?.file ||
+    record?.parsely?.meta?.image?.url ||
+    record?.parsely?.meta?.thumbnailUrl ||
+    firstImageFromHtml(contentHtml) ||
+    null;
+}
+
+async function nasaScienceRecordInfo({ record, searchItem, title, objectType }) {
+  const contentHtml = record?.content?.rendered ?? "";
+  const fallback = record?.excerpt?.rendered || record?.parsely?.meta?.description || "";
+  const description = scienceDescriptionFromHtml(contentHtml, fallback);
+  if (!description) return null;
+
+  const remoteImageUrl = scienceRecordImageUrl(record, contentHtml);
+  let image = null;
+  try {
+    image = await cachedImageFromNasa(remoteImageUrl, title, objectType, record?.id ?? record?.link ?? searchItem?.url);
+  } catch (err) {
+    console.warn("CosmosMap NASA Science image cache failed:", err);
+  }
+
+  return {
+    cacheVersion: OBJECT_INFO_CACHE_VERSION,
+    title,
+    objectType,
+    description,
+    imageUrl: image?.url ?? null,
+    nasaId: null,
+    sourceTitle: cleanText(record?.title?.rendered || searchItem?.title || `${title}: NASA Science`, 240),
+    sourceUrl: record?.link || searchItem?.url || NASA_SCIENCE_WEB,
+    query: searchItem?.url || "",
+    cachedImage: image?.filename ?? null,
+    remoteImageUrl,
+    provider: "NASA Science",
+    cachedAt: new Date().toISOString(),
+  };
+}
+
 async function nasaScienceObjectInfo({ title, objectType }) {
   const sourcePage = NASA_SCIENCE_OBJECT_PAGES.get(objectLookupKey(title));
   if (!sourcePage) return null;
 
   const { html, url } = await fetchText(sourcePage);
-  const description = metaContent(html, ["description", "og:description"], 1800);
+  const metaDescription = metaContent(html, ["description", "og:description"], GENERAL_DESCRIPTION_MAX_LENGTH);
+  const description = scienceDescriptionFromHtml(html, metaDescription);
   if (!description) return null;
 
-  const remoteImageUrl = metaContent(html, ["og:image"], 1000) || null;
+  const remoteImageUrl = metaContent(html, ["og:image"], 1000) || firstImageFromHtml(html) || null;
   let image = null;
   try {
     image = await cachedImageFromNasa(remoteImageUrl, title, objectType, url);
@@ -391,10 +608,29 @@ async function nasaScienceObjectInfo({ title, objectType }) {
   };
 }
 
-async function nasaObjectInfo({ title, objectType, subtitle }) {
-  const scienceInfo = await nasaScienceObjectInfo({ title, objectType });
-  if (scienceInfo) return scienceInfo;
+async function nasaScienceSearchInfo({ title, objectType, subtitle }) {
+  for (const query of scienceSearchTerms(title, objectType, subtitle)) {
+    try {
+      const url = new URL(NASA_SCIENCE_SEARCH_API);
+      url.searchParams.set("search", query);
+      url.searchParams.set("per_page", "8");
 
+      const searchJson = await fetchJson(url);
+      const item = chooseScienceSearchItem(searchJson, title, objectType);
+      const href = scienceSearchHref(item);
+      if (!href) continue;
+
+      const record = await fetchJson(href);
+      const info = await nasaScienceRecordInfo({ record, searchItem: item, title, objectType });
+      if (info) return info;
+    } catch (err) {
+      console.warn("CosmosMap NASA Science search failed:", err);
+    }
+  }
+  return null;
+}
+
+async function nasaImagesObjectInfo({ title, objectType, subtitle }) {
   const queries = normalizedSearchTerms(title, objectType, subtitle);
 
   for (const query of queries) {
@@ -430,7 +666,7 @@ async function nasaObjectInfo({ title, objectType, subtitle }) {
       cacheVersion: OBJECT_INFO_CACHE_VERSION,
       title,
       objectType,
-      description: cleanText(data.description || data.description_508 || fallbackDescription(title, objectType), 1800),
+      description: cleanMediaDescription(data.description || data.description_508, title, objectType),
       imageUrl: image?.url ?? null,
       nasaId: nasaId || null,
       sourceTitle: cleanText(data.title || title, 240),
@@ -458,6 +694,38 @@ async function nasaObjectInfo({ title, objectType, subtitle }) {
     provider: "NASA Image and Video Library",
     cachedAt: new Date().toISOString(),
   };
+}
+
+async function withFallbackImage(info, params) {
+  if (info.imageUrl) return info;
+
+  try {
+    const imageInfo = await nasaImagesObjectInfo(params);
+    if (!imageInfo.imageUrl) return info;
+    return {
+      ...info,
+      imageUrl: imageInfo.imageUrl,
+      cachedImage: imageInfo.cachedImage,
+      remoteImageUrl: imageInfo.remoteImageUrl,
+      imageProvider: imageInfo.provider,
+      imageSourceTitle: imageInfo.sourceTitle,
+      imageSourceUrl: imageInfo.sourceUrl,
+    };
+  } catch (err) {
+    console.warn("CosmosMap NASA fallback image lookup failed:", err);
+    return info;
+  }
+}
+
+async function nasaObjectInfo({ title, objectType, subtitle }) {
+  const params = { title, objectType, subtitle };
+  const directScienceInfo = await nasaScienceObjectInfo({ title, objectType });
+  if (directScienceInfo) return withFallbackImage(directScienceInfo, params);
+
+  const searchedScienceInfo = await nasaScienceSearchInfo(params);
+  if (searchedScienceInfo) return withFallbackImage(searchedScienceInfo, params);
+
+  return nasaImagesObjectInfo(params);
 }
 
 async function objectInfoResponse(params) {
