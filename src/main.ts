@@ -352,6 +352,43 @@ async function main(): Promise<void> {
     }
   }
 
+  function normalizeObjectInfoText(value: string | null | undefined): string {
+    return (value ?? "")
+      .replace(/<[^>]*>/g, " ")
+      .replace(/&nbsp;/gi, " ")
+      .replace(/&amp;/gi, "&")
+      .replace(/&quot;/gi, "\"")
+      .replace(/&#39;/gi, "'")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function objectTypeLabel(value: string | null | undefined): string {
+    const text = normalizeObjectInfoText(value || "object");
+    return text ? text[0]!.toUpperCase() + text.slice(1) : "Object";
+  }
+
+  function truncateObjectInfoStatus(value: string): string {
+    if (value.length <= 150) return value;
+    return `${value.slice(0, 147).replace(/\s+\S*$/, "")}...`;
+  }
+
+  function objectInfoDataStatus(info: NasaObjectInfo, focus: FocusInfo): string {
+    const typeLabel = objectTypeLabel(info.objectType || focus.objectType);
+    const subtitle = normalizeObjectInfoText(focus.subtitle);
+    if (subtitle && subtitle.toLowerCase() !== typeLabel.toLowerCase()) {
+      const detail = typeLabel.toLowerCase() === "galaxy" && /\b(?:kpc|Mpc)\b/.test(subtitle)
+        ? `${subtitle} from the Milky Way`
+        : subtitle;
+      return `${typeLabel} · ${detail}`;
+    }
+
+    const description = normalizeObjectInfoText(info.description)
+      .replace(/^NASA image release\s+[A-Za-z]+ \d{1,2}, \d{4}\s*/i, "");
+    const firstSentence = (description.match(/[^.!?]+[.!?]+/)?.[0] ?? description).trim();
+    return truncateObjectInfoStatus(firstSentence || `${typeLabel} · ${info.title || focus.title}`);
+  }
+
   function closeObjectInfo(): void {
     showObjectInfoModal(false);
   }
@@ -370,10 +407,7 @@ async function main(): Promise<void> {
     } else if (info.stale) {
       setObjectInfoStatus(info.warning || "Showing previously retrieved NASA data.");
     } else {
-      const sourceName = info.provider || "NASA Image and Video Library";
-      setObjectInfoStatus(info.imageUrl
-        ? `Image and description from ${sourceName}.`
-        : `Description from ${sourceName}.`);
+      setObjectInfoStatus(objectInfoDataStatus(info, focus));
     }
   }
 
