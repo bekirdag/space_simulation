@@ -2,6 +2,7 @@ import { initGPU } from "./gpu/device";
 import { Renderer } from "./gpu/renderer";
 import { Camera } from "./scene/camera";
 import { HUD } from "./ui/hud";
+import { ScaleBar } from "./ui/scale-bar";
 import { NavPanel } from "./ui/nav";
 import { LabelManager } from "./ui/labels";
 import { ContextMenu } from "./ui/context-menu";
@@ -429,6 +430,7 @@ async function main(): Promise<void> {
 
   const trails = new TrailSystem();
   const hud    = new HUD();
+  const scaleBar = new ScaleBar();
   const labels = new LabelManager();
   let visibleStarBuffer: StarBuffer = createVisibleStarField();
   let exoplanetHostBuffer: StarBuffer = new Float32Array(0);
@@ -1184,6 +1186,13 @@ async function main(): Promise<void> {
       camUniforms.eye[1] - sunWorldPos[1],
       camUniforms.eye[2] - sunWorldPos[2],
     );
+    const targetDistFromSun = Math.hypot(
+      camera.target[0] - sunWorldPos[0],
+      camera.target[1] - sunWorldPos[1],
+      camera.target[2] - sunWorldPos[2],
+    );
+    const auPerCssPixel = (camera.distance * 2 / camUniforms.focalY) / Math.max(1, window.innerHeight);
+    scaleBar.update(auPerCssPixel, Math.max(eyeDistFromSun, targetDistFromSun));
     renderer.updateLOD(eyeDistFromSun);
 
     const sel = nav.selectedCatalogStar;
