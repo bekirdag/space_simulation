@@ -32,6 +32,7 @@ import {
   searchCatalogStars,
   type CatalogStar,
   type StarBuffer,
+  type StarSearchResult,
 } from "./catalog/stars";
 import {
   EXOPLANET_CATALOG,
@@ -68,6 +69,16 @@ const MAX_CATALOG_GALAXIES = 100_000;
 const MAX_STEPS  = 2000;
 const SGR_A_BLACK_HOLE_RING_AU = 3_200;
 const SGR_A_BLACK_HOLE_FOCUS_AU = 50_000;
+const SGR_A_SEARCH_RESULT: StarSearchResult = {
+  id: "blackhole:sgr-a",
+  label: "Sagittarius A*",
+  subtitle: "Milky Way central black hole",
+  x: SGR_A_STAR_POS[0],
+  y: SGR_A_STAR_POS[1],
+  z: SGR_A_STAR_POS[2],
+  focusDistance: SGR_A_BLACK_HOLE_FOCUS_AU,
+  color: [1.0, 0.52, 0.18],
+};
 const LIGHT_YEARS_PER_PARSEC = 3.26156;
 const NEARBY_STAR_FOCUS_MIN_AU = 0.35;
 const NEARBY_STAR_FOCUS_MAX_AU = 24;
@@ -656,16 +667,7 @@ async function main(): Promise<void> {
         "black hole".includes(q) ||
         "galactic center".includes(q) ||
         "milky way center".includes(q)
-      ) ? [{
-        id: "blackhole:sgr-a",
-        label: "Sagittarius A*",
-        subtitle: "Milky Way central black hole",
-        x: SGR_A_STAR_POS[0],
-        y: SGR_A_STAR_POS[1],
-        z: SGR_A_STAR_POS[2],
-        focusDistance: SGR_A_BLACK_HOLE_FOCUS_AU,
-        color: [1.0, 0.52, 0.18] as [number, number, number],
-      }] : [];
+      ) ? [SGR_A_SEARCH_RESULT] : [];
       const starHits = searchCatalogStars(exoplanetHosts, query, 5);
       const exoHits  = searchExoplanets(query, getStarWorldPos, simYears, 5);
       return [
@@ -1195,9 +1197,9 @@ async function main(): Promise<void> {
     labels.updateNearbyStarLabels(NEARBY_STAR_LABELS, camUniforms.viewProj, camUniforms.eye, sunWorldPos, focusNearbyStar);
     labels.updateConstellationLabels(constellationLabels, camUniforms.viewProj, showConstellations);
     labels.updateGalacticCenterLabel(SGR_A_STAR_POS, camUniforms.viewProj, () => {
-      nav.clearFocusedBody();
-      // Orbit the galactic centre at ~50 000 AU — shows the surrounding star field
-      camera.travelTo(SGR_A_STAR_POS[0], SGR_A_STAR_POS[1], SGR_A_STAR_POS[2], 50_000);
+      setExoplanetBodies(null);
+      nav.selectCatalogStar(SGR_A_SEARCH_RESULT);
+      renderer.uploadBodies(bodies);
     });
     labels.updateCatalogStarLabel(nav.selectedCatalogStar, camUniforms.viewProj);
     hud.galacticSpeedKms = galacticSpeedKmS(galacticOrigin);

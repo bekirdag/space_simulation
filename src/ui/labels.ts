@@ -21,6 +21,7 @@ const ALWAYS_VISIBLE_BODY_NAMES = new Set([
 const LABEL_EDGE_MARGIN = 24;
 const LABEL_NAV_MARGIN = 238;
 const LABEL_BOTTOM_MARGIN = 86;
+const SOLAR_SYSTEM_LABEL_COLLAPSE_DISTANCE_AU = 250;
 // Near a direct 180-degree behind-camera alignment, every screen edge is arbitrary.
 const BEHIND_CAMERA_PIN_DEADZONE = 0.16;
 
@@ -174,11 +175,19 @@ export class LabelManager {
     let solarSystemClustered = false;
     const sun = bodies.find(b => b.name === "Sun");
     if (sun) {
-      const sunPt = project(sun.x, sun.y, sun.z, viewProj, cssW, cssH, false);
-      const refPt = project(sun.x + 30, sun.y, sun.z, viewProj, cssW, cssH, false);
-      if (sunPt && refPt) {
-        const spread = Math.hypot(sunPt.x - refPt.x, sunPt.y - refPt.y);
-        solarSystemClustered = spread < CLUSTER_THRESHOLD_PX;
+      const cameraDistanceFromSun = Math.hypot(
+        cameraEye[0] - sun.x,
+        cameraEye[1] - sun.y,
+        cameraEye[2] - sun.z,
+      );
+      solarSystemClustered = cameraDistanceFromSun > SOLAR_SYSTEM_LABEL_COLLAPSE_DISTANCE_AU;
+      if (!solarSystemClustered) {
+        const sunPt = project(sun.x, sun.y, sun.z, viewProj, cssW, cssH, false);
+        const refPt = project(sun.x + 30, sun.y, sun.z, viewProj, cssW, cssH, false);
+        if (sunPt && refPt) {
+          const spread = Math.hypot(sunPt.x - refPt.x, sunPt.y - refPt.y);
+          solarSystemClustered = spread < CLUSTER_THRESHOLD_PX;
+        }
       }
     }
 
