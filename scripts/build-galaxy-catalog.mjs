@@ -7,12 +7,15 @@
  *   • Procedural   → 50k additional at larger distances for visual completeness
  *
  * Binary layout per galaxy (8 floats = 32 bytes, same as HYG star binary):
- *   [0-2] visual position AU (ecliptic J2000, log-compressed)
+ *   [0-2] visual position AU (ecliptic J2000, Local Group linear + deep-field log)
  *   [3]   size multiplier
  *   [4-6] RGB colour
  *   [7]   alpha
  *
- * Compression: visual_dist = 200 000 + 50 000 × log2(dist_Mpc/0.01 + 1)  AU
+ * Scale:
+ *   - 8 000 AU/kpc, matching the Milky Way background catalog
+ *   - linear through 2 Mpc so the Local Group has realistic proportions
+ *   - logarithmic beyond 2 Mpc so the deep galaxy catalog stays navigable
  */
 
 import { writeFile, mkdir } from "node:fs/promises";
@@ -26,15 +29,25 @@ const OUT_NAMES = join(__dir, "../public/data/galaxy-names.json");
 
 const FLOATS = 8;
 const COUNT  = 100_000;
-const GALAXY_BASE_AU   = 200_000;
-const GALAXY_LOG_SCALE = 50_000;
+const GALAXY_SCALE_VERSION = "local-group-linear-log-v2";
+const GALAXY_KPC_TO_AU = 8_000;
+const GALAXY_MPC_TO_AU = GALAXY_KPC_TO_AU * 1_000;
+const GALAXY_LINEAR_LIMIT_MPC = 2;
+const GALAXY_LOG_INTERVAL_MPC = 2;
+const GALAXY_LOG_SCALE_AU = 1_200_000;
+const GALAXY_LINEAR_LIMIT_AU = GALAXY_LINEAR_LIMIT_MPC * GALAXY_MPC_TO_AU;
+const MILKY_WAY_DIAMETER_KPC_APPROX = 30.7; // ~100,000 light-years
 const EPS = 23.4393 * Math.PI / 180;
 const H0  = 70;
 
 const d2r = d => d * Math.PI / 180;
 
 function visualDist(mpc) {
-  return GALAXY_BASE_AU + GALAXY_LOG_SCALE * Math.log2(mpc / 0.01 + 1);
+  const d = Number.isFinite(mpc) ? Math.max(0, mpc) : 0;
+  if (d <= GALAXY_LINEAR_LIMIT_MPC) return d * GALAXY_MPC_TO_AU;
+
+  const beyond = (d - GALAXY_LINEAR_LIMIT_MPC) / GALAXY_LOG_INTERVAL_MPC;
+  return GALAXY_LINEAR_LIMIT_AU + GALAXY_LOG_SCALE_AU * Math.log2(beyond + 1);
 }
 
 function toEclipticAU(ra, dec, distMpc) {
@@ -201,8 +214,13 @@ async function main() {
     count,
     distMaxMpc: Math.round(distMax),
     FLOATS,
-    galaxyBaseAU:       GALAXY_BASE_AU,
-    galaxyLogScaleAU:   GALAXY_LOG_SCALE,
+    distanceScaleVersion: GALAXY_SCALE_VERSION,
+    kpcToAU: GALAXY_KPC_TO_AU,
+    mpcToAU: GALAXY_MPC_TO_AU,
+    linearLimitMpc: GALAXY_LINEAR_LIMIT_MPC,
+    logIntervalMpc: GALAXY_LOG_INTERVAL_MPC,
+    logScaleAU: GALAXY_LOG_SCALE_AU,
+    milkyWayDiameterAUApprox: Math.round(MILKY_WAY_DIAMETER_KPC_APPROX * GALAXY_KPC_TO_AU),
   }, null, 2));
   await writeFile(OUT_NAMES, JSON.stringify(names, null, 2));
 

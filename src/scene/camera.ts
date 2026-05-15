@@ -5,7 +5,7 @@ import {
 
 const FOV_Y = Math.PI / 4; // 45° vertical field of view
 const NEAR  = 1e-8;        // AU, allows close body fly-ins without clipping
-const FAR   = 1_200_000;   // AU — extended for galaxy catalog (100k galaxies up to 850 Mpc visual)
+const FAR   = 50_000_000;  // AU, covers the galaxy catalog after Local Group-linear scaling
 const MIN_DISTANCE = 1e-7; // AU
 const MAX_DISTANCE = FAR;
 const CLOSEUP_VIEW_FILL = 0.88;
