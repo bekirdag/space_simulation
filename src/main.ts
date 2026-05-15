@@ -271,6 +271,35 @@ async function main(): Promise<void> {
   const canvas       = document.getElementById("canvas") as HTMLCanvasElement;
   const errorOverlay = document.getElementById("error-overlay")!;
   const sourceEl     = document.getElementById("hud-source")!;
+  const focusTitleEl = document.getElementById("focus-title")!;
+
+  function setFocusTitle(title: string | null, subtitle = ""): void {
+    focusTitleEl.replaceChildren();
+    if (!title) {
+      focusTitleEl.hidden = true;
+      return;
+    }
+
+    const nameEl = document.createElement("span");
+    nameEl.textContent = title;
+    focusTitleEl.appendChild(nameEl);
+
+    if (subtitle) {
+      const subEl = document.createElement("span");
+      subEl.className = "focus-title-sub";
+      subEl.textContent = subtitle;
+      focusTitleEl.appendChild(subEl);
+    }
+
+    focusTitleEl.hidden = false;
+  }
+
+  function galaxyFocusSubtitle(distanceMpc: number): string {
+    if (!Number.isFinite(distanceMpc) || distanceMpc <= 0) return "galaxy";
+    return distanceMpc < 1
+      ? `${Math.round(distanceMpc * 1000)} kpc`
+      : `${distanceMpc.toFixed(distanceMpc < 10 ? 2 : 1)} Mpc`;
+  }
 
   function resizeCanvas() {
     const dpr = window.devicePixelRatio || 1;
@@ -300,14 +329,34 @@ async function main(): Promise<void> {
   const settingsModal   = document.getElementById("settings-modal")!;
   const settingsCloseBtn = document.getElementById("settings-close")!;
   const navSettingsBtn  = document.getElementById("nav-settings-btn")!;
+  const infoModal       = document.getElementById("info-modal")!;
+  const infoCloseBtn    = document.getElementById("info-close")!;
+  const navAboutBtn     = document.getElementById("nav-about-btn")!;
+  const navLimitsBtn    = document.getElementById("nav-limits-btn")!;
+  const infoAboutPage   = document.getElementById("info-about")!;
+  const infoLimitsPage  = document.getElementById("info-limits")!;
 
   function openSettings()  { settingsModal.classList.add("open"); }
   function closeSettings() { settingsModal.classList.remove("open"); }
+  function openInfo(page: "about" | "limits") {
+    infoAboutPage.classList.toggle("active", page === "about");
+    infoLimitsPage.classList.toggle("active", page === "limits");
+    infoModal.classList.add("open");
+  }
+  function closeInfo() { infoModal.classList.remove("open"); }
 
   navSettingsBtn.addEventListener("click",  openSettings);
+  navAboutBtn.addEventListener("click", () => openInfo("about"));
+  navLimitsBtn.addEventListener("click", () => openInfo("limits"));
   settingsCloseBtn.addEventListener("click", closeSettings);
+  infoCloseBtn.addEventListener("click", closeInfo);
   settingsModal.addEventListener("click", e => { if (e.target === settingsModal) closeSettings(); });
-  document.addEventListener("keydown", e => { if (e.key === "Escape") closeSettings(); });
+  infoModal.addEventListener("click", e => { if (e.target === infoModal) closeInfo(); });
+  document.addEventListener("keydown", e => {
+    if (e.key !== "Escape") return;
+    closeSettings();
+    closeInfo();
+  });
 
   let showGalaxies = true;
   let showConstellations = true;
@@ -649,6 +698,7 @@ async function main(): Promise<void> {
       }
       renderer.uploadBodies(bodies);
     },
+    onFocusTitleChange: setFocusTitle,
   });
 
   function nearbyStarId(star: NearbyStarLabel): string {
@@ -829,12 +879,14 @@ async function main(): Promise<void> {
       (gal) => {
         const r = Math.sqrt(gal.x**2 + gal.y**2 + gal.z**2);
         nav.clearFocusedBody();
+        setFocusTitle(gal.name, galaxyFocusSubtitle(gal.dist));
         camera.travelTo(gal.x, gal.y, gal.z, Math.min(10_000, Math.max(500, r * 0.02)));
       },
       nearbyNebulas,
       (neb) => {
         const r = Math.sqrt(neb.x**2 + neb.y**2 + neb.z**2);
         nav.clearFocusedBody();
+        setFocusTitle(neb.name, "nebula");
         camera.travelTo(neb.x, neb.y, neb.z, Math.max(200, r * 0.005));
       },
     );

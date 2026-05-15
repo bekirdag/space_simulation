@@ -3,7 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Celestia</title>
+    <title>CosmosMap</title>
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <style>
       * { margin: 0; padding: 0; box-sizing: border-box; }
       html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
@@ -36,6 +39,12 @@
       }
       @keyframes spin { to { transform: rotate(360deg); } }
 
+      #loading-logo {
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        box-shadow: 0 0 22px rgba(136,170,255,0.28);
+      }
       #loading-title {
         font-size: 13px;
         letter-spacing: 0.1em;
@@ -86,7 +95,21 @@
         pointer-events: none;
         user-select: none;
       }
-      #hud .hud-title { color: rgba(255,255,255,0.9); letter-spacing: 0.12em; font-size: 12px; }
+      #hud .hud-title {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        color: rgba(255,255,255,0.9);
+        letter-spacing: 0.12em;
+        font-size: 12px;
+      }
+      .hud-logo {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        opacity: 0.9;
+        box-shadow: 0 0 12px rgba(136,170,255,0.18);
+      }
       #hud-time {
         color: rgba(255,255,255,0.8);
         display: inline;
@@ -135,6 +158,46 @@
         background: rgba(255,255,255,0.14);
         color: rgba(255,255,255,0.9);
         border-color: rgba(255,255,255,0.28);
+      }
+
+      /* ── Current focus title ── */
+      #focus-title {
+        position: fixed;
+        top: 16px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 9;
+        max-width: min(560px, calc(100vw - 300px));
+        padding: 6px 13px;
+        border: 1px solid rgba(136,170,255,0.22);
+        border-radius: 999px;
+        background: rgba(6,10,22,0.72);
+        color: rgba(235,240,255,0.92);
+        box-shadow: 0 8px 22px rgba(0,0,0,0.35);
+        backdrop-filter: blur(10px);
+        font-family: 'SF Mono', 'Fira Code', monospace;
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        line-height: 1.35;
+        text-align: center;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        pointer-events: none;
+        user-select: none;
+      }
+      #focus-title[hidden] { display: none; }
+      .focus-title-sub {
+        margin-left: 8px;
+        color: rgba(190,205,240,0.52);
+        font-size: 10px;
+        letter-spacing: 0.04em;
+      }
+      @media (max-width: 720px) {
+        #focus-title {
+          top: 58px;
+          max-width: calc(100vw - 32px);
+        }
       }
 
       /* ── Bottom controls ── */
@@ -435,8 +498,13 @@
 
       .nav-bottom-pad { height: 8px; }
 
-      /* ── Settings link at bottom of nav ── */
-      #nav-settings-btn {
+      /* ── Utility links at bottom of nav ── */
+      .nav-footer {
+        flex-shrink: 0;
+        border-top: 1px solid rgba(255,255,255,0.07);
+        margin-top: 4px;
+      }
+      .nav-footer-btn {
         display: flex;
         align-items: center;
         gap: 7px;
@@ -444,7 +512,6 @@
         padding: 7px 14px;
         background: none;
         border: none;
-        border-top: 1px solid rgba(255,255,255,0.07);
         color: rgba(255,255,255,0.45);
         font-family: 'SF Mono', 'Fira Code', monospace;
         font-size: 11px;
@@ -452,9 +519,11 @@
         text-align: left;
         letter-spacing: 0.04em;
         transition: color 0.15s, background 0.15s;
-        margin-top: 4px;
       }
-      #nav-settings-btn:hover { color: rgba(255,255,255,0.88); background: rgba(255,255,255,0.05); }
+      .nav-footer-btn + .nav-footer-btn {
+        border-top: 1px solid rgba(255,255,255,0.045);
+      }
+      .nav-footer-btn:hover { color: rgba(255,255,255,0.88); background: rgba(255,255,255,0.05); }
 
       /* ── Settings modal ── */
       #settings-modal {
@@ -779,6 +848,135 @@
         background: rgba(0, 0, 0, 0.80) !important;
       }
 
+      /* ── About / limits modal ── */
+      #info-modal {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 52;
+        background: rgba(0,0,0,0.58);
+        backdrop-filter: blur(4px);
+        align-items: center;
+        justify-content: center;
+      }
+      #info-modal.open { display: flex; }
+      #info-panel {
+        width: min(680px, calc(100vw - 32px));
+        max-height: min(720px, calc(100vh - 40px));
+        overflow: hidden;
+        background: rgba(8,10,22,0.98);
+        border: 1px solid rgba(255,255,255,0.14);
+        border-radius: 12px;
+        box-shadow: 0 24px 70px rgba(0,0,0,0.74);
+        font-family: system-ui, -apple-system, sans-serif;
+        color: rgba(240,244,255,0.86);
+      }
+      .info-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 15px 18px 13px;
+        border-bottom: 1px solid rgba(255,255,255,0.08);
+      }
+      .info-title {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        font-family: 'SF Mono', 'Fira Code', monospace;
+        font-size: 12px;
+        letter-spacing: 0.12em;
+        color: rgba(255,255,255,0.88);
+      }
+      .info-title img {
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+      }
+      #info-close {
+        background: none;
+        border: none;
+        color: rgba(255,255,255,0.42);
+        font-size: 14px;
+        cursor: pointer;
+        padding: 2px 7px;
+        border-radius: 4px;
+      }
+      #info-close:hover { color: rgba(255,255,255,0.92); }
+      .info-page {
+        display: none;
+        overflow-y: auto;
+        max-height: calc(100vh - 92px);
+        padding: 20px 22px 24px;
+      }
+      .info-page.active { display: block; }
+      .info-page h2 {
+        margin: 0 0 10px;
+        font-size: 19px;
+        font-weight: 650;
+        color: rgba(255,255,255,0.94);
+      }
+      .info-page h3 {
+        margin: 20px 0 8px;
+        font-size: 12px;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+        color: rgba(136,170,255,0.82);
+      }
+      .info-page p {
+        margin: 0 0 12px;
+        color: rgba(235,240,255,0.70);
+        font-size: 13px;
+        line-height: 1.65;
+      }
+      .info-page ul {
+        margin: 0;
+        padding-left: 18px;
+        color: rgba(235,240,255,0.70);
+        font-size: 13px;
+        line-height: 1.65;
+      }
+      .info-page li { margin: 5px 0; }
+      .info-page a {
+        color: #9dbbff;
+        text-decoration: none;
+      }
+      .info-page a:hover { text-decoration: underline; }
+      .info-kicker {
+        font-family: 'SF Mono', 'Fira Code', monospace;
+        font-size: 10px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: rgba(255,255,255,0.34);
+        margin-bottom: 8px;
+      }
+      .info-card-row {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+        margin: 16px 0 18px;
+      }
+      .info-stat {
+        border: 1px solid rgba(255,255,255,0.10);
+        background: rgba(255,255,255,0.045);
+        border-radius: 7px;
+        padding: 10px 11px;
+      }
+      .info-stat strong {
+        display: block;
+        font-family: 'SF Mono', 'Fira Code', monospace;
+        font-size: 15px;
+        color: rgba(255,255,255,0.92);
+      }
+      .info-stat span {
+        display: block;
+        margin-top: 3px;
+        font-size: 11px;
+        color: rgba(255,255,255,0.48);
+      }
+      @media (max-width: 620px) {
+        .info-card-row { grid-template-columns: 1fr; }
+      }
+
       /* ── Jump-to-date modal ── */
       #date-modal {
         display: none;
@@ -904,8 +1102,9 @@
 
     <!-- Loading overlay — shown while fetching Horizons data -->
     <div id="loading-overlay">
+      <img id="loading-logo" src="/logo.png" alt="" />
       <div class="loader-ring"></div>
-      <div id="loading-title">CELESTIA</div>
+      <div id="loading-title">COSMOSMAP</div>
       <div id="loading-text">Fetching real-time planetary positions from NASA JPL Horizons…</div>
       <div id="loading-progress">0 / 9 bodies</div>
     </div>
@@ -913,7 +1112,7 @@
     <div id="error-overlay">
       <h1>WebGPU Not Available</h1>
       <p>
-        Celestia requires WebGPU. Please use
+        CosmosMap requires WebGPU. Please use
         <a href="https://www.google.com/chrome/" target="_blank">Chrome 113+</a>
         or <a href="https://www.microsoft.com/edge" target="_blank">Edge 113+</a>.
         Safari 18+ has partial support. Firefox requires enabling
@@ -922,9 +1121,10 @@
     </div>
 
     <button id="btn-fullscreen" title="Toggle fullscreen">⛶</button>
+    <div id="focus-title" aria-live="polite" hidden></div>
 
     <div id="hud">
-      <div class="hud-title">CELESTIA</div>
+      <div class="hud-title"><img class="hud-logo" src="/logo.png" alt="" /><span>COSMOSMAP</span></div>
       <div id="hud-fps">FPS —</div>
       <div id="hud-bodies">Bodies —</div>
       <div><span id="hud-time">—</span><span id="hud-clock">—</span></div>
@@ -1008,7 +1208,11 @@
           <div class="nav-bottom-pad"></div>
         </div><!-- #nav-scroll -->
 
-        <button id="nav-settings-btn">⚙ Settings</button>
+        <div class="nav-footer">
+          <button id="nav-limits-btn" class="nav-footer-btn">Limits &amp; Assumptions</button>
+          <button id="nav-about-btn" class="nav-footer-btn">About</button>
+          <button id="nav-settings-btn" class="nav-footer-btn">⚙ Settings</button>
+        </div>
       </div>
     </div>
 
@@ -1117,6 +1321,90 @@
             </div>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- About / limits modal -->
+    <div id="info-modal">
+      <div id="info-panel" role="dialog" aria-modal="true" aria-labelledby="info-heading">
+        <div class="info-header">
+          <div class="info-title"><img src="/logo.png" alt="" /><span id="info-heading">COSMOSMAP</span></div>
+          <button id="info-close" aria-label="Close">✕</button>
+        </div>
+
+        <section id="info-about" class="info-page">
+          <div class="info-kicker">About</div>
+          <h2>CosmosMap</h2>
+          <p>
+            CosmosMap is an interactive WebGPU map and simulation for exploring the solar system,
+            nearby stars, the Milky Way, galaxies, dust, constellations, and visual black-hole lensing.
+          </p>
+          <p>
+            It was created by <a href="https://bekirdag.com" target="_blank" rel="noopener">Bekir Dag</a>
+            for his children, so they can learn about the universe by moving through it instead of only
+            reading about it.
+          </p>
+          <p>
+            The project was built with help from Claude and Codex 5.5. It is open for contributions:
+            bug reports, data corrections, visualization improvements, and educational ideas are welcome.
+          </p>
+
+          <div class="info-card-row">
+            <div class="info-stat"><strong>33</strong><span>simulated solar-system bodies</span></div>
+            <div class="info-stat"><strong>100k</strong><span>nearby HYG stars</span></div>
+            <div class="info-stat"><strong>100k</strong><span>galaxy catalog entries</span></div>
+          </div>
+
+          <h3>Project Links</h3>
+          <ul>
+            <li><a href="https://github.com/bekirdag/space_simulation" target="_blank" rel="noopener">GitHub repository</a></li>
+            <li><a href="https://github.com/bekirdag/space_simulation/issues" target="_blank" rel="noopener">Create an issue</a></li>
+            <li><a href="https://bekirdag.com" target="_blank" rel="noopener">bekirdag.com</a></li>
+          </ul>
+        </section>
+
+        <section id="info-limits" class="info-page">
+          <div class="info-kicker">Limits &amp; Assumptions</div>
+          <h2>What CosmosMap Shows</h2>
+          <p>
+            CosmosMap prioritizes an explorable educational view over a fully exhaustive astrophysics engine.
+            Many layers are visual references only and are deliberately kept out of the N-body force calculation.
+          </p>
+
+          <div class="info-card-row">
+            <div class="info-stat"><strong>4,707</strong><span>NASA Exoplanet Archive host stars</span></div>
+            <div class="info-stat"><strong>200k</strong><span>Milky Way background stars</span></div>
+            <div class="info-stat"><strong>33</strong><span>NASA/JPL Horizons cached bodies</span></div>
+          </div>
+
+          <h3>Data Sources</h3>
+          <ul>
+            <li>Solar-system starting vectors come from cached NASA/JPL Horizons data.</li>
+            <li>Nearby visible stars use a 100,000-star HYG 4.2 render buffer.</li>
+            <li>Exoplanet host stars are searchable from a NASA Exoplanet Archive snapshot.</li>
+            <li>Constellation lines and names use cached NASA SVS Deep Star Maps source data.</li>
+            <li>Galactic dust is rendered from a reduced NASA/GSFC LAMBDA Meisner & Finkbeiner 2015 visual map.</li>
+            <li>Galaxy rendering combines real named galaxy entries with procedural deep-field fill.</li>
+          </ul>
+
+          <h3>Physics Assumptions</h3>
+          <ul>
+            <li>The 33 solar-system bodies are integrated as the active simulation state.</li>
+            <li>Catalog stars, Milky Way stars, galaxies, dust, constellations, and nebulas are render-only layers.</li>
+            <li>The Sun is not fixed at the origin in the physics state; Horizons vectors include its motion.</li>
+            <li>A simplified local galactic-frame acceleration is visual/educational, not a full Milky Way potential model.</li>
+            <li>Sagittarius A* lensing is a visual approximation, not a relativistic ray-tracing solver.</li>
+          </ul>
+
+          <h3>Rendering And Culling</h3>
+          <ul>
+            <li>Frustum culling remains in the GPU shaders so off-screen billboards are skipped safely.</li>
+            <li>Occlusion culling is intentionally avoided because empty space makes object-over-object hiding misleading.</li>
+            <li>Screen-density reduction hides crowded body clusters when many neighboring objects compress into a few pixels.</li>
+            <li>Large catalogs use octant-spread LOD caps so star and galaxy reductions stay distributed across the sky.</li>
+            <li>Actual brightness is tone-mapped and adjusted by camera distance, so it is useful visually but not photometric proof.</li>
+          </ul>
+        </section>
       </div>
     </div>
 

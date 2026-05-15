@@ -1,7 +1,7 @@
 {
-  "name": "celestia",
+  "name": "cosmosmap",
   "version": "0.1.0",
-  "description": "N-body celestial physics simulation — WebGPU + TypeScript",
+  "description": "CosmosMap celestial simulation and universe map — WebGPU + TypeScript",
   "type": "module",
   "scripts": {
     "dev": "vite",

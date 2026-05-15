@@ -19,6 +19,8 @@ interface CatalogSearchOptions {
   getCatalogStatus:   () => string;
   /** Called when any catalog search result is clicked, with its id. */
   onCatalogItemClick?: (id: string) => void;
+  /** Called when navigation focus changes so the page can show the current focus. */
+  onFocusTitleChange?: (title: string | null, subtitle?: string) => void;
 }
 
 export class NavPanel {
@@ -38,6 +40,7 @@ export class NavPanel {
   selectCatalogStar(hit: StarSearchResult): void {
     this.clearFocusedBody();
     this._selectedCatalogStar = hit;
+    this.catalogSearch?.onFocusTitleChange?.(hit.label, hit.subtitle);
     this.camera.travelTo(hit.x, hit.y, hit.z, hit.focusDistance);
   }
 
@@ -132,6 +135,7 @@ export class NavPanel {
     this._focusedBodyName = name;
     this._selectedCatalogStar = null; // simulation body takes over; dismiss star selection
     this.setFocusedSystem(name);
+    this.catalogSearch?.onFocusTitleChange?.(name);
     this.camera.lockTarget = true; // scroll zooms orbit radius, not toward cursor
     let focusedEl: HTMLElement | undefined;
     this.panel.querySelectorAll<HTMLElement>("[data-travel]").forEach(el => {
@@ -146,6 +150,7 @@ export class NavPanel {
     this._focusedBodyName = null;
     this._selectedCatalogStar = null; // clear star selection when focusing a body
     this.clearFocusedSystem();
+    this.catalogSearch?.onFocusTitleChange?.(null);
     this.camera.lockTarget = false; // re-enable zoom-toward-cursor
     this.panel.querySelectorAll<HTMLElement>("[data-travel].focused").forEach(el => {
       el.classList.remove("focused");
@@ -258,6 +263,7 @@ export class NavPanel {
       btn.addEventListener("click", () => {
         this.clearFocusedBody();
         this._selectedCatalogStar = hit;
+        this.catalogSearch?.onFocusTitleChange?.(hit.label, hit.subtitle);
         this.camera.travelTo(hit.x, hit.y, hit.z, hit.focusDistance);
         this.search.value = hit.label;
         this.renderCatalogResults("", []);
