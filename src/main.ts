@@ -359,7 +359,7 @@ async function main(): Promise<void> {
   });
 
   let showGalaxies = true;
-  let showConstellations = true;
+  let showConstellations = false;
 
   function applySettings(): void {
     const showLabels = (document.getElementById("set-labels") as HTMLInputElement).checked;

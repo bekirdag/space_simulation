@@ -163,7 +163,7 @@ export class Renderer {
   private _galaxyLimit  = Infinity;
   private _showTrails   = true;
   private _showGalaxies = true;
-  private _showConstellations = true;
+  private _showConstellations = false;
   private _actualBrightness = true;
   private _cameraDistanceFromSun = 0;
   private _showDust = true;
