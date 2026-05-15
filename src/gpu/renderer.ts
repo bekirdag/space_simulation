@@ -47,7 +47,7 @@ export class Renderer {
   private galaxyBGL!:       GPUBindGroupLayout;
   private nebulaBGL!:       GPUBindGroupLayout;
   private selectedStarBuffer!: GPUBuffer;
-  private starLodBuffer!:   GPUBuffer;  // 16-byte uniform: x=fade for HYG stars
+  private starLodBuffer!:   GPUBuffer;  // 16-byte uniform: x=brightness, y=camera radius
   private mwLodBuffer!:     GPUBuffer;  // 16-byte uniform: x=fade for MW stars
 
   private bodyCount    = 0;
@@ -184,7 +184,7 @@ export class Renderer {
       label: "mw-lod", size: 16,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
-    // HYG starts fully visible; MW stars always fully visible (LOD via frustum culling only)
+    // HYG visibility is distance-shell based in star.wgsl; MW stars stay fully visible.
     device.queue.writeBuffer(this.starLodBuffer, 0, new Float32Array([1, 0, 0, 0]));
     device.queue.writeBuffer(this.mwLodBuffer,   0, new Float32Array([1, 0, 0, 0]));
 
@@ -407,12 +407,12 @@ export class Renderer {
   }
 
   /**
-   * Update LOD fade factor for the nearby HYG star catalog.
-   * MW stars are always fully visible (no distance-based fade).
-   * @param lodHYG  0..1 — 1=full brightness, 0=invisible when camera is far from origin
+   * Update nearby-star visibility inputs.
+   * x stays as global brightness; y is the camera's radius from the Sun.
    */
-  updateLOD(lodHYG: number): void {
-    this.ctx.device.queue.writeBuffer(this.starLodBuffer, 0, new Float32Array([lodHYG, 0, 0, 0]));
+  updateLOD(cameraDistanceFromSun: number): void {
+    const radius = Number.isFinite(cameraDistanceFromSun) ? Math.max(0, cameraDistanceFromSun) : 0;
+    this.ctx.device.queue.writeBuffer(this.starLodBuffer, 0, new Float32Array([1, radius, 0, 0]));
   }
 
   uploadGalaxies(galaxies: Float32Array): void {

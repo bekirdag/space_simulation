@@ -22,7 +22,7 @@ struct Star {
 @group(0) @binding(0) var<uniform>       camera:       Camera;
 @group(0) @binding(1) var<storage, read> stars:        array<Star>;
 @group(0) @binding(2) var<uniform>       selectedStar: vec4<f32>; // xyz=pos, w=active
-@group(0) @binding(3) var<uniform>       lodFade:      vec4<f32>; // x=fade 0..1, yzw unused
+@group(0) @binding(3) var<uniform>       lodFade:      vec4<f32>; // x=brightness, y=camera radius from Sun
 
 struct VertexOut {
   @builtin(position) clip_pos: vec4<f32>,
@@ -62,13 +62,22 @@ fn vs_main(
   out.alpha    = star.color_alpha.w;
   out.selected = 0.0;
 
-  // ── LOD fade ──────────────────────────────────────────────────────────────
-  // lodFade.x = 0 when camera is far from origin (galaxy view); fade stars out.
-  // A tiny per-star phase offset prevents the whole catalog from blinking as
-  // one sheet when wheel zoom jumps across the transition distance.
-  let baseFade = smoother01(lodFade.x);
-  let phase = hash13(center) * 0.22;
-  out.alpha *= smoother01((baseFade - phase) / 0.78);
+  // ── Distance-shell visibility ────────────────────────────────────────────
+  // Show each nearby star when the camera radius is close to that star's
+  // distance from the Sun. For Proxima (~4.24 ly), this starts around 1 ly and
+  // starts fading out around 10 ly in the same compressed visual coordinate
+  // scale used by the catalog.
+  let starRadius = max(length(center), 0.001);
+  let cameraRadius = max(lodFade.y, 0.0);
+  let ratio = cameraRadius / starRadius;
+  let phase = hash13(center);
+  let fadeInStart  = 0.22 + phase * 0.04;
+  let fadeInEnd    = 0.56 + phase * 0.08;
+  let fadeOutStart = 2.25 + phase * 0.20;
+  let fadeOutEnd   = 3.60 + phase * 0.30;
+  let fadeIn  = smoother01((ratio - fadeInStart) / (fadeInEnd - fadeInStart));
+  let fadeOut = 1.0 - smoother01((ratio - fadeOutStart) / (fadeOutEnd - fadeOutStart));
+  out.alpha *= clamp(lodFade.x, 0.0, 1.0) * fadeIn * fadeOut;
 
   if clip_c.w <= 0.0 {
     out.clip_pos = vec4(10.0, 10.0, 10.0, 1.0);

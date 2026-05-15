@@ -107,15 +107,6 @@ function hideLoading() {
   setTimeout(() => loadingEl.classList.add("gone"), 450);
 }
 
-function clamp01(v: number): number {
-  return Math.max(0, Math.min(1, v));
-}
-
-function smootherStep01(v: number): number {
-  const t = clamp01(v);
-  return t * t * t * (t * (t * 6 - 15) + 10);
-}
-
 function horizonsSourceLabel(result: HorizonsResult, dateStr: string): string {
   const source = result.source === "jpl-network"
     ? "NASA JPL"
@@ -818,7 +809,6 @@ async function main(): Promise<void> {
   // Last computed viewProj matrix — used by the contextmenu handler to project
   // catalog stars on right-click without needing to run inside the render loop.
   let lastViewProj: Float32Array | null = null;
-  let hygCatalogFade = 1;
 
   let lastTime = performance.now();
 
@@ -970,17 +960,14 @@ async function main(): Promise<void> {
       renderer.setVisibleOctantMask(mask);
     }
 
-    // ── Star catalog LOD — based on camera distance from solar system origin ─
-    // HYG nearby stars fade out when zoomed out to galaxy scale; the Milky Way
-    // background layer fades in at the same time.
-    // Fade out the nearby HYG catalog when zoomed out to galaxy scale — they
-    // all cluster at the same pixel and add noise. MW stars stay visible always.
-    const eyeDist = Math.hypot(camUniforms.eye[0], camUniforms.eye[1], camUniforms.eye[2]);
-    const targetHygFade = smootherStep01(1 - (eyeDist - 500) / 29_500);
-    const fadeBlend = 1 - Math.exp(-wallDt / 0.28);
-    hygCatalogFade += (targetHygFade - hygCatalogFade) * fadeBlend;
-    if (Math.abs(hygCatalogFade - targetHygFade) < 0.001) hygCatalogFade = targetHygFade;
-    renderer.updateLOD(hygCatalogFade);
+    // Nearby HYG stars fade per-object in the shader based on this camera
+    // radius. A star becomes visible when the camera reaches a broad shell
+    // around that star's own distance from the Sun.
+    const sun = bodies.find(b => b.name === "Sun");
+    const eyeDistFromSun = sun
+      ? Math.hypot(camUniforms.eye[0] - sun.x, camUniforms.eye[1] - sun.y, camUniforms.eye[2] - sun.z)
+      : Math.hypot(camUniforms.eye[0], camUniforms.eye[1], camUniforms.eye[2]);
+    renderer.updateLOD(eyeDistFromSun);
 
     const sel = nav.selectedCatalogStar;
     renderer.uploadSelectedStar(sel ? [sel.x, sel.y, sel.z] : null);
