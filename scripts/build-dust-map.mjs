@@ -26,8 +26,13 @@ const INFO_URL = "https://lambda.gsfc.nasa.gov/product/foreground/fg_meisner_fin
 const DOWNLOAD_URL = "https://lambda.gsfc.nasa.gov/product/foreground/fg_meisner_finkbeiner_2015_get.html";
 const IPAC_DUST_URL = "https://irsa.ipac.caltech.edu/applications/DUST/";
 
-const OUT_W = 256;
-const OUT_H = 128;
+const BASE_OUT_W = 256;
+const BASE_OUT_H = 128;
+const DEFAULT_GRID_SCALE = 2;
+const MAX_GRID_SCALE = 4;
+const GRID_SCALE = readGridScale();
+const OUT_W = BASE_OUT_W * GRID_SCALE;
+const OUT_H = BASE_OUT_H * GRID_SCALE;
 const DUST_FLOATS = 8;
 const SHELL_RADIUS_AU = 85_000;
 const SQRT2 = Math.SQRT2;
@@ -40,6 +45,21 @@ const GAL_TO_ECL = [
 
 mkdirSync(DATA_DIR, { recursive: true });
 mkdirSync(NASA_CACHE_DIR, { recursive: true });
+
+function readGridScale() {
+  const raw = process.env.DUST_GRID_SCALE;
+  if (!raw) return DEFAULT_GRID_SCALE;
+
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error(`DUST_GRID_SCALE must be a positive integer, got "${raw}".`);
+  }
+  if (parsed > MAX_GRID_SCALE) {
+    console.warn(`DUST_GRID_SCALE=${parsed} is above ${MAX_GRID_SCALE}; using ${MAX_GRID_SCALE}.`);
+    return MAX_GRID_SCALE;
+  }
+  return parsed;
+}
 
 async function ensureRawFits() {
   if (existsSync(RAW_FITS)) {
@@ -156,6 +176,7 @@ await ensureRawFits();
 const fits = readFileSync(RAW_FITS);
 const image = findFirstImageExtension(fits);
 console.log(`Reading ${image.width}x${image.height} ${image.cards.EXTNAME} image.`);
+console.log(`Building ${OUT_W}x${OUT_H} dust grid (DUST_GRID_SCALE=${GRID_SCALE}).`);
 
 const candidates = [];
 const blockW = image.width / OUT_W;
@@ -222,7 +243,14 @@ const meta = {
   generatedAt: new Date().toISOString(),
   projection: "Mollweide all-sky source, converted to ecliptic J2000 sky-shell billboards",
   sourceGrid: { width: image.width, height: image.height },
-  downsampleGrid: { width: OUT_W, height: OUT_H },
+  downsampleGrid: {
+    width: OUT_W,
+    height: OUT_H,
+    baseWidth: BASE_OUT_W,
+    baseHeight: BASE_OUT_H,
+    scale: GRID_SCALE,
+  },
+  sourcePixelsPerDustCell: { width: blockW, height: blockH },
   strideFloat32: DUST_FLOATS,
   shellRadiusAU: SHELL_RADIUS_AU,
   cellCount: out.length / DUST_FLOATS,

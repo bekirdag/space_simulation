@@ -5,22 +5,29 @@
   "downloadUrl": "https://lambda.gsfc.nasa.gov/product/foreground/fg_meisner_finkbeiner_2015_get.html",
   "fitsUrl": "https://lambda.gsfc.nasa.gov/data/foregrounds/EBV/lambda_mollweide_mf2015_dust_map_v2.fits",
   "ipacDustServiceUrl": "https://irsa.ipac.caltech.edu/applications/DUST/",
-  "generatedAt": "2026-05-15T11:00:30.836Z",
+  "generatedAt": "2026-05-15T13:17:12.698Z",
   "projection": "Mollweide all-sky source, converted to ecliptic J2000 sky-shell billboards",
   "sourceGrid": {
     "width": 4096,
     "height": 2048
   },
   "downsampleGrid": {
-    "width": 256,
-    "height": 128
+    "width": 512,
+    "height": 256,
+    "baseWidth": 256,
+    "baseHeight": 128,
+    "scale": 2
+  },
+  "sourcePixelsPerDustCell": {
+    "width": 8,
+    "height": 8
   },
   "strideFloat32": 8,
   "shellRadiusAU": 85000,
-  "cellCount": 21096,
+  "cellCount": 84281,
   "ebvPercentiles": {
-    "p95": 1.312368777114898,
-    "p99": 3.592021282762289
+    "p95": 1.3135239835828543,
+    "p99": 3.5564041174948215
   },
   "notes": [
     "This is a 2D total line-of-sight Galactic reddening visualization, not a 3D dust volume.",

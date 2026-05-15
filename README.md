@@ -26,7 +26,8 @@ help from Claude and Codex 5.5.
   These stars can be searched and focused without being listed in the right nav.
 - 200,000 Milky Way background stars and a 100,000-entry galaxy layer.
 - NASA SVS constellation lines and titles.
-- Reduced visual Galactic dust map layer derived from NASA/GSFC LAMBDA data.
+- High-resolution visual Galactic dust map layer derived from NASA/GSFC LAMBDA
+  data.
 - Visual Sagittarius A* black-hole lensing approximation.
 - Camera-distance adjusted apparent brightness mode for bodies, Milky Way
   stars, and galaxies.
@@ -109,8 +110,8 @@ after install:
 - `public/cache/nasa/constellation_figures_4k.tif` and
   `public/cache/nasa/constellations.meta.json`: NASA SVS Deep Star Maps 2020
   source reference for the constellation layer.
-- `public/data/dust-map-mf2015.bin`: reduced visual dust overlay derived from
-  NASA/GSFC LAMBDA Meisner & Finkbeiner 2015 data.
+- `public/data/dust-map-mf2015.bin`: high-resolution visual dust overlay
+  derived from NASA/GSFC LAMBDA Meisner & Finkbeiner 2015 data.
 
 Horizons data is loaded in this order: committed cache file, browser
 `localStorage`, then live NASA/JPL Horizons fetch if no cache is available.
@@ -157,6 +158,14 @@ Refresh the HYG visible star render buffer:
 
 ```sh
 npm run catalog:stars
+```
+
+Refresh the NASA/GSFC LAMBDA dust overlay. The default build uses a 512x256
+runtime grid; set `DUST_GRID_SCALE=1` for the older 256x128 asset or up to
+`DUST_GRID_SCALE=4` for a denser local experiment.
+
+```sh
+npm run catalog:dust
 ```
 
 Refresh the NASA/JPL Horizons cache for today:
