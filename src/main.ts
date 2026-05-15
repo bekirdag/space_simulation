@@ -52,7 +52,7 @@ import {
 } from "./catalog/galaxies";
 import { loadMilkywayStars } from "./catalog/milkyway";
 import { NEARBY_STAR_LABELS, SGR_A_STAR_POS } from "./catalog/nearby-stars";
-import { sortIntoOctants, visibleOctantMask } from "./gpu/sky-cull";
+import { sortIntoOctants } from "./gpu/sky-cull";
 import {
   buildNebulaBuffer,
   nebulaPositions,
@@ -367,7 +367,7 @@ async function main(): Promise<void> {
   void loadVisibleStarField().then(({ data, source }) => {
     visibleStarBuffer = data;
     uploadCatalogStars();
-    // Sort the HYG star buffer into octants for CPU-side frustum culling
+    // Sort the HYG star buffer into octants only for even Settings LOD caps.
     const combined = combineStarBuffers(visibleStarBuffer, exoplanetHostBuffer);
     renderer.setStarOctants(sortIntoOctants(combined));
     renderer.uploadStars(combined);
@@ -1024,23 +1024,8 @@ async function main(): Promise<void> {
     lastViewProj = camUniforms.viewProj;
     renderer.updateCamera(camUniforms, canvas.height);
 
-    // ── CPU-side octant culling ─────────────────────────────────────────────
-    // Compute which sky octants overlap the camera frustum and tell the
-    // renderer to skip draw calls for invisible octants.
-    {
-      const e = camUniforms.eye;
-      // Forward = -(right × up) = up × right  (camera looks toward target)
-      const r = camUniforms.camRight, u = camUniforms.camUp;
-      const fwd: [number,number,number] = [
-        u[1]*r[2] - u[2]*r[1],
-        u[2]*r[0] - u[0]*r[2],
-        u[0]*r[1] - u[1]*r[0],
-      ];
-      const fovH = Math.PI / 4;   // 45° half-FOV horizontal
-      const fovV = Math.atan(Math.tan(fovH) / (canvas.width / canvas.height));
-      const mask = visibleOctantMask(e, fwd, camUniforms.camRight, camUniforms.camUp, fovH, fovV);
-      renderer.setVisibleOctantMask(mask);
-    }
+    // Catalog frustum culling happens in the WGSL shaders per instance.
+    // Whole-origin-octant CPU culling can falsely remove visible galaxy regions.
 
     const sunBody = bodies.find(b => b.name === "Sun");
     const sunWorldPos: [number, number, number] = sunBody ? [sunBody.x, sunBody.y, sunBody.z] : [0, 0, 0];

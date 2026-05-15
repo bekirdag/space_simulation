@@ -57,11 +57,11 @@ export class Renderer {
   private nebulaCount  = 0;
   private starCapacity = 0;
 
-  // Octant ranges for CPU-side culling (set after catalog sort, null = draw all)
+  // Octant ranges are used only to spread Settings LOD caps across the sky.
+  // Actual frustum rejection for catalog billboards happens per instance in WGSL.
   private starOctants:   OctantRange[] | null = null;
   private mwOctants:     OctantRange[] | null = null;
   private galaxyOctants: OctantRange[] | null = null;
-  private visOctantMask  = 0xff; // all 8 octants visible by default
 
   // Fixed GPU-buffer slots per body (assigned on first seen, never moved).
   // Slot i occupies bytes [i * TRAIL_SLOT_BYTES, (i+1) * TRAIL_SLOT_BYTES).
@@ -383,12 +383,6 @@ export class Renderer {
   setMwOctants(ranges: OctantRange[]): void     { this.mwOctants     = ranges; }
   setGalaxyOctants(ranges: OctantRange[]): void { this.galaxyOctants = ranges; }
 
-  /**
-   * Update which octants are visible this frame.
-   * Call once per frame from the render loop with the current camera state.
-   */
-  setVisibleOctantMask(mask: number): void { this.visOctantMask = mask; }
-
   /** Call after TrailSystem.clear() so slots are reassigned from scratch. */
   resetTrailSlots(): void {
     this.trailSlot.clear();
@@ -505,7 +499,9 @@ export class Renderer {
       }],
     });
 
-    // Helper: draw visible octants of a catalog, or fall back to full draw.
+    // Helper: draw all octants of a catalog, or fall back to full draw.
+    // Per-instance WGSL culling is deliberately used for frustum rejection;
+    // a whole-octant CPU mask can cut off visible Milky Way or galaxy regions.
     const drawOctants = (
       octants: OctantRange[] | null,
       limit:   number,
@@ -520,7 +516,6 @@ export class Renderer {
       // that zeroed out octants with high buffer indices.
       const ratio = fullCount > 0 ? cap / fullCount : 1;
       for (let q = 0; q < 8; q++) {
-        if (!(this.visOctantMask & (1 << q))) continue;
         const oct = octants[q]!;
         if (oct.count <= 0) continue;
         const count = Math.max(1, Math.round(oct.count * ratio));
