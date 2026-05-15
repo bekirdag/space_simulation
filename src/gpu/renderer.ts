@@ -75,16 +75,19 @@ export class Renderer {
   private _mwStarLimit  = Infinity;
   private _galaxyLimit  = Infinity;
   private _showTrails   = true;
+  private _showGalaxies = true;
 
   applySettings(s: {
     starLimit?:   number;
     mwStarLimit?: number;
     galaxyLimit?: number;
+    showGalaxies?: boolean;
     showTrails?:  boolean;
   }): void {
     if (s.starLimit   !== undefined) this._starLimit   = s.starLimit;
     if (s.mwStarLimit !== undefined) this._mwStarLimit = s.mwStarLimit;
     if (s.galaxyLimit !== undefined) this._galaxyLimit = s.galaxyLimit;
+    if (s.showGalaxies !== undefined) this._showGalaxies = s.showGalaxies;
     if (s.showTrails  !== undefined) this._showTrails  = s.showTrails;
   }
 
@@ -526,12 +529,14 @@ export class Renderer {
     };
 
     // ── Galaxies (furthest layer) ──────────────────────────────────────────
-    pass.setPipeline(this.galaxyPipeline);
-    pass.setBindGroup(0, this.galaxyBindGroup);
-    drawOctants(
-      this.galaxyOctants, this._galaxyLimit, this.galaxyCount,
-      () => pass.draw(6, Math.min(this.galaxyCount, this._galaxyLimit), 0, 0),
-    );
+    if (this._showGalaxies) {
+      pass.setPipeline(this.galaxyPipeline);
+      pass.setBindGroup(0, this.galaxyBindGroup);
+      drawOctants(
+        this.galaxyOctants, this._galaxyLimit, this.galaxyCount,
+        () => pass.draw(6, Math.min(this.galaxyCount, this._galaxyLimit), 0, 0),
+      );
+    }
 
     // ── Nebulas (inside Milky Way — between galaxies and stars) ───────────
     if (this.nebulaCount > 0) {

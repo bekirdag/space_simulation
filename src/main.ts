@@ -301,9 +301,12 @@ async function main(): Promise<void> {
   settingsModal.addEventListener("click", e => { if (e.target === settingsModal) closeSettings(); });
   document.addEventListener("keydown", e => { if (e.key === "Escape") closeSettings(); });
 
+  let showGalaxies = true;
+
   function applySettings(): void {
     const showLabels = (document.getElementById("set-labels") as HTMLInputElement).checked;
     const showTrails = (document.getElementById("set-trails") as HTMLInputElement).checked;
+    showGalaxies    = (document.getElementById("set-galaxies") as HTMLInputElement).checked;
     const mwVal      = parseInt((document.querySelector('input[name="mw-stars"]:checked') as HTMLInputElement)?.value ?? "200000");
     const nearbyVal  = parseInt((document.querySelector('input[name="nearby-stars"]:checked') as HTMLInputElement)?.value ?? "100000");
     const galVal     = parseInt((document.querySelector('input[name="galaxies"]:checked') as HTMLInputElement)?.value ?? "100000");
@@ -320,6 +323,7 @@ async function main(): Promise<void> {
 
     labels.setVisible(showLabels);
     renderer.applySettings({
+      showGalaxies,
       showTrails,
       mwStarLimit:  mwVal,
       starLimit:    nearbyVal,
@@ -668,7 +672,7 @@ async function main(): Promise<void> {
     // ── Galaxies ──────────────────────────────────────────────────────────
     interface GalaxyHit { name: string; dist: number; x: number; y: number; z: number }
     const nearbyGalaxies: GalaxyHit[] = [];
-    if (lastViewProj && galaxyBuffer.length > 0) {
+    if (showGalaxies && lastViewProj && galaxyBuffer.length > 0) {
       const vp   = lastViewProj;
       const cssW = window.innerWidth;
       const cssH = window.innerHeight;
