@@ -53,16 +53,20 @@ fn vs_main(
     return out;
   }
 
+  // Galaxies are rendered slightly larger than stars to give a "nebulous" feel
+  let pxRadius    = camera.rightAndMNR.w * max(g.pos_size.w * 2.5, 0.8);
+
   // ── Frustum culling ────────────────────────────────────────────────────────
+  // Cull only when the whole billboard is outside the frame plus a small margin.
   let ndcX = clip_c.x / clip_c.w;
   let ndcY = clip_c.y / clip_c.w;
-  if abs(ndcX) > 1.15 || abs(ndcY) > 1.15 {
+  let cullMargin = max(pxRadius * 1.5, 0.08);
+  if ndcX - cullMargin > 1.0 || ndcX + cullMargin < -1.0 ||
+     ndcY - cullMargin > 1.0 || ndcY + cullMargin < -1.0 {
     out.clip_pos = vec4(10.0, 10.0, 10.0, 1.0);
     return out;
   }
 
-  // Galaxies are rendered slightly larger than stars to give a "nebulous" feel
-  let pxRadius    = camera.rightAndMNR.w * max(g.pos_size.w * 2.5, 0.8);
   let focalY      = camera.upAndFocal.w;
   let worldRadius = pxRadius * clip_c.w / focalY;
 

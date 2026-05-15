@@ -56,16 +56,19 @@ fn vs_main(
   }
 
   // ── Frustum culling ────────────────────────────────────────────────────────
+  // Cull only once the complete billboard is outside the frame.
   let ndcX = clip_c.x / clip_c.w;
   let ndcY = clip_c.y / clip_c.w;
-  if abs(ndcX) > 1.1 || abs(ndcY) > 1.1 {
+  let pxRadius = camera.rightAndMNR.w * max(star.pos_size.w * 1.8, 0.6);
+  let cullMargin = max(pxRadius * 1.5, 0.06);
+  if ndcX - cullMargin > 1.0 || ndcX + cullMargin < -1.0 ||
+     ndcY - cullMargin > 1.0 || ndcY + cullMargin < -1.0 {
     out.clip_pos = vec4(10.0, 10.0, 10.0, 1.0);
     return out;
   }
 
   // Fixed-NDC billboard — same as normal stars
   let focalY      = camera.upAndFocal.w;
-  let pxRadius    = camera.rightAndMNR.w * max(star.pos_size.w * 1.8, 0.6);
   let worldRadius = pxRadius * clip_c.w / focalY;
   let world_pos   = center
     + uv.x * camera.rightAndMNR.xyz * worldRadius

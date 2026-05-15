@@ -85,11 +85,14 @@ fn vs_main(
   }
 
   // ── Frustum culling ────────────────────────────────────────────────────────
-  // Cull stars whose center projects well outside the visible frame. Keeping a
-  // wider margin avoids edge popping for the larger nearby-star billboards.
+  // Cull only when the whole billboard is outside the frame plus a small margin.
+  // Center-only tests can hide visible edge billboards.
   let ndcX = clip_c.x / clip_c.w;
   let ndcY = clip_c.y / clip_c.w;
-  if abs(ndcX) > 1.45 || abs(ndcY) > 1.45 {
+  let billboardNdcRadius = camera.rightAndMNR.w * max(star.pos_size.w * 1.8, 0.6);
+  let cullMargin = max(billboardNdcRadius * 1.5, 0.06);
+  if ndcX - cullMargin > 1.0 || ndcX + cullMargin < -1.0 ||
+     ndcY - cullMargin > 1.0 || ndcY + cullMargin < -1.0 {
     out.clip_pos = vec4(10.0, 10.0, 10.0, 1.0);
     return out;
   }
@@ -122,7 +125,7 @@ fn vs_main(
   }
 
   // Normal (non-selected) stars: enforce minimum pixel radius (fixed-NDC billboard).
-  let pxRadius    = camera.rightAndMNR.w * max(star.pos_size.w * 1.8, 0.6);
+  let pxRadius    = billboardNdcRadius;
   let worldRadius = pxRadius * clip_c.w / focalY;
   let world_pos   = center
     + uv.x * camera.rightAndMNR.xyz * worldRadius

@@ -70,9 +70,10 @@ export function sortIntoOctants(
  * Given the 4 frustum corner directions in world space (unit vectors),
  * return a bitmask of the 8 octants that may overlap the frustum.
  *
- * Conservative: an octant is included if the frustum cone might intersect it.
- * Uses a simple test: check if the octant's bounding corner is within the
- * half-space of ALL four frustum planes AND the front plane.
+ * Conservative: an octant is included if any direction inside that octant can
+ * fall within the view cone plus a safety margin. This avoids dropping an
+ * octant just because its representative corner is outside the frustum while
+ * another part of the octant is still visible.
  */
 export function visibleOctantMask(
   eye:      [number, number, number],
@@ -82,35 +83,23 @@ export function visibleOctantMask(
   fovH:     number, // horizontal half-FOV in radians
   fovV:     number, // vertical   half-FOV in radians
 ): number {
-  // Build 4 frustum plane normals (pointing inward) from the corner rays.
-  // Right plane: normal = up × topRight_ray (simplified to ±right/up half-planes)
-  // We use a conservative test: include an octant if its representative direction
-  // (the sign-corner of the octant bounding box) is within cosine margin of forward.
-  const cosH = Math.cos(fovH);
-  const cosV = Math.cos(fovV);
-  const cosMargin = Math.min(cosH, cosV) * 0.85; // generous: slightly less than edge
+  const diagHalfFov = Math.atan(Math.hypot(Math.tan(fovH), Math.tan(fovV)));
+  const cullAngle = Math.min(Math.PI * 0.5, diagHalfFov + Math.PI / 10);
+  const threshold = Math.cos(cullAngle);
 
   let mask = 0;
   for (let q = 0; q < 8; q++) {
-    // Representative direction for octant q: corner of the unit cube
-    const dx = (q & 4) ? 1 : -1;
-    const dy = (q & 2) ? 1 : -1;
-    const dz = (q & 1) ? 1 : -1;
-    const len = Math.sqrt(3);
-    const nx = dx / len, ny = dy / len, nz = dz / len;
+    const sx = (q & 4) ? 1 : -1;
+    const sy = (q & 2) ? 1 : -1;
+    const sz = (q & 1) ? 1 : -1;
 
-    // Check: dot(octantDir, forward) > cosMargin  (centre of octant within FOV cone)
-    // OR: any corner of the octant face is within the frustum  (edge overlap)
-    // Simplified: use the dot with forward as a coarse test, with generous threshold
-    const dot = nx * forward[0] + ny * forward[1] + nz * forward[2];
-
-    // Additional check: is any vertex of the octant face near the camera direction?
-    // For simplicity, include if dot > a threshold that depends on half-FOV.
-    // cos(90° + fov_half) = -sin(fov_half) ensures we capture edge-crossing octants.
-    const threshold = -Math.sin(Math.max(fovH, fovV));
-    if (dot > threshold) mask |= (1 << q);
+    const ax = Math.max(0, sx * forward[0]);
+    const ay = Math.max(0, sy * forward[1]);
+    const az = Math.max(0, sz * forward[2]);
+    const maxDot = Math.hypot(ax, ay, az);
+    if (maxDot >= threshold) mask |= (1 << q);
   }
-  return mask;
+  return mask || 0xff;
 }
 
 /** Octant indices whose bit is set in mask. */

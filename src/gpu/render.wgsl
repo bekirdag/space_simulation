@@ -8,7 +8,7 @@
 // Body storage (64 bytes = 4 × vec4, matches JS BODY_FLOATS=16):
 //   vec4 pos_mass  — x, y, z, mass
 //   vec4 vel_rad   — vx, vy, vz, radius
-//   vec4 acc_type  — ax, ay, az, btype
+//   vec4 acc_type  — ax, ay, render visibility, btype
 //   vec4 col_id    — r, g, b, id
 //
 // Billboard: quad vertices are offset from body center along camera right/up,
@@ -67,10 +67,10 @@ fn vs_main(
   out.color   = b.col_id.xyz;
   out.btype   = b.acc_type.w;
   out.clamped = 0.0;
-  out.fade    = 1.0;
+  out.fade    = clamp(b.acc_type.z, 0.0, 1.0);
 
-  // Discard body behind the camera
-  if clip_c.w <= 0.0 {
+  // Discard body behind the camera or suppressed by screen-density reduction.
+  if clip_c.w <= 0.0 || out.fade <= 0.001 {
     out.clip_pos = vec4(10.0, 10.0, 10.0, 1.0);
     return out;
   }
@@ -79,24 +79,15 @@ fn vs_main(
   let r_ndc = r_phys * focalY / clip_c.w;
   var r_eff  = r_phys;
 
-  // Moons (btype=2): fade out as camera moves away; hard-discard beyond 2 AU.
+  // Moons (btype=2): no distance/occlusion discard. Visibility is driven by
+  // screen-density reduction on the CPU; keep a larger minimum dot when shown.
   if (out.btype > 1.5 && out.btype < 2.5) {
-    if clip_c.w > 2.0 {
-      out.clip_pos = vec4(10.0, 10.0, 10.0, 1.0);
-      return out;
-    }
-    out.fade = clamp(1.0 - (clip_c.w - 0.3) / 1.2, 0.0, 1.0);
     mnr = max(mnr, camera.rightAndMNR.w * 7.0);
   }
 
   // Exoplanets (btype=5): catalog bodies orbiting distant stars.
-  // Same fade window as moons; slightly smaller minimum dot for visual distinction.
+  // No distance/occlusion discard; slightly smaller minimum dot for distinction.
   if (out.btype > 4.5 && out.btype < 5.5) {
-    if clip_c.w > 2.0 {
-      out.clip_pos = vec4(10.0, 10.0, 10.0, 1.0);
-      return out;
-    }
-    out.fade = clamp(1.0 - (clip_c.w - 0.1) / 1.4, 0.0, 1.0);
     mnr = max(mnr, camera.rightAndMNR.w * 5.0);
   }
 

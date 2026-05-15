@@ -20,6 +20,7 @@ import { fetchStatesForDate, utcDateStr, dateStrToMs, TOTAL_BODIES } from "./ser
 import { type Body } from "./physics/body";
 import { type HorizonsResult } from "./services/horizons";
 import { SECONDS_PER_YEAR, MAX_SUBSTEP_YR, BodyType } from "./physics/constants";
+import { type Mat4 } from "./math/mat4";
 import {
   DEFAULT_VISIBLE_STAR_COUNT,
   STAR_FLOATS,
@@ -88,6 +89,83 @@ const STARTUP_TRAIL_BODIES = new Set([
   "Haumea",
   "Makemake",
 ]);
+
+const DENSE_CLUSTER_CELL_PX = 3;
+const DENSE_CLUSTER_MIN_BODIES = 4;
+
+function isMajorRenderBody(body: Body): boolean {
+  return body.type === BodyType.Star ||
+    body.type === BodyType.Planet ||
+    body.type === BodyType.DwarfPlanet;
+}
+
+function buildBodyRenderVisibility(
+  bodies: Body[],
+  viewProj: Mat4,
+  focusedSystemMembers: ReadonlySet<string>,
+): Map<number, number> {
+  interface ClusterEntry {
+    body: Body;
+    apparentRadiusPx: number;
+    protected: boolean;
+  }
+
+  const cssW = window.innerWidth;
+  const cssH = window.innerHeight;
+  const clusters = new Map<string, ClusterEntry[]>();
+  const visibility = new Map<number, number>();
+
+  for (const body of bodies) visibility.set(body.id, 1);
+
+  for (const body of bodies) {
+    /* eslint-disable @typescript-eslint/no-non-null-assertion */
+    const cx = viewProj[0]!*body.x + viewProj[4]!*body.y + viewProj[8]! *body.z + viewProj[12]!;
+    const cy = viewProj[1]!*body.x + viewProj[5]!*body.y + viewProj[9]! *body.z + viewProj[13]!;
+    const cz = viewProj[2]!*body.x + viewProj[6]!*body.y + viewProj[10]!*body.z + viewProj[14]!;
+    const cw = viewProj[3]!*body.x + viewProj[7]!*body.y + viewProj[11]!*body.z + viewProj[15]!;
+    /* eslint-enable */
+    if (cw <= 0) continue;
+
+    const nx = cx / cw;
+    const ny = cy / cw;
+    const nz = cz / cw;
+    if (nz < 0 || nz > 1.02 || Math.abs(nx) > 1.04 || Math.abs(ny) > 1.04) continue;
+
+    const screenX = (nx + 1) * 0.5 * cssW;
+    const screenY = (1 - ny) * 0.5 * cssH;
+    const cellX = Math.round(screenX / DENSE_CLUSTER_CELL_PX);
+    const cellY = Math.round(screenY / DENSE_CLUSTER_CELL_PX);
+    const apparentRadiusPx = Math.max(0, body.radius / cw) * cssH;
+    const protectedBody = isMajorRenderBody(body) || focusedSystemMembers.has(body.name);
+    const key = `${cellX}:${cellY}`;
+    const bucket = clusters.get(key);
+    const entry = { body, apparentRadiusPx, protected: protectedBody };
+    if (bucket) bucket.push(entry);
+    else clusters.set(key, [entry]);
+  }
+
+  for (const entries of clusters.values()) {
+    if (entries.length < DENSE_CLUSTER_MIN_BODIES) continue;
+
+    const protectedEntries = entries.filter(e => e.protected);
+    if (protectedEntries.length > 0) {
+      for (const entry of entries) {
+        if (!entry.protected) visibility.set(entry.body.id, 0);
+      }
+      continue;
+    }
+
+    let keep = entries[0]!;
+    for (const entry of entries) {
+      if (entry.apparentRadiusPx > keep.apparentRadiusPx) keep = entry;
+    }
+    for (const entry of entries) {
+      if (entry !== keep) visibility.set(entry.body.id, 0);
+    }
+  }
+
+  return visibility;
+}
 
 // ── Loading overlay ───────────────────────────────────────────────────────────
 const loadingEl  = document.getElementById("loading-overlay")!;
@@ -971,9 +1049,12 @@ async function main(): Promise<void> {
 
     const sel = nav.selectedCatalogStar;
     renderer.uploadSelectedStar(sel ? [sel.x, sel.y, sel.z] : null);
+    const focusedMembers = nav.focusedSystemMembers();
+    const bodyVisibility = buildBodyRenderVisibility(bodies, camUniforms.viewProj, focusedMembers);
+    renderer.uploadBodies(bodies, bodyVisibility);
     renderer.draw(trails);
 
-    const solarClustered = labels.update(bodies, camUniforms.viewProj, nav.focusedSystemMembers(), camUniforms.eye);
+    const solarClustered = labels.update(bodies, camUniforms.viewProj, focusedMembers, camUniforms.eye, bodyVisibility);
     labels.updateNearbyStarLabels(NEARBY_STAR_LABELS, camUniforms.viewProj, solarClustered);
     labels.updateGalacticCenterLabel(SGR_A_STAR_POS, camUniforms.viewProj, () => {
       nav.clearFocusedBody();

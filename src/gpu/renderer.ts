@@ -435,7 +435,7 @@ export class Renderer {
     this.ctx.device.queue.writeBuffer(this.starBuffer, 0, stars as GPUAllowSharedBufferSource);
   }
 
-  uploadBodies(bodies: Body[]): void {
+  uploadBodies(bodies: Body[], visibility: ReadonlyMap<number, number> = new Map()): void {
     this.bodyCount = bodies.length;
     const data = new Float32Array(bodies.length * BODY_FLOATS);
     for (let i = 0; i < bodies.length; i++) {
@@ -445,8 +445,8 @@ export class Renderer {
       data[o+0]=b.x;  data[o+1]=b.y;  data[o+2]=b.z;  data[o+3]=b.mass;
       // vec4 vel_rad
       data[o+4]=b.vx; data[o+5]=b.vy; data[o+6]=b.vz; data[o+7]=b.radius;
-      // vec4 acc_type (acc starts at 0; btype in .w)
-      data[o+8]=0; data[o+9]=0; data[o+10]=0; data[o+11]=b.type;
+      // vec4 acc_type (xy reserved; z=render visibility; btype in .w)
+      data[o+8]=0; data[o+9]=0; data[o+10]=visibility.get(b.id) ?? 1; data[o+11]=b.type;
       // vec4 col_id
       data[o+12]=b.color[0]; data[o+13]=b.color[1]; data[o+14]=b.color[2]; data[o+15]=b.id;
     }

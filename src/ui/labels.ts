@@ -122,6 +122,7 @@ export class LabelManager {
     viewProj: Mat4,
     focusedSystemMembers: ReadonlySet<string> = new Set(),
     cameraEye: Vec3 = [0, 0, 0],
+    bodyVisibility: ReadonlyMap<number, number> = new Map(),
   ): boolean /* solarSystemClustered */ {
     if (!this._visible) return false;
     const cssW = window.innerWidth;
@@ -162,6 +163,14 @@ export class LabelManager {
 
       const sp  = this.spans.get(b.id)!;
       const isFocusedSystemMember = focusedSystemMembers.has(b.name);
+      const isMajorBody = ALWAYS_VISIBLE_BODY_NAMES.has(b.name);
+      const renderVisibility = bodyVisibility.get(b.id) ?? 1;
+
+      if (renderVisibility <= 0.05 && !isMajorBody && !isFocusedSystemMember) {
+        sp.style.display = 'none';
+        sp.classList.remove('pinned', 'hovered', 'system');
+        continue;
+      }
 
       // When the whole solar system fits inside ~50 px, keep only the Sun label.
       // Focused system members stay visible so clicking a body while zoomed out

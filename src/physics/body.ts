@@ -16,7 +16,7 @@ export interface Body {
 //
 //   vec4 0  pos_mass : x, y, z, mass
 //   vec4 1  vel_rad  : vx, vy, vz, radius
-//   vec4 2  acc_type : ax, ay, az, btype
+//   vec4 2  acc_type : ax, ay, render visibility, btype
 //   vec4 3  col_id   : r, g, b, id
 //
 export const BODY_FLOATS = 16;
