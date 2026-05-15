@@ -1,14 +1,15 @@
 // 3D billboard body renderer.
 //
-// Camera uniform (96 bytes = 6 × vec4):
+// Camera uniform (112 bytes = 7 × vec4):
 //   mat4x4 viewProj         — view-projection matrix (64 bytes)
 //   vec4   rightAndMNR      — xyz = camera right, w = minNDCRadius for point layers
 //   vec4   upAndFocal       — xyz = camera up,    w = focalY (= 1/tan(fovY/2))
+//   vec4   eyeAndFlags      — xyz = camera world position, w reserved
 //
 // Body storage (64 bytes = 4 × vec4, matches JS BODY_FLOATS=16):
 //   vec4 pos_mass  — x, y, z, mass
 //   vec4 vel_rad   — vx, vy, vz, radius
-//   vec4 acc_type  — brightness, _reserved, render visibility, btype
+//   vec4 acc_type  — brightness, observer reference distance AU, render visibility, btype
 //   vec4 col_id    — r, g, b, id
 //
 // Billboard: quad vertices are offset from body center along camera right/up,
@@ -18,6 +19,7 @@ struct Camera {
   viewProj:    mat4x4<f32>,
   rightAndMNR: vec4<f32>,  // xyz=right, w=minNDCRadius for point layers
   upAndFocal:  vec4<f32>,  // xyz=up,    w=focalY
+  eyeAndFlags: vec4<f32>,  // xyz=camera eye
 };
 
 struct Body {
@@ -44,6 +46,25 @@ var<private> quad: array<vec2<f32>, 6> = array<vec2<f32>, 6>(
   vec2(-1.0, 1.0), vec2(1.0,-1.0), vec2( 1.0,1.0),
 );
 
+fn camera_distance_adjusted_brightness(
+  baseBrightness: f32,
+  referenceDistanceAU: f32,
+  cameraDistanceAU: f32,
+  bodyRadiusAU: f32,
+) -> f32 {
+  if referenceDistanceAU <= 0.0 {
+    return baseBrightness;
+  }
+
+  let safeReference = max(referenceDistanceAU, 1e-6);
+  let minCameraDistance = max(bodyRadiusAU * 1.25, safeReference * 0.02);
+  let safeCameraDistance = max(cameraDistanceAU, max(minCameraDistance, 1e-6));
+  let ratio = clamp(safeReference / safeCameraDistance, 0.001, 1000.0);
+  // Display brightness is already tone-mapped from magnitude, so apply the
+  // inverse-square distance law through the same magnitude/display curve.
+  return clamp(baseBrightness * pow(ratio, 0.7142857), 0.04, 240.0);
+}
+
 @vertex
 fn vs_main(
   @builtin(vertex_index)   vi:  u32,
@@ -65,7 +86,13 @@ fn vs_main(
   out.color   = b.col_id.xyz;
   out.btype   = b.acc_type.w;
   out.fade    = clamp(b.acc_type.z, 0.0, 1.0);
-  out.brightness = max(b.acc_type.x, 0.0);
+  let cameraDistanceAU = length(center - camera.eyeAndFlags.xyz);
+  out.brightness = camera_distance_adjusted_brightness(
+    max(b.acc_type.x, 0.0),
+    b.acc_type.y,
+    cameraDistanceAU,
+    r_phys,
+  );
 
   // Discard body behind the camera or suppressed by screen-density reduction.
   if clip_c.w <= 0.0 || out.fade <= 0.001 {

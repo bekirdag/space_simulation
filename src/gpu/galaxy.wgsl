@@ -11,6 +11,7 @@ struct Camera {
   viewProj:    mat4x4<f32>,
   rightAndMNR: vec4<f32>,
   upAndFocal:  vec4<f32>,
+  eyeAndFlags: vec4<f32>,
 };
 
 struct Galaxy {
@@ -45,8 +46,8 @@ fn visual_radius_to_mpc(radiusAU: f32) -> f32 {
   return linearLimitMpc + 2.0 * (pow(2.0, (radiusAU - linearLimitAU) / 1200000.0) - 1.0);
 }
 
-fn apparent_galaxy_brightness(center: vec3<f32>, size: f32, alpha: f32) -> f32 {
-  let distMpc = max(visual_radius_to_mpc(length(center)), 0.02);
+fn apparent_galaxy_brightness(cameraDistanceAU: f32, size: f32, alpha: f32) -> f32 {
+  let distMpc = max(visual_radius_to_mpc(cameraDistanceAU), 0.02);
   let luminosityProxy = size * size * (0.55 + alpha);
   let flux = luminosityProxy / (distMpc * distMpc);
   return clamp(pow(max(flux * 2.0, 0.00001), 0.42), 0.04, 3.4);
@@ -66,7 +67,8 @@ fn vs_main(
   out.uv    = uv;
   out.color = g.col_alpha.xyz;
   let actual = galaxyLod.x > 0.5;
-  out.brightness = select(1.0, apparent_galaxy_brightness(center, g.pos_size.w, g.col_alpha.w), actual);
+  let cameraDistanceAU = length(center - camera.eyeAndFlags.xyz);
+  out.brightness = select(1.0, apparent_galaxy_brightness(cameraDistanceAU, g.pos_size.w, g.col_alpha.w), actual);
   out.alpha = g.col_alpha.w * select(1.0, clamp(0.28 + out.brightness, 0.18, 2.0), actual);
 
   if clip_c.w <= 0.0 {

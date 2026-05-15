@@ -11,6 +11,7 @@ struct Camera {
   viewProj:    mat4x4<f32>,
   rightAndMNR: vec4<f32>,
   upAndFocal:  vec4<f32>,
+  eyeAndFlags: vec4<f32>,
 };
 
 struct Star {
@@ -42,8 +43,8 @@ fn stellar_luminosity_proxy(color: vec3<f32>, size: f32, alpha: f32) -> f32 {
   return spectralLum * (0.35 + size * 0.65) * (0.65 + alpha);
 }
 
-fn apparent_mw_brightness(center: vec3<f32>, color: vec3<f32>, size: f32, alpha: f32) -> f32 {
-  let distKpc = max(length(center) / 8000.0, 0.10);
+fn apparent_mw_brightness(cameraDistanceAU: f32, color: vec3<f32>, size: f32, alpha: f32) -> f32 {
+  let distKpc = max(cameraDistanceAU / 8000.0, 0.10);
   let flux = stellar_luminosity_proxy(color, size, alpha) / (distKpc * distKpc);
   return clamp(pow(max(flux * 8.0, 0.0001), 0.45), 0.05, 2.8);
 }
@@ -62,7 +63,8 @@ fn vs_main(
   out.uv    = uv;
   out.color = star.color_alpha.xyz;
   let actual = lodFade.y > 0.5;
-  out.brightness = select(1.0, apparent_mw_brightness(center, out.color, star.pos_size.w, star.color_alpha.w), actual);
+  let cameraDistanceAU = length(center - camera.eyeAndFlags.xyz);
+  out.brightness = select(1.0, apparent_mw_brightness(cameraDistanceAU, out.color, star.pos_size.w, star.color_alpha.w), actual);
   out.alpha = star.color_alpha.w * lodFade.x * select(1.0, clamp(0.35 + out.brightness, 0.25, 2.1), actual);
 
   // Skip invisible or back-facing instances

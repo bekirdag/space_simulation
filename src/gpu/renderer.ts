@@ -20,8 +20,8 @@ import { type TrailSystem, TRAIL_VTXFLOATS, TRAIL_SLOT_BYTES } from "../scene/tr
 import { type OctantRange } from "./sky-cull";
 import { type CameraUniforms } from "../scene/camera";
 
-// Camera uniform: mat4 (64) + vec4 rightAndMNR (16) + vec4 upAndFocal (16) = 96 bytes
-const CAMERA_BYTES = 96;
+// Camera uniform: mat4 (64) + right/min vec4 + up/focal vec4 + eye vec4 = 112 bytes
+const CAMERA_BYTES = 112;
 const BLACK_HOLE_BYTES = 32;
 
 const KM_PER_AU = 149_597_870.7;
@@ -72,8 +72,17 @@ const FULL_MOON_REFLECTED_FLUX =
 const TRAIL_MAX_BODIES   = 64;
 const TRAIL_VTXBUF_BYTES = TRAIL_MAX_BODIES * TRAIL_SLOT_BYTES; // 64 × fixed slot = ~31 MB
 
+interface BodyBrightnessSample {
+  display: number;
+  observerDistanceAU: number;
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
+}
+
+function bodyDistanceAU(a: Body, b: Body): number {
+  return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 }
 
 export class Renderer {
@@ -709,24 +718,28 @@ export class Renderer {
       data[o+0]=b.x;  data[o+1]=b.y;  data[o+2]=b.z;  data[o+3]=b.mass;
       // vec4 vel_rad
       data[o+4]=b.vx; data[o+5]=b.vy; data[o+6]=b.vz; data[o+7]=b.radius;
-      // vec4 acc_type (x=brightness; y reserved; z=render visibility; btype in .w)
-      data[o+8]=brightness; data[o+9]=0; data[o+10]=visibility.get(b.id) ?? 1; data[o+11]=b.type;
+      // vec4 acc_type (x=brightness; y=reference observer distance AU; z=render visibility; w=type)
+      data[o+8]=brightness.display; data[o+9]=brightness.observerDistanceAU; data[o+10]=visibility.get(b.id) ?? 1; data[o+11]=b.type;
       // vec4 col_id
       data[o+12]=b.color[0]; data[o+13]=b.color[1]; data[o+14]=b.color[2]; data[o+15]=b.id;
     }
     this.ctx.device.queue.writeBuffer(this.bodyBuffer, 0, data);
   }
 
-  private bodyBrightnessFactor(body: Body, sun: Body | undefined, earth: Body | undefined): number {
-    if (!this._actualBrightness) return 1;
+  private bodyBrightnessFactor(body: Body, sun: Body | undefined, earth: Body | undefined): BodyBrightnessSample {
+    if (!this._actualBrightness) return { display: 1, observerDistanceAU: 0 };
     if (body.type === BodyType.Star) {
-      return body.name === "Sun" ? this.apparentMagnitudeToDisplayBrightness(SUN_APPARENT_MAG) : 32;
+      const referenceAU = body.name === "Sun" && earth ? Math.max(0.02, bodyDistanceAU(body, earth)) : 0;
+      return {
+        display: body.name === "Sun" ? this.apparentMagnitudeToDisplayBrightness(SUN_APPARENT_MAG) : 32,
+        observerDistanceAU: referenceAU,
+      };
     }
     if (body.type === BodyType.Exoplanet) {
-      return 1.35;
+      return { display: 1.35, observerDistanceAU: 0 };
     }
-    if (!sun || !earth) return 1;
-    if (body.id === earth.id) return 1.25;
+    if (!sun || !earth) return { display: 1, observerDistanceAU: 0 };
+    if (body.id === earth.id) return { display: 1.25, observerDistanceAU: 1 };
 
     const albedo = REFLECTIVE_BODY_ALBEDO[body.name] ?? DEFAULT_REFLECTIVE_ALBEDO;
     const sunVec = [sun.x - body.x, sun.y - body.y, sun.z - body.z] as const;
@@ -747,7 +760,10 @@ export class Renderer {
       (sunDistanceAU * sunDistanceAU * earthDistanceAU * earthDistanceAU),
     );
     const apparentMag = FULL_MOON_APPARENT_MAG - 2.5 * Math.log10(reflectedFlux / FULL_MOON_REFLECTED_FLUX);
-    return this.apparentMagnitudeToDisplayBrightness(apparentMag);
+    return {
+      display: this.apparentMagnitudeToDisplayBrightness(apparentMag),
+      observerDistanceAU: earthDistanceAU,
+    };
   }
 
   private apparentMagnitudeToDisplayBrightness(mag: number): number {
@@ -855,16 +871,19 @@ export class Renderer {
     const MIN_PX = 2.5;
     const minNDCRadius = (MIN_PX * 2) / canvasHeight;
 
-    // 96-byte layout:
+    // 112-byte layout:
     //   [0–63]  viewProj (mat4x4, 16 floats)
     //   [64–79] rightAndMNR (vec4: right.xyz, minNDCRadius)
     //   [80–95] upAndFocal  (vec4: up.xyz,    focalY)
-    const data = new Float32Array(24);
+    //   [96–111] eyeAndFlags (vec4: camera eye xyz, reserved)
+    const data = new Float32Array(CAMERA_BYTES / 4);
     data.set(uniforms.viewProj, 0);
     data[16] = uniforms.camRight[0]; data[17] = uniforms.camRight[1]; data[18] = uniforms.camRight[2];
     data[19] = minNDCRadius;
     data[20] = uniforms.camUp[0];    data[21] = uniforms.camUp[1];    data[22] = uniforms.camUp[2];
     data[23] = uniforms.focalY;
+    data[24] = uniforms.eye[0];      data[25] = uniforms.eye[1];      data[26] = uniforms.eye[2];
+    data[27] = 0;
     this.ctx.device.queue.writeBuffer(this.cameraBuffer, 0, data);
   }
 
