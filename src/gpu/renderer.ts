@@ -47,7 +47,7 @@ export class Renderer {
   private galaxyBGL!:       GPUBindGroupLayout;
   private nebulaBGL!:       GPUBindGroupLayout;
   private selectedStarBuffer!: GPUBuffer;
-  private starLodBuffer!:   GPUBuffer;  // 16-byte uniform: x=brightness
+  private starLodBuffer!:   GPUBuffer;  // 16-byte uniform: x=brightness, y=camera radius
   private mwLodBuffer!:     GPUBuffer;  // 16-byte uniform: x=fade for MW stars
 
   private bodyCount    = 0;
@@ -184,8 +184,8 @@ export class Renderer {
       label: "mw-lod", size: 16,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
-    // Catalog stars stay visible as a render-only layer; named nearby-star labels
-    // handle their own camera-distance fade in LabelManager.
+    // Catalog stars use camera-distance shell culling in star.wgsl; named
+    // nearby-star labels handle their own DOM visibility in LabelManager.
     device.queue.writeBuffer(this.starLodBuffer, 0, new Float32Array([1, 0, 0, 0]));
     device.queue.writeBuffer(this.mwLodBuffer,   0, new Float32Array([1, 0, 0, 0]));
 
@@ -405,6 +405,11 @@ export class Renderer {
   uploadMilkywayStars(stars: Float32Array): void {
     this.mwStarCount = stars.length / MW_FLOATS;
     this.ctx.device.queue.writeBuffer(this.mwStarBuffer, 0, stars as GPUAllowSharedBufferSource);
+  }
+
+  updateLOD(cameraDistanceFromSun: number): void {
+    const radius = Number.isFinite(cameraDistanceFromSun) ? Math.max(0, cameraDistanceFromSun) : 0;
+    this.ctx.device.queue.writeBuffer(this.starLodBuffer, 0, new Float32Array([1, radius, 0, 0]));
   }
 
   uploadGalaxies(galaxies: Float32Array): void {

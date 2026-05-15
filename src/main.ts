@@ -1038,6 +1038,15 @@ async function main(): Promise<void> {
       renderer.setVisibleOctantMask(mask);
     }
 
+    const sunBody = bodies.find(b => b.name === "Sun");
+    const sunWorldPos: [number, number, number] = sunBody ? [sunBody.x, sunBody.y, sunBody.z] : [0, 0, 0];
+    const eyeDistFromSun = Math.hypot(
+      camUniforms.eye[0] - sunWorldPos[0],
+      camUniforms.eye[1] - sunWorldPos[1],
+      camUniforms.eye[2] - sunWorldPos[2],
+    );
+    renderer.updateLOD(eyeDistFromSun);
+
     const sel = nav.selectedCatalogStar;
     renderer.uploadSelectedStar(sel ? [sel.x, sel.y, sel.z] : null);
     const focusedMembers = nav.focusedSystemMembers();
@@ -1046,8 +1055,6 @@ async function main(): Promise<void> {
     renderer.draw(trails);
 
     labels.update(bodies, camUniforms.viewProj, focusedMembers, camUniforms.eye, bodyVisibility);
-    const sunBody = bodies.find(b => b.name === "Sun");
-    const sunWorldPos: [number, number, number] = sunBody ? [sunBody.x, sunBody.y, sunBody.z] : [0, 0, 0];
     labels.updateNearbyStarLabels(NEARBY_STAR_LABELS, camUniforms.viewProj, camUniforms.eye, sunWorldPos);
     labels.updateGalacticCenterLabel(SGR_A_STAR_POS, camUniforms.viewProj, () => {
       nav.clearFocusedBody();
