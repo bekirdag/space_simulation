@@ -1038,14 +1038,6 @@ async function main(): Promise<void> {
       renderer.setVisibleOctantMask(mask);
     }
 
-    // Nearby HYG stars fade per-object in the shader from this Sun-relative
-    // camera radius; there is no global zoom threshold for the catalog.
-    const sun = bodies.find(b => b.name === "Sun");
-    const eyeDistFromSun = sun
-      ? Math.hypot(camUniforms.eye[0] - sun.x, camUniforms.eye[1] - sun.y, camUniforms.eye[2] - sun.z)
-      : Math.hypot(camUniforms.eye[0], camUniforms.eye[1], camUniforms.eye[2]);
-    renderer.updateLOD(eyeDistFromSun);
-
     const sel = nav.selectedCatalogStar;
     renderer.uploadSelectedStar(sel ? [sel.x, sel.y, sel.z] : null);
     const focusedMembers = nav.focusedSystemMembers();
@@ -1053,8 +1045,10 @@ async function main(): Promise<void> {
     renderer.uploadBodies(bodies, bodyVisibility);
     renderer.draw(trails);
 
-    const solarClustered = labels.update(bodies, camUniforms.viewProj, focusedMembers, camUniforms.eye, bodyVisibility);
-    labels.updateNearbyStarLabels(NEARBY_STAR_LABELS, camUniforms.viewProj, solarClustered);
+    labels.update(bodies, camUniforms.viewProj, focusedMembers, camUniforms.eye, bodyVisibility);
+    const sunBody = bodies.find(b => b.name === "Sun");
+    const sunWorldPos: [number, number, number] = sunBody ? [sunBody.x, sunBody.y, sunBody.z] : [0, 0, 0];
+    labels.updateNearbyStarLabels(NEARBY_STAR_LABELS, camUniforms.viewProj, camUniforms.eye, sunWorldPos);
     labels.updateGalacticCenterLabel(SGR_A_STAR_POS, camUniforms.viewProj, () => {
       nav.clearFocusedBody();
       // Orbit the galactic centre at ~50 000 AU — shows the surrounding star field

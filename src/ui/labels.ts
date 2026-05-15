@@ -1,11 +1,14 @@
 import { type Body } from "../physics/body";
 import { BodyType } from "../physics/constants";
 import { type Mat4, type Vec3 } from "../math/mat4";
-import { type NearbyStarLabel } from "../catalog/nearby-stars";
+import { NEARBY_STAR_AU_PER_PARSEC, type NearbyStarLabel } from "../catalog/nearby-stars";
 
 // Moons fade out beyond this distance from the camera eye (AU).
 // Matches the shader's 1.5 AU soft cutoff.
 const MOON_LABEL_MAX_DIST = 1.5;
+const LIGHT_YEARS_PER_PARSEC = 3.26156;
+const NEARBY_STAR_AU_PER_LIGHT_YEAR = NEARBY_STAR_AU_PER_PARSEC / LIGHT_YEARS_PER_PARSEC;
+const NEARBY_STAR_MIN_OPACITY = 0.025;
 
 const ALWAYS_VISIBLE_BODY_NAMES = new Set([
   // Planets
@@ -20,6 +23,22 @@ const LABEL_BOTTOM_MARGIN = 86;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
+}
+
+function smoother01(value: number): number {
+  const t = clamp(value, 0, 1);
+  return t * t * t * (t * (t * 6 - 15) + 10);
+}
+
+function nearbyStarShellOpacity(star: NearbyStarLabel, cameraDistanceLy: number): number {
+  const starDistanceLy = Math.max(star.distPc * LIGHT_YEARS_PER_PARSEC, 0.05);
+  const fadeInStartLy  = Math.max(0.05, starDistanceLy * 0.24);
+  const fadeInEndLy    = Math.max(fadeInStartLy + 0.35, starDistanceLy * 0.55);
+  const fadeOutStartLy = Math.max(fadeInEndLy + 0.50, starDistanceLy * 2.35);
+  const fadeOutEndLy   = Math.max(fadeOutStartLy + 2.00, starDistanceLy * 3.40);
+  const fadeIn  = smoother01((cameraDistanceLy - fadeInStartLy) / (fadeInEndLy - fadeInStartLy));
+  const fadeOut = 1 - smoother01((cameraDistanceLy - fadeOutStartLy) / (fadeOutEndLy - fadeOutStartLy));
+  return fadeIn * fadeOut;
 }
 
 function pinToViewport(nx: number, ny: number, cssW: number, cssH: number): ProjectedPoint {
@@ -300,70 +319,40 @@ export class LabelManager {
   }
 
   /**
-   * Show tiered nearby-star labels based on how clustered the current zoom level is.
+   * Show named nearby-star labels while the camera radius is near each star's
+   * Sun-distance. This is intentionally separate from the 100k catalog-star
+   * render layer, which stays visible without per-star shell gating.
    *
-   * stars must be sorted by (tier ASC, distPc ASC).
-   * Tier N labels appear once tier N-1 is too clustered to read (all its stars
-   * project within CLUSTER_PX of the Sun on screen).  The solar system body
-   * labels handle tier -1 → tier 0 handoff (solarSystemClustered flag).
-   *
-   * @param stars            The full sorted list from NEARBY_STAR_LABELS.
-   * @param viewProj         Current view-projection matrix.
-   * @param solarClustered   True when the solar system body labels have collapsed to Sun-only.
+   * @param stars       The full sorted list from NEARBY_STAR_LABELS.
+   * @param viewProj    Current view-projection matrix.
+   * @param cameraEye   Current camera eye in simulation AU.
+   * @param sunWorldPos Current Sun position in simulation AU.
    */
   updateNearbyStarLabels(
-    stars:          NearbyStarLabel[],
-    viewProj:       Mat4,
-    solarClustered: boolean,
+    stars:       NearbyStarLabel[],
+    viewProj:    Mat4,
+    cameraEye:   Vec3 = [0, 0, 0],
+    sunWorldPos: Vec3 = [0, 0, 0],
   ): void {
-    const CLUSTER_PX = 50;
     const cssW = window.innerWidth;
     const cssH = window.innerHeight;
 
-    // If labels are hidden globally or solar system isn't clustered, hide everything.
-    if (!this._visible || !solarClustered) {
+    if (!this._visible) {
       for (const [, sp] of this.nearbyStarSpans) sp.style.display = 'none';
       return;
     }
 
-    // Project the Sun (origin) to get a screen anchor point.
-    const sunPt = project(0, 0, 0, viewProj, cssW, cssH, false);
-    if (!sunPt) {
-      for (const [, sp] of this.nearbyStarSpans) sp.style.display = 'none';
-      return;
-    }
-
-    // Determine the maximum number of tiers present.
-    const maxTier = Math.max(...stars.map(s => s.tier));
-
-    // Find the first tier whose farthest star is NOT clustered with the Sun.
-    // That tier's stars are what we show.
-    let activeTier = -1;
-    for (let tier = 0; tier <= maxTier; tier++) {
-      const tierStars = stars.filter(s => s.tier === tier);
-      if (tierStars.length === 0) continue;
-
-      // Use the farthest star in the tier as the spread reference.
-      const farthest = tierStars[tierStars.length - 1]!;
-      const pt = project(farthest.x, farthest.y, farthest.z, viewProj, cssW, cssH, false);
-
-      if (!pt) {
-        // Off screen — treat as clustered (too far from view direction to matter).
-        continue;
-      }
-
-      const spread = Math.hypot(pt.x - sunPt.x, pt.y - sunPt.y);
-      if (spread >= CLUSTER_PX) {
-        activeTier = tier;
-        break;
-      }
-    }
+    const cameraDistanceAu = Math.hypot(
+      cameraEye[0] - sunWorldPos[0],
+      cameraEye[1] - sunWorldPos[1],
+      cameraEye[2] - sunWorldPos[2],
+    );
+    const cameraDistanceLy = Math.max(cameraDistanceAu / NEARBY_STAR_AU_PER_LIGHT_YEAR, 0);
 
     // Show/hide labels for each star.
     for (const star of stars) {
-      const show = star.tier === activeTier;
-
-      if (!show) {
+      const opacity = nearbyStarShellOpacity(star, cameraDistanceLy);
+      if (opacity <= NEARBY_STAR_MIN_OPACITY) {
         const sp = this.nearbyStarSpans.get(star.name);
         if (sp) sp.style.display = 'none';
         continue;
@@ -386,6 +375,7 @@ export class LabelManager {
       }
 
       sp.style.display = 'block';
+      sp.style.opacity = opacity.toFixed(3);
       sp.style.left = `${Math.round(pt.x + 7)}px`;
       sp.style.top  = `${Math.round(pt.y - 5)}px`;
     }

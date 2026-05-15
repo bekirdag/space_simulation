@@ -1,7 +1,7 @@
-// Named stars visible as labels when the solar system is too small on screen.
+// Named stars visible as labels while the camera moves through nearby space.
 // Also exports the galactic-center (Sgr A*) world position for the permanent label.
-// Sorted by distance from Sun; organized into 100-star tiers so labels appear
-// in waves as the camera zooms out further:
+// Sorted by distance from Sun; tiers are kept as broad distance metadata while
+// LabelManager drives actual visibility from camera distance vs. each star.
 //
 //   Tier 0  (< ~10 pc)   — nearest neighbourhood, Alpha Cen, Sirius, Vega …
 //   Tier 1  (10–50 pc)   — nearby Milky Way, Pollux, Arcturus, Capella …
@@ -23,7 +23,8 @@ export interface NearbyStarLabel {
 const EPS = 23.4393 * Math.PI / 180;
 const CE  = Math.cos(EPS);   // 0.91745
 const SE  = Math.sin(EPS);   // 0.39778
-const APc = 80;              // AU per parsec (must match build-visible-stars.mjs)
+export const NEARBY_STAR_AU_PER_PARSEC = 80; // must match build-visible-stars.mjs
+const APc = NEARBY_STAR_AU_PER_PARSEC;
 
 function p(ra: number, dec: number, d: number): [number, number, number] {
   const r  = ra  * Math.PI / 180;
@@ -47,12 +48,6 @@ export const SGR_A_STAR_POS: [number, number, number] = [
   -0.993911 * _gcx,   // ≈ -67 586 AU
   -0.096390 * _gcx,   // ≈ -6 555 AU
 ];
-
-// Tier boundary: farthest star in each tier at compressed AU
-// Tier 0 → ~10 pc → 800 AU  → clusters ~17 000 AU camera dist
-// Tier 1 → ~50 pc → 4 000 AU → clusters ~87 000 AU camera dist
-// Tier 2 → ~400 pc → 32 000 AU → clusters at extreme zoom
-// Tier 3 → 400+ pc → always shown at max zoom-out
 
 function s(
   name: string, ra: number, dec: number, d: number, tier: number,

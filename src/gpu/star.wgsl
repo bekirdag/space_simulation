@@ -22,10 +22,7 @@ struct Star {
 @group(0) @binding(0) var<uniform>       camera:       Camera;
 @group(0) @binding(1) var<storage, read> stars:        array<Star>;
 @group(0) @binding(2) var<uniform>       selectedStar: vec4<f32>; // xyz=pos, w=active
-@group(0) @binding(3) var<uniform>       lodFade:      vec4<f32>; // x=brightness, y=camera radius from Sun
-
-// src/catalog/stars.ts compresses catalog positions to 80 render AU per parsec.
-const RENDER_AU_PER_LIGHT_YEAR: f32 = 80.0 / 3.26156;
+@group(0) @binding(3) var<uniform>       lodFade:      vec4<f32>; // x=brightness
 
 struct VertexOut {
   @builtin(position) clip_pos: vec4<f32>,
@@ -40,11 +37,6 @@ var<private> quad: array<vec2<f32>, 6> = array<vec2<f32>, 6>(
   vec2(-1.0, 1.0), vec2(1.0,-1.0), vec2( 1.0,1.0),
 );
 
-fn smoother01(v: f32) -> f32 {
-  let t = clamp(v, 0.0, 1.0);
-  return t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
-}
-
 @vertex
 fn vs_main(
   @builtin(vertex_index)   vi:  u32,
@@ -58,25 +50,10 @@ fn vs_main(
   var out: VertexOut;
   out.uv       = uv;
   out.color    = star.color_alpha.xyz;
-  out.alpha    = star.color_alpha.w;
+  out.alpha    = star.color_alpha.w * clamp(lodFade.x, 0.0, 1.0);
   out.selected = 0.0;
 
-  // ── Distance-shell visibility ────────────────────────────────────────────
-  // There is no global "show nearby stars after this zoom" gate. Each star is
-  // visible only while the camera's Sun-radius is near that star's own
-  // Sun-radius. For Proxima (~4.24 ly), this starts near 1 ly and starts fading
-  // out near 10 ly, with enough width to stay visible over several scrolls.
-  let starDistanceLy = max(length(center) / RENDER_AU_PER_LIGHT_YEAR, 0.05);
-  let cameraDistanceLy = max(lodFade.y / RENDER_AU_PER_LIGHT_YEAR, 0.0);
-  let fadeInStartLy  = max(0.05, starDistanceLy * 0.24);
-  let fadeInEndLy    = max(fadeInStartLy + 0.35, starDistanceLy * 0.55);
-  let fadeOutStartLy = max(fadeInEndLy + 0.50, starDistanceLy * 2.35);
-  let fadeOutEndLy   = max(fadeOutStartLy + 2.00, starDistanceLy * 3.40);
-  let fadeIn  = smoother01((cameraDistanceLy - fadeInStartLy) / (fadeInEndLy - fadeInStartLy));
-  let fadeOut = 1.0 - smoother01((cameraDistanceLy - fadeOutStartLy) / (fadeOutEndLy - fadeOutStartLy));
   let selectedMatch = selectedStar.w > 0.5 && length(center - selectedStar.xyz) < 0.5;
-  let shellVisibility = fadeIn * fadeOut;
-  out.alpha *= clamp(lodFade.x, 0.0, 1.0) * select(shellVisibility, max(shellVisibility, 0.9), selectedMatch);
 
   if out.alpha <= 0.001 && !selectedMatch {
     out.clip_pos = vec4(10.0, 10.0, 10.0, 1.0);
