@@ -368,9 +368,12 @@ async function main(): Promise<void> {
     if (info.error) {
       setObjectInfoStatus("NASA lookup failed.", true);
     } else if (info.stale) {
-      setObjectInfoStatus(info.warning || "Showing cached NASA data.");
+      setObjectInfoStatus(info.warning || "Showing previously retrieved NASA data.");
     } else {
-      setObjectInfoStatus(info.cacheHit ? "Loaded from local NASA cache." : "Loaded from NASA and cached locally.");
+      const sourceName = info.provider || "NASA Image and Video Library";
+      setObjectInfoStatus(info.imageUrl
+        ? `Image and description from ${sourceName}.`
+        : `Description from ${sourceName}.`);
     }
   }
 
