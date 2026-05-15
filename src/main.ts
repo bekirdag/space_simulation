@@ -66,6 +66,8 @@ const MAX_BODIES = 1024;
 const MAX_CATALOG_STARS  = DEFAULT_VISIBLE_STAR_COUNT + 8_000;
 const MAX_CATALOG_GALAXIES = 100_000;
 const MAX_STEPS  = 2000;
+const SGR_A_BLACK_HOLE_RING_AU = 3_200;
+const SGR_A_BLACK_HOLE_FOCUS_AU = 50_000;
 // Active substep size (yr) — changed via Settings panel.
 // Larger steps = faster simulation but reduced moon accuracy.
 let simSubstepYr = MAX_SUBSTEP_YR; // default: 15 min (precise)
@@ -310,6 +312,7 @@ async function main(): Promise<void> {
     const showTrails = (document.getElementById("set-trails") as HTMLInputElement).checked;
     const showConstellations = (document.getElementById("set-constellations") as HTMLInputElement).checked;
     const showDust = (document.getElementById("set-dust-maps") as HTMLInputElement).checked;
+    const showBlackHole = (document.getElementById("set-black-hole") as HTMLInputElement).checked;
     const actualBodyBrightness = (document.getElementById("set-body-brightness") as HTMLInputElement).checked;
     showGalaxies    = (document.getElementById("set-galaxies") as HTMLInputElement).checked;
     const mwVal      = parseInt((document.querySelector('input[name="mw-stars"]:checked') as HTMLInputElement)?.value ?? "200000");
@@ -331,6 +334,7 @@ async function main(): Promise<void> {
       showGalaxies,
       showConstellations,
       showDust,
+      showBlackHole,
       showTrails,
       mwStarLimit:  mwVal,
       starLimit:    nearbyVal,
@@ -585,9 +589,28 @@ async function main(): Promise<void> {
   const nav = new NavPanel(camera, () => bodies, loadPreset, {
     // Combine host-star search with individual exoplanet search
     searchCatalog: (query) => {
+      const q = query.trim().toLowerCase();
+      const blackHoleHits = q.length >= 2 && (
+        "sagittarius a*".includes(q) ||
+        "sgr a*".includes(q) ||
+        "sgr a".includes(q) ||
+        "black hole".includes(q) ||
+        "galactic center".includes(q) ||
+        "milky way center".includes(q)
+      ) ? [{
+        id: "blackhole:sgr-a",
+        label: "Sagittarius A*",
+        subtitle: "Milky Way central black hole",
+        x: SGR_A_STAR_POS[0],
+        y: SGR_A_STAR_POS[1],
+        z: SGR_A_STAR_POS[2],
+        focusDistance: SGR_A_BLACK_HOLE_FOCUS_AU,
+        color: [1.0, 0.52, 0.18] as [number, number, number],
+      }] : [];
       const starHits = searchCatalogStars(exoplanetHosts, query, 5);
       const exoHits  = searchExoplanets(query, getStarWorldPos, simYears, 5);
       return [
+        ...blackHoleHits,
         ...starHits,
         // Map exoplanet results to StarSearchResult shape
         ...exoHits.map(r => ({
@@ -604,7 +627,9 @@ async function main(): Promise<void> {
     // Called whenever a catalog search result is clicked.
     // If the id encodes an exoplanet, load that star's planet bodies.
     onCatalogItemClick: (id: string) => {
-      if (id.startsWith("exo:")) {
+      if (id === "blackhole:sgr-a") {
+        setExoplanetBodies(null);
+      } else if (id.startsWith("exo:")) {
         const hostName = id.split(":")[1] ?? null;
         setExoplanetBodies(hostName);
       } else {
@@ -1047,6 +1072,14 @@ async function main(): Promise<void> {
     const camUniforms = camera.update(aspect);
     lastViewProj = camUniforms.viewProj;
     renderer.updateCamera(camUniforms, canvas.height);
+    renderer.updateBlackHoleVisual(
+      SGR_A_STAR_POS,
+      SGR_A_BLACK_HOLE_RING_AU,
+      now / 1000,
+      canvas.width,
+      canvas.height,
+      1,
+    );
 
     // Catalog frustum culling happens in the WGSL shaders per instance.
     // Whole-origin-octant CPU culling can falsely remove visible galaxy regions.

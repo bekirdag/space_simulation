@@ -225,8 +225,8 @@ export class NavPanel {
       } else {
         empty.innerHTML =
           `No match for "<b>${query}</b>".<br>` +
-          `Catalog: exoplanet host stars only.<br>` +
-          `Try: <em>TRAPPIST-1, Proxima, 51 Peg, HD 209, Kepler</em>`;
+          `Catalog: exoplanet host stars, planets, and Sgr A*.<br>` +
+          `Try: <em>Sgr A*, TRAPPIST-1, Proxima, 51 Peg, HD 209, Kepler</em>`;
       }
       this.catalogResults.appendChild(empty);
       return;

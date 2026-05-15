@@ -4,6 +4,7 @@ import milkywayWGSL from "./milkyway.wgsl?raw";
 import galaxyWGSL   from "./galaxy.wgsl?raw";
 import nebulaWGSL   from "./nebula.wgsl?raw";
 import dustWGSL     from "./dust.wgsl?raw";
+import blackholeWGSL from "./blackhole.wgsl?raw";
 import constellationWGSL from "./constellation.wgsl?raw";
 import trailWGSL    from "./trail.wgsl?raw";
 import { type GPUContext } from "./device";
@@ -21,6 +22,7 @@ import { type CameraUniforms } from "../scene/camera";
 
 // Camera uniform: mat4 (64) + vec4 rightAndMNR (16) + vec4 upAndFocal (16) = 96 bytes
 const CAMERA_BYTES = 96;
+const BLACK_HOLE_BYTES = 32;
 
 const EARTH_GEOMETRIC_ALBEDO = 0.367;
 const DEFAULT_REFLECTIVE_ALBEDO = 0.25;
@@ -56,6 +58,7 @@ export class Renderer {
   private galaxyPipeline!:  GPURenderPipeline;
   private nebulaPipeline!:  GPURenderPipeline;
   private dustPipeline!:    GPURenderPipeline;
+  private blackHolePipeline!: GPURenderPipeline;
   private constellationPipeline!: GPURenderPipeline;
   private trailPipeline!:   GPURenderPipeline;
 
@@ -66,6 +69,7 @@ export class Renderer {
   private galaxyBuffer!:      GPUBuffer;
   private nebulaBuffer!:      GPUBuffer;
   private dustBuffer!:        GPUBuffer;
+  private blackHoleBuffer!:   GPUBuffer;
   private constellationBuffer!: GPUBuffer;
   private trailVertexBuffer!: GPUBuffer;
 
@@ -75,6 +79,7 @@ export class Renderer {
   private galaxyBindGroup!: GPUBindGroup;
   private nebulaBindGroup!: GPUBindGroup;
   private dustBindGroup!:   GPUBindGroup;
+  private blackHoleBindGroup!: GPUBindGroup;
   private constellationBindGroup!: GPUBindGroup;
   private trailBindGroup!:  GPUBindGroup;
   private starBGL!:         GPUBindGroupLayout;
@@ -82,7 +87,13 @@ export class Renderer {
   private galaxyBGL!:       GPUBindGroupLayout;
   private nebulaBGL!:       GPUBindGroupLayout;
   private dustBGL!:         GPUBindGroupLayout;
+  private blackHoleBGL!:    GPUBindGroupLayout;
   private constellationBGL!: GPUBindGroupLayout;
+  private sceneSampler!:    GPUSampler;
+  private sceneTexture:     GPUTexture | null = null;
+  private sceneTextureView: GPUTextureView | null = null;
+  private sceneTextureWidth = 0;
+  private sceneTextureHeight = 0;
   private selectedStarBuffer!: GPUBuffer;
   private starLodBuffer!:   GPUBuffer;  // 16-byte uniform: x=brightness, y=camera radius
   private mwLodBuffer!:     GPUBuffer;  // 16-byte uniform: x=fade for MW stars
@@ -120,6 +131,11 @@ export class Renderer {
   private _showConstellations = true;
   private _actualBodyBrightness = true;
   private _showDust = true;
+  private _showBlackHole = true;
+  private _blackHoleUniform = new Float32Array([
+    0, 0, 0, 0,
+    0, 1, 1, 1,
+  ]);
 
   applySettings(s: {
     starLimit?:   number;
@@ -130,6 +146,7 @@ export class Renderer {
     showTrails?:  boolean;
     actualBodyBrightness?: boolean;
     showDust?: boolean;
+    showBlackHole?: boolean;
   }): void {
     if (s.starLimit   !== undefined) this._starLimit   = s.starLimit;
     if (s.mwStarLimit !== undefined) this._mwStarLimit = s.mwStarLimit;
@@ -139,6 +156,7 @@ export class Renderer {
     if (s.showTrails  !== undefined) this._showTrails  = s.showTrails;
     if (s.actualBodyBrightness !== undefined) this._actualBodyBrightness = s.actualBodyBrightness;
     if (s.showDust !== undefined) this._showDust = s.showDust;
+    if (s.showBlackHole !== undefined) this._showBlackHole = s.showBlackHole;
   }
 
   constructor(
@@ -186,6 +204,20 @@ export class Renderer {
       label: "dust-map-storage",
       size: DUST_FLOATS * 4,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+
+    this.blackHoleBuffer = device.createBuffer({
+      label: "black-hole-visual-uniform",
+      size:  BLACK_HOLE_BYTES,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    device.queue.writeBuffer(this.blackHoleBuffer, 0, this._blackHoleUniform);
+    this.sceneSampler = device.createSampler({
+      label: "black-hole-scene-sampler",
+      magFilter: "linear",
+      minFilter: "linear",
+      addressModeU: "clamp-to-edge",
+      addressModeV: "clamp-to-edge",
     });
 
     this.constellationCapacity = 1;
@@ -435,6 +467,28 @@ export class Renderer {
       primitive: { topology: "triangle-list" },
     });
 
+    // ── Sagittarius A* black-hole lensing post-process ────────────────────
+    this.blackHoleBGL = device.createBindGroupLayout({
+      label: "black-hole-bgl",
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
+        { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float" } },
+        { binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "filtering" } },
+      ],
+    });
+    const blackHoleShader = device.createShaderModule({ code: blackholeWGSL });
+    this.blackHolePipeline = device.createRenderPipeline({
+      label: "black-hole-postprocess-pipeline",
+      layout: device.createPipelineLayout({ bindGroupLayouts: [this.blackHoleBGL] }),
+      vertex:   { module: blackHoleShader, entryPoint: "vs_main" },
+      fragment: {
+        module: blackHoleShader, entryPoint: "fs_main",
+        targets: [{ format }],
+      },
+      primitive: { topology: "triangle-list" },
+    });
+
     // ── Constellation line-list pipeline ──────────────────────────────────
     this.constellationBGL = device.createBindGroupLayout({
       label: "constellation-bgl",
@@ -566,6 +620,25 @@ export class Renderer {
     }
   }
 
+  updateBlackHoleVisual(
+    position: [number, number, number],
+    visualRingRadiusAU: number,
+    timeSeconds: number,
+    viewportWidth: number,
+    viewportHeight: number,
+    lensStrength = 1,
+  ): void {
+    this._blackHoleUniform[0] = position[0];
+    this._blackHoleUniform[1] = position[1];
+    this._blackHoleUniform[2] = position[2];
+    this._blackHoleUniform[3] = Math.max(0, visualRingRadiusAU);
+    this._blackHoleUniform[4] = Number.isFinite(timeSeconds) ? timeSeconds : 0;
+    this._blackHoleUniform[5] = Math.max(1, viewportWidth);
+    this._blackHoleUniform[6] = Math.max(1, viewportHeight);
+    this._blackHoleUniform[7] = Math.max(0, lensStrength);
+    this.ctx.device.queue.writeBuffer(this.blackHoleBuffer, 0, this._blackHoleUniform);
+  }
+
   uploadConstellations(lines: Float32Array): void {
     if (lines.length % CONSTELLATION_FLOATS !== 0) {
       throw new Error("Constellation buffer length must be a multiple of CONSTELLATION_FLOATS.");
@@ -670,6 +743,39 @@ export class Renderer {
     });
   }
 
+  private ensureSceneTexture(): void {
+    const width = Math.max(1, Math.floor(this._blackHoleUniform[5] ?? 1));
+    const height = Math.max(1, Math.floor(this._blackHoleUniform[6] ?? 1));
+    if (
+      this.sceneTexture &&
+      this.sceneTextureView &&
+      this.sceneTextureWidth === width &&
+      this.sceneTextureHeight === height
+    ) return;
+
+    this.sceneTexture?.destroy();
+    const { device, format } = this.ctx;
+    this.sceneTextureWidth = width;
+    this.sceneTextureHeight = height;
+    this.sceneTexture = device.createTexture({
+      label: "black-hole-scene-color",
+      size: { width, height },
+      format,
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+    });
+    this.sceneTextureView = this.sceneTexture.createView();
+    this.blackHoleBindGroup = device.createBindGroup({
+      label: "black-hole-bg",
+      layout: this.blackHoleBGL,
+      entries: [
+        { binding: 0, resource: { buffer: this.cameraBuffer } },
+        { binding: 1, resource: { buffer: this.blackHoleBuffer } },
+        { binding: 2, resource: this.sceneTextureView },
+        { binding: 3, resource: this.sceneSampler },
+      ],
+    });
+  }
+
   private ensureConstellationCapacity(count: number): void {
     if (count <= this.constellationCapacity) return;
 
@@ -702,40 +808,41 @@ export class Renderer {
 
   draw(trails: TrailSystem): void {
     const { device } = this.ctx;
-    const view = this.canvasCtx.getCurrentTexture().createView();
+    const swapView = this.canvasCtx.getCurrentTexture().createView();
 
     const encoder = device.createCommandEncoder({ label: "frame" });
-    const pass = encoder.beginRenderPass({
-      colorAttachments: [{
-        view,
-        clearValue: { r: 0.01, g: 0.01, b: 0.05, a: 1 },
-        loadOp: "clear", storeOp: "store",
-      }],
-    });
+    const drawScene = (view: GPUTextureView): void => {
+      const pass = encoder.beginRenderPass({
+        colorAttachments: [{
+          view,
+          clearValue: { r: 0.01, g: 0.01, b: 0.05, a: 1 },
+          loadOp: "clear", storeOp: "store",
+        }],
+      });
 
-    // Helper: draw all octants of a catalog, or fall back to full draw.
-    // Per-instance WGSL culling is deliberately used for frustum rejection;
-    // a whole-octant CPU mask can cut off visible Milky Way or galaxy regions.
-    const drawOctants = (
-      octants: OctantRange[] | null,
-      limit:   number,
-      fullCount: number,
-      drawFull: () => void,
-    ) => {
-      const cap = Math.min(fullCount, limit);
-      if (cap <= 0) return;
-      if (!octants) { drawFull(); return; }
-      // Proportion of each octant to draw (for Settings-based LOD limits).
-      // Each octant is scaled equally — avoids the "cap - first" cutoff bug
-      // that zeroed out octants with high buffer indices.
-      const ratio = fullCount > 0 ? cap / fullCount : 1;
-      for (let q = 0; q < 8; q++) {
-        const oct = octants[q]!;
-        if (oct.count <= 0) continue;
-        const count = Math.max(1, Math.round(oct.count * ratio));
-        pass.draw(6, count, 0, oct.first);
-      }
-    };
+      // Helper: draw all octants of a catalog, or fall back to full draw.
+      // Per-instance WGSL culling is deliberately used for frustum rejection;
+      // a whole-octant CPU mask can cut off visible Milky Way or galaxy regions.
+      const drawOctants = (
+        octants: OctantRange[] | null,
+        limit:   number,
+        fullCount: number,
+        drawFull: () => void,
+      ) => {
+        const cap = Math.min(fullCount, limit);
+        if (cap <= 0) return;
+        if (!octants) { drawFull(); return; }
+        // Proportion of each octant to draw (for Settings-based LOD limits).
+        // Each octant is scaled equally — avoids the "cap - first" cutoff bug
+        // that zeroed out octants with high buffer indices.
+        const ratio = fullCount > 0 ? cap / fullCount : 1;
+        for (let q = 0; q < 8; q++) {
+          const oct = octants[q]!;
+          if (oct.count <= 0) continue;
+          const count = Math.max(1, Math.round(oct.count * ratio));
+          pass.draw(6, count, 0, oct.first);
+        }
+      };
 
     // ── Galaxies (furthest layer) ──────────────────────────────────────────
     if (this._showGalaxies) {
@@ -828,7 +935,29 @@ export class Renderer {
     pass.setBindGroup(0, this.bodyBindGroup);
     pass.draw(6, this.bodyCount, 0, 0);
 
-    pass.end();
+      pass.end();
+    };
+
+    const blackHoleRadius = this._blackHoleUniform[3] ?? 0;
+    const blackHoleStrength = this._blackHoleUniform[7] ?? 0;
+    if (this._showBlackHole && blackHoleRadius > 0 && blackHoleStrength > 0) {
+      this.ensureSceneTexture();
+      drawScene(this.sceneTextureView!);
+      const pass = encoder.beginRenderPass({
+        colorAttachments: [{
+          view: swapView,
+          clearValue: { r: 0.01, g: 0.01, b: 0.05, a: 1 },
+          loadOp: "clear", storeOp: "store",
+        }],
+      });
+      pass.setPipeline(this.blackHolePipeline);
+      pass.setBindGroup(0, this.blackHoleBindGroup);
+      pass.draw(6, 1, 0, 0);
+      pass.end();
+    } else {
+      drawScene(swapView);
+    }
+
     device.queue.submit([encoder.finish()]);
   }
 }
