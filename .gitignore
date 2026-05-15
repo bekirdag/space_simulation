@@ -1,5 +1,6 @@
 /.docdex/
 /.docdex-state/
 cache/nasa/object-info/
+cache/nasa/horizons/
 public/cache/nasa/*.fits
 public/cache/nasa/*.fits.gz

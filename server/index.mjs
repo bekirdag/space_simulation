@@ -3,6 +3,7 @@ import { createServer as createHttpServer } from "node:http";
 import { stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { handleHorizonsRequest } from "./horizons.mjs";
 import { handleObjectInfoRequest } from "./object-info.mjs";
 
 const REPO_ROOT = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -133,6 +134,7 @@ async function listenOnAvailablePort(makeServer, preferredPort, host) {
 function makeServer() {
   return createHttpServer(async (req, res) => {
     setIsolationHeaders(res);
+    if (await handleHorizonsRequest(req, res)) return;
     if (await handleObjectInfoRequest(req, res)) return;
     await serveStatic(req, res);
   });
@@ -148,4 +150,3 @@ function shutdown() {
 
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
-

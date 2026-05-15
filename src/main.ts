@@ -238,11 +238,13 @@ function hideLoading() {
 }
 
 function horizonsSourceLabel(result: HorizonsResult, dateStr: string): string {
-  const source = result.source === "jpl-network"
-    ? "NASA JPL"
-    : result.source === "file-cache"
-      ? "NASA JPL file cache"
-      : "NASA JPL browser cache";
+  const source = result.source === "backend-network"
+    ? "NASA JPL backend live"
+    : result.source === "backend-stale"
+      ? "NASA JPL backend stale cache"
+      : result.source === "public-cache"
+        ? "NASA JPL public cache"
+        : "NASA JPL backend cache";
   const fallback = result.warnings.length ? ` (${result.warnings.length} fallback)` : "";
   return `${source}${fallback} · SSB frame · ${dateStr}`;
 }

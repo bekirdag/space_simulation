@@ -1,5 +1,6 @@
 import { createServer as createHttpServer } from "node:http";
 import { createServer as createViteServer } from "vite";
+import { handleHorizonsRequest } from "./horizons.mjs";
 import { handleObjectInfoRequest } from "./object-info.mjs";
 
 const DEFAULT_PORT = 5173;
@@ -50,6 +51,7 @@ const vite = await createViteServer({
 function makeServer() {
   return createHttpServer(async (req, res) => {
     setIsolationHeaders(res);
+    if (await handleHorizonsRequest(req, res)) return;
     if (await handleObjectInfoRequest(req, res)) return;
     vite.middlewares(req, res, () => {
       res.statusCode = 404;
@@ -70,4 +72,3 @@ async function shutdown() {
 
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
-

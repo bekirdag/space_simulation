@@ -118,11 +118,15 @@ after install:
   Galactic coordinate center is placed at the simulation's Sagittarius A*
   position using the same 8,000 AU/kpc Milky Way scale as the star field.
 
-Horizons data is loaded in this order: committed cache file, browser
-`localStorage`, then live NASA/JPL Horizons fetch if no cache is available.
+Horizons data is loaded through the local backend at `/api/horizons`. The
+backend serves `cache/nasa/horizons/<date>.json` first, seeds that runtime cache
+from committed `public/cache/horizons/<date>.json` files when available, and
+only then calls NASA/JPL Horizons with low concurrency and retry/backoff. The
+browser no longer calls NASA/JPL directly for simulation startup or date jumps.
 Focused-object information is requested from the local backend, which queries
 NASA Images and caches normalized JSON plus same-origin image files under
-`cache/nasa/object-info/`. That runtime cache is intentionally git-ignored.
+`cache/nasa/object-info/`. Runtime backend caches under `cache/nasa/` are
+intentionally git-ignored.
 
 ## Limits And Assumptions
 
