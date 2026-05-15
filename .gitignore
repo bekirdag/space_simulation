@@ -1,2 +1,4 @@
 /.docdex/
 /.docdex-state/
+public/cache/nasa/*.fits
+public/cache/nasa/*.fits.gz

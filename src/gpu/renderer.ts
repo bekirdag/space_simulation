@@ -3,6 +3,7 @@ import starWGSL     from "./star.wgsl?raw";
 import milkywayWGSL from "./milkyway.wgsl?raw";
 import galaxyWGSL   from "./galaxy.wgsl?raw";
 import nebulaWGSL   from "./nebula.wgsl?raw";
+import dustWGSL     from "./dust.wgsl?raw";
 import constellationWGSL from "./constellation.wgsl?raw";
 import trailWGSL    from "./trail.wgsl?raw";
 import { type GPUContext } from "./device";
@@ -12,6 +13,7 @@ import { STAR_FLOATS } from "../catalog/stars";
 import { MW_FLOATS } from "../catalog/milkyway";
 import { GALAXY_FLOATS } from "../catalog/galaxies";
 import { NEBULA_FLOATS } from "../catalog/nebulas";
+import { DUST_FLOATS } from "../catalog/dust";
 import { CONSTELLATION_FLOATS } from "../catalog/constellations";
 import { type TrailSystem, TRAIL_VTXFLOATS, TRAIL_SLOT_BYTES } from "../scene/trail-system";
 import { type OctantRange } from "./sky-cull";
@@ -53,6 +55,7 @@ export class Renderer {
   private mwPipeline!:      GPURenderPipeline;
   private galaxyPipeline!:  GPURenderPipeline;
   private nebulaPipeline!:  GPURenderPipeline;
+  private dustPipeline!:    GPURenderPipeline;
   private constellationPipeline!: GPURenderPipeline;
   private trailPipeline!:   GPURenderPipeline;
 
@@ -62,6 +65,7 @@ export class Renderer {
   private mwStarBuffer!:      GPUBuffer;
   private galaxyBuffer!:      GPUBuffer;
   private nebulaBuffer!:      GPUBuffer;
+  private dustBuffer!:        GPUBuffer;
   private constellationBuffer!: GPUBuffer;
   private trailVertexBuffer!: GPUBuffer;
 
@@ -70,12 +74,14 @@ export class Renderer {
   private mwBindGroup!:     GPUBindGroup;
   private galaxyBindGroup!: GPUBindGroup;
   private nebulaBindGroup!: GPUBindGroup;
+  private dustBindGroup!:   GPUBindGroup;
   private constellationBindGroup!: GPUBindGroup;
   private trailBindGroup!:  GPUBindGroup;
   private starBGL!:         GPUBindGroupLayout;
   private mwBGL!:           GPUBindGroupLayout;
   private galaxyBGL!:       GPUBindGroupLayout;
   private nebulaBGL!:       GPUBindGroupLayout;
+  private dustBGL!:         GPUBindGroupLayout;
   private constellationBGL!: GPUBindGroupLayout;
   private selectedStarBuffer!: GPUBuffer;
   private starLodBuffer!:   GPUBuffer;  // 16-byte uniform: x=brightness, y=camera radius
@@ -86,8 +92,10 @@ export class Renderer {
   private mwStarCount  = 0;
   private galaxyCount  = 0;
   private nebulaCount  = 0;
+  private dustCount    = 0;
   private constellationCount = 0;
   private starCapacity = 0;
+  private dustCapacity = 0;
   private constellationCapacity = 0;
 
   // Octant ranges are used only to spread Settings LOD caps across the sky.
@@ -111,6 +119,7 @@ export class Renderer {
   private _showGalaxies = true;
   private _showConstellations = true;
   private _actualBodyBrightness = true;
+  private _showDust = true;
 
   applySettings(s: {
     starLimit?:   number;
@@ -120,6 +129,7 @@ export class Renderer {
     showConstellations?: boolean;
     showTrails?:  boolean;
     actualBodyBrightness?: boolean;
+    showDust?: boolean;
   }): void {
     if (s.starLimit   !== undefined) this._starLimit   = s.starLimit;
     if (s.mwStarLimit !== undefined) this._mwStarLimit = s.mwStarLimit;
@@ -128,6 +138,7 @@ export class Renderer {
     if (s.showConstellations !== undefined) this._showConstellations = s.showConstellations;
     if (s.showTrails  !== undefined) this._showTrails  = s.showTrails;
     if (s.actualBodyBrightness !== undefined) this._actualBodyBrightness = s.actualBodyBrightness;
+    if (s.showDust !== undefined) this._showDust = s.showDust;
   }
 
   constructor(
@@ -167,6 +178,13 @@ export class Renderer {
     this.nebulaBuffer = device.createBuffer({
       label: "nebula-storage",
       size:  1_600 * NEBULA_FLOATS * 4,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+
+    this.dustCapacity = 1;
+    this.dustBuffer = device.createBuffer({
+      label: "dust-map-storage",
+      size: DUST_FLOATS * 4,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
 
@@ -384,6 +402,39 @@ export class Renderer {
       primitive: { topology: "triangle-list" },
     });
 
+    // ── Galactic dust map pipeline (premultiplied alpha overlay) ───────────
+    this.dustBGL = device.createBindGroupLayout({
+      label: "dust-bgl",
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
+        { binding: 1, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "read-only-storage" } },
+      ],
+    });
+    this.dustBindGroup = device.createBindGroup({
+      label: "dust-bg", layout: this.dustBGL,
+      entries: [
+        { binding: 0, resource: { buffer: this.cameraBuffer } },
+        { binding: 1, resource: { buffer: this.dustBuffer } },
+      ],
+    });
+    const dustShader = device.createShaderModule({ code: dustWGSL });
+    this.dustPipeline = device.createRenderPipeline({
+      label: "dust-pipeline",
+      layout: device.createPipelineLayout({ bindGroupLayouts: [this.dustBGL] }),
+      vertex:   { module: dustShader, entryPoint: "vs_main" },
+      fragment: {
+        module: dustShader, entryPoint: "fs_main",
+        targets: [{
+          format,
+          blend: {
+            color: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" },
+            alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" },
+          },
+        }],
+      },
+      primitive: { topology: "triangle-list" },
+    });
+
     // ── Constellation line-list pipeline ──────────────────────────────────
     this.constellationBGL = device.createBindGroupLayout({
       label: "constellation-bgl",
@@ -503,6 +554,18 @@ export class Renderer {
     this.ctx.device.queue.writeBuffer(this.nebulaBuffer, 0, nebulas as GPUAllowSharedBufferSource);
   }
 
+  uploadDust(dust: Float32Array): void {
+    if (dust.length % DUST_FLOATS !== 0) {
+      throw new Error("Dust buffer length must be a multiple of DUST_FLOATS.");
+    }
+
+    this.dustCount = dust.length / DUST_FLOATS;
+    this.ensureDustCapacity(this.dustCount);
+    if (dust.length > 0) {
+      this.ctx.device.queue.writeBuffer(this.dustBuffer, 0, dust as GPUAllowSharedBufferSource);
+    }
+  }
+
   uploadConstellations(lines: Float32Array): void {
     if (lines.length % CONSTELLATION_FLOATS !== 0) {
       throw new Error("Constellation buffer length must be a multiple of CONSTELLATION_FLOATS.");
@@ -583,6 +646,26 @@ export class Renderer {
         { binding: 1, resource: { buffer: this.starBuffer } },
         { binding: 2, resource: { buffer: this.selectedStarBuffer } },
         { binding: 3, resource: { buffer: this.starLodBuffer } },
+      ],
+    });
+  }
+
+  private ensureDustCapacity(count: number): void {
+    if (count <= this.dustCapacity) return;
+
+    const { device } = this.ctx;
+    this.dustCapacity = Math.ceil(count * 1.10);
+    this.dustBuffer.destroy();
+    this.dustBuffer = device.createBuffer({
+      label: "dust-map-storage",
+      size: this.dustCapacity * DUST_FLOATS * 4,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    this.dustBindGroup = device.createBindGroup({
+      label: "dust-bg", layout: this.dustBGL,
+      entries: [
+        { binding: 0, resource: { buffer: this.cameraBuffer } },
+        { binding: 1, resource: { buffer: this.dustBuffer } },
       ],
     });
   }
@@ -686,6 +769,13 @@ export class Renderer {
       this.starOctants, this._starLimit, this.starCount,
       () => pass.draw(6, Math.min(this.starCount, this._starLimit), 0, 0),
     );
+
+    // ── 2D Galactic dust/extinction map overlay ───────────────────────────
+    if (this._showDust && this.dustCount > 0) {
+      pass.setPipeline(this.dustPipeline);
+      pass.setBindGroup(0, this.dustBindGroup);
+      pass.draw(6, this.dustCount, 0, 0);
+    }
 
     // ── Constellation figure lines (cached J2000 sky overlay) ─────────────
     if (this._showConstellations && this.constellationCount > 0) {

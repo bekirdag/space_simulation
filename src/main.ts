@@ -51,6 +51,7 @@ import {
   type NamedGalaxy,
 } from "./catalog/galaxies";
 import { loadMilkywayStars } from "./catalog/milkyway";
+import { loadDustMap } from "./catalog/dust";
 import { NEARBY_STAR_LABELS, SGR_A_STAR_POS } from "./catalog/nearby-stars";
 import { sortIntoOctants } from "./gpu/sky-cull";
 import { loadConstellationLines } from "./catalog/constellations";
@@ -308,6 +309,7 @@ async function main(): Promise<void> {
     const showLabels = (document.getElementById("set-labels") as HTMLInputElement).checked;
     const showTrails = (document.getElementById("set-trails") as HTMLInputElement).checked;
     const showConstellations = (document.getElementById("set-constellations") as HTMLInputElement).checked;
+    const showDust = (document.getElementById("set-dust-maps") as HTMLInputElement).checked;
     const actualBodyBrightness = (document.getElementById("set-body-brightness") as HTMLInputElement).checked;
     showGalaxies    = (document.getElementById("set-galaxies") as HTMLInputElement).checked;
     const mwVal      = parseInt((document.querySelector('input[name="mw-stars"]:checked') as HTMLInputElement)?.value ?? "200000");
@@ -328,6 +330,7 @@ async function main(): Promise<void> {
     renderer.applySettings({
       showGalaxies,
       showConstellations,
+      showDust,
       showTrails,
       mwStarLimit:  mwVal,
       starLimit:    nearbyVal,
@@ -413,6 +416,14 @@ async function main(): Promise<void> {
     console.info(`Loaded ${data.length / 8} Milky Way background stars from ${source}`);
   }).catch(err => {
     console.warn("Milky Way star catalog failed:", err);
+  });
+
+  // ── Galactic dust map (2D all-sky line-of-sight reddening layer) ──────────
+  void loadDustMap().then(({ data, source }) => {
+    renderer.uploadDust(data);
+    console.info(`Loaded ${data.length / 8} dust map cells from ${source}`);
+  }).catch(err => {
+    console.warn("Galactic dust map failed:", err);
   });
 
   // ── Nebula catalog (Milky Way gas clouds) ─────────────────────────────────
