@@ -184,7 +184,7 @@ export class Renderer {
       label: "mw-lod", size: 16,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
-    // HYG visibility is distance-shell based in star.wgsl; MW stars stay fully visible.
+    // HYG visibility is per-star distance-shell based in star.wgsl; MW stars stay fully visible.
     device.queue.writeBuffer(this.starLodBuffer, 0, new Float32Array([1, 0, 0, 0]));
     device.queue.writeBuffer(this.mwLodBuffer,   0, new Float32Array([1, 0, 0, 0]));
 
@@ -409,6 +409,7 @@ export class Renderer {
   /**
    * Update nearby-star visibility inputs.
    * x stays as global brightness; y is the camera's radius from the Sun.
+   * star.wgsl uses y against each star's own Sun-distance instead of a global reveal threshold.
    */
   updateLOD(cameraDistanceFromSun: number): void {
     const radius = Number.isFinite(cameraDistanceFromSun) ? Math.max(0, cameraDistanceFromSun) : 0;

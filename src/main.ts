@@ -1038,9 +1038,8 @@ async function main(): Promise<void> {
       renderer.setVisibleOctantMask(mask);
     }
 
-    // Nearby HYG stars fade per-object in the shader based on this camera
-    // radius. A star becomes visible when the camera reaches a broad shell
-    // around that star's own distance from the Sun.
+    // Nearby HYG stars fade per-object in the shader from this Sun-relative
+    // camera radius; there is no global zoom threshold for the catalog.
     const sun = bodies.find(b => b.name === "Sun");
     const eyeDistFromSun = sun
       ? Math.hypot(camUniforms.eye[0] - sun.x, camUniforms.eye[1] - sun.y, camUniforms.eye[2] - sun.z)
