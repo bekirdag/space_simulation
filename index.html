@@ -30,10 +30,19 @@
       #loading-overlay.hidden { opacity: 0; pointer-events: none; }
       #loading-overlay.gone   { display: none; }
 
+      .loading-mark {
+        position: relative;
+        width: 72px;
+        height: 72px;
+        display: grid;
+        place-items: center;
+      }
       .loader-ring {
-        width: 48px; height: 48px;
+        position: absolute;
+        inset: 0;
         border: 3px solid rgba(136,170,255,0.15);
         border-top-color: #88aaff;
+        border-right-color: rgba(136,170,255,0.45);
         border-radius: 50%;
         animation: spin 0.9s linear infinite;
       }
@@ -44,6 +53,8 @@
         height: 44px;
         border-radius: 50%;
         box-shadow: 0 0 22px rgba(136,170,255,0.28);
+        position: relative;
+        z-index: 1;
       }
       #loading-title {
         font-size: 13px;
@@ -1517,8 +1528,10 @@
 
     <!-- Loading overlay — shown while fetching Horizons data -->
     <div id="loading-overlay">
-      <img id="loading-logo" src="/logo.png" alt="" />
-      <div class="loader-ring"></div>
+      <div class="loading-mark" aria-hidden="true">
+        <img id="loading-logo" src="/logo.png" alt="" />
+        <div class="loader-ring"></div>
+      </div>
       <div id="loading-title">COSMOSMAP</div>
       <div id="loading-text">Fetching real-time planetary positions from NASA JPL Horizons…</div>
       <div id="loading-progress">0 / 9 bodies</div>
