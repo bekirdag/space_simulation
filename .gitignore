@@ -5,6 +5,7 @@ dist/
 cache/nasa/object-info/
 cache/nasa/horizons/
 cache/nasa/models/
+cache/tmp/
 cache/wikimedia/object-info/
 public/cache/nasa/*.fits
 public/cache/nasa/*.fits.gz

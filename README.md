@@ -132,6 +132,9 @@ astrophysical solver.
 - Only the solar-system body list participates in N-body physics.
 - Catalog stars, Milky Way background stars, galaxies, dust, constellations,
   nebulas, and black-hole lensing are render-only layers.
+- The Milky Way object model list exposes 46 real mesh assets from NASA 3D
+  Resources. Direct GLB/STL files and archive-backed STL files are fetched
+  through the local backend and cached under `cache/nasa/models/`.
 - Large star and galaxy catalogs are mapped visually and do not exert gravity.
 - Galaxy distances are scaled with a Local Group linear range and a logarithmic
   deep-field range so large structures remain navigable in one scene.
