@@ -199,6 +199,10 @@ export class LabelManager {
     this.starLabelEl = document.createElement('div');
     this.starLabelEl.className = 'catalog-star-label';
     this.starLabelEl.style.display = 'none';
+    this.starLabelEl.addEventListener('mousedown', event => event.stopPropagation());
+    this.starLabelEl.addEventListener('mouseup', event => event.stopPropagation());
+    this.starLabelEl.addEventListener('click', event => event.stopPropagation());
+    this.starLabelEl.addEventListener('dblclick', event => event.stopPropagation());
     document.body.appendChild(this.starLabelEl);
   }
 
@@ -423,6 +427,7 @@ export class LabelManager {
     cameraEye:   Vec3 = [0, 0, 0],
     sunWorldPos: Vec3 = [0, 0, 0],
     onStarClick?: NearbyStarClickHandler,
+    selectedStarName: string | null = null,
   ): void {
     const cssW = window.innerWidth;
     const cssH = window.innerHeight;
@@ -441,6 +446,12 @@ export class LabelManager {
 
     // Show/hide labels for each star.
     for (const star of stars) {
+      if (selectedStarName === star.name) {
+        const sp = this.nearbyStarSpans.get(star.name);
+        if (sp) sp.style.display = 'none';
+        continue;
+      }
+
       const opacity = nearbyStarShellOpacity(star, cameraDistanceLy);
       if (opacity <= NEARBY_STAR_MIN_OPACITY) {
         const sp = this.nearbyStarSpans.get(star.name);

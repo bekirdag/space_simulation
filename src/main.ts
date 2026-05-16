@@ -1626,7 +1626,17 @@ async function main(): Promise<void> {
     renderer.draw(trails);
 
     labels.update(bodies, camUniforms.viewProj, focusedMembers, camUniforms.eye, bodyVisibility);
-    labels.updateNearbyStarLabels(NEARBY_STAR_LABELS, camUniforms.viewProj, camUniforms.eye, sunWorldPos, focusNearbyStar);
+    const selectedNearbyStarName = nav.selectedCatalogStar?.id.startsWith("nearby:")
+      ? nav.selectedCatalogStar.label
+      : null;
+    labels.updateNearbyStarLabels(
+      NEARBY_STAR_LABELS,
+      camUniforms.viewProj,
+      camUniforms.eye,
+      sunWorldPos,
+      focusNearbyStar,
+      selectedNearbyStarName,
+    );
     labels.updateConstellationLabels(constellationLabels, camUniforms.viewProj, showConstellations);
     const milkyWayLabelOpacity = labels.updateMilkyWayLabel(
       SGR_A_STAR_POS,
