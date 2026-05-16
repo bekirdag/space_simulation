@@ -31,6 +31,7 @@ import { type TrailSystem, TRAIL_VTXFLOATS, TRAIL_SLOT_BYTES } from "../scene/tr
 import { type OctantRange } from "./sky-cull";
 import { type CameraUniforms } from "../scene/camera";
 import { parseMilkyWayModel } from "./model-loader";
+import { backendFetch } from "../services/backend";
 
 // Camera uniform: mat4 (64) + right/min vec4 + up/focal vec4 + eye vec4 = 112 bytes
 const CAMERA_BYTES = 112;
@@ -44,6 +45,7 @@ const DUST_RENDER_FADE_START_AU = 4_000;
 const DUST_RENDER_FADE_END_AU = 16_000;
 const DUST_MAX_OPACITY = 0.24;
 const DUST_RAYMARCH_STEPS = 10;
+const MILKY_WAY_MODEL_RETRY_MS = 120_000;
 
 const KM_PER_AU = 149_597_870.7;
 const SUN_APPARENT_MAG = -26.74;
@@ -120,6 +122,42 @@ function bodyDistanceAU(a: Body, b: Body): number {
   return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 }
 
+function isHtmlResponse(buffer: ArrayBuffer): boolean {
+  const head = new TextDecoder("utf-8").decode(buffer.slice(0, Math.min(buffer.byteLength, 96))).trimStart();
+  return head.startsWith("<!DOCTYPE") || head.startsWith("<html") || head.startsWith("<");
+}
+
+function hasGlbMagic(buffer: ArrayBuffer): boolean {
+  if (buffer.byteLength < 12) return false;
+  const bytes = new Uint8Array(buffer, 0, 4);
+  return bytes[0] === 0x67 && bytes[1] === 0x6c && bytes[2] === 0x54 && bytes[3] === 0x46;
+}
+
+function responseOrigin(response: Response): string {
+  try {
+    return response.url ? new URL(response.url).origin : "unknown origin";
+  } catch {
+    return "unknown origin";
+  }
+}
+
+function validateMilkyWayModelResponse(
+  model: MilkyWayModelObject,
+  response: Response,
+  buffer: ArrayBuffer,
+): void {
+  const contentType = (response.headers.get("content-type") ?? "").toLowerCase();
+  if (contentType.includes("text/html") || isHtmlResponse(buffer)) {
+    throw new Error(`model route returned HTML from ${responseOrigin(response)}`);
+  }
+  if (model.format === "glb" && !hasGlbMagic(buffer)) {
+    throw new Error(`model route returned non-GLB data (${contentType || "unknown content type"})`);
+  }
+  if (model.format === "stl" && buffer.byteLength < 84) {
+    throw new Error(`model route returned invalid STL data (${contentType || "unknown content type"})`);
+  }
+}
+
 export class Renderer {
   private bodyPipeline!:    GPURenderPipeline;
   private starPipeline!:    GPURenderPipeline;
@@ -164,6 +202,7 @@ export class Renderer {
   private milkyWayModelBGL!:         GPUBindGroupLayout;
   private milkyWayModelEntries = new Map<string, MilkyWayModelEntry>();
   private milkyWayModelLoading = new Set<string>();
+  private milkyWayModelFailedAt = new Map<string, number>();
   private activeMilkyWayModelId: string | null = null;
   private dustComputeBindGroup!: GPUBindGroup;
   private dustBindGroup!:   GPUBindGroup;
@@ -273,6 +312,9 @@ export class Renderer {
     this.activeMilkyWayModelId = id?.startsWith("mwmodel:")
       ? id.slice("mwmodel:".length)
       : id;
+    if (this.activeMilkyWayModelId) {
+      this.milkyWayModelFailedAt.delete(this.activeMilkyWayModelId);
+    }
   }
 
   constructor(
@@ -1042,9 +1084,10 @@ export class Renderer {
   }
 
   ensureVisibleMilkyWayModels(models: readonly MilkyWayModelObject[], eye: readonly [number, number, number]): void {
+    this.pruneMilkyWayModelFailures();
     if (this.activeMilkyWayModelId) {
       const activeModel = models.find(model => model.id === this.activeMilkyWayModelId);
-      if (activeModel) {
+      if (activeModel && !this.milkyWayModelFailedAt.has(activeModel.id)) {
         const activeDist = Math.hypot(eye[0] - activeModel.x, eye[1] - activeModel.y, eye[2] - activeModel.z);
         if (activeDist <= activeModel.loadDistanceAU * 1.25) {
           void this.ensureMilkyWayModelLoaded(activeModel);
@@ -1058,6 +1101,10 @@ export class Renderer {
     for (const loadingId of this.milkyWayModelLoading) {
       const loadingModel = models.find(model => model.id === loadingId);
       if (loadingModel) unavailableGroups.add(loadingModel.modelGroup);
+    }
+    for (const failedId of this.milkyWayModelFailedAt.keys()) {
+      const failedModel = models.find(model => model.id === failedId);
+      if (failedModel) unavailableGroups.add(failedModel.modelGroup);
     }
 
     let started = 0;
@@ -1075,11 +1122,14 @@ export class Renderer {
 
   async ensureMilkyWayModelLoaded(model: MilkyWayModelObject): Promise<void> {
     if (this.milkyWayModelEntries.has(model.id) || this.milkyWayModelLoading.has(model.id)) return;
+    if (this.milkyWayModelFailedAt.has(model.id)) return;
     this.milkyWayModelLoading.add(model.id);
     try {
-      const resp = await fetch(model.assetUrl);
+      const resp = await backendFetch(model.assetUrl, { cache: "force-cache" });
       if (!resp.ok) throw new Error(`asset ${resp.status}`);
-      const mesh = await parseMilkyWayModel(await resp.arrayBuffer(), model.format);
+      const buffer = await resp.arrayBuffer();
+      validateMilkyWayModelResponse(model, resp, buffer);
+      const mesh = await parseMilkyWayModel(buffer, model.format);
       if (mesh.vertexCount <= 0) throw new Error("empty mesh");
 
       const { device } = this.ctx;
@@ -1116,9 +1166,19 @@ export class Renderer {
         `Loaded ${model.name} 3D model: ${mesh.usedTriangleCount.toLocaleString()} / ${mesh.sourceTriangleCount.toLocaleString()} triangles.`,
       );
     } catch (e) {
+      this.milkyWayModelFailedAt.set(model.id, Date.now());
       console.warn(`Failed to load Milky Way model ${model.name}:`, e);
     } finally {
       this.milkyWayModelLoading.delete(model.id);
+    }
+  }
+
+  private pruneMilkyWayModelFailures(): void {
+    const now = Date.now();
+    for (const [id, failedAt] of this.milkyWayModelFailedAt) {
+      if (now - failedAt >= MILKY_WAY_MODEL_RETRY_MS) {
+        this.milkyWayModelFailedAt.delete(id);
+      }
     }
   }
 
