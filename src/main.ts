@@ -90,7 +90,9 @@ const SGR_A_EVENT_HORIZON_RADIUS_AU =
   1000 /
   KM_PER_AU;
 const SGR_A_SHADOW_RADIUS_AU = SGR_A_EVENT_HORIZON_RADIUS_AU * 2.6;
-const SGR_A_BLACK_HOLE_FOCUS_AU = SGR_A_SHADOW_RADIUS_AU * 5.5;
+const SGR_A_DEFAULT_OBSERVER_DISTANCE_RS = 30;
+const SGR_A_BLACK_HOLE_FOCUS_AU =
+  SGR_A_EVENT_HORIZON_RADIUS_AU * SGR_A_DEFAULT_OBSERVER_DISTANCE_RS;
 const SGR_A_SEARCH_RESULT: StarSearchResult = {
   id: "blackhole:sgr-a",
   label: "Sagittarius A*",
@@ -1687,7 +1689,15 @@ async function main(): Promise<void> {
     renderer.ensureVisibleMilkyWayModels(MILKY_WAY_MODEL_OBJECTS, camUniforms.eye);
 
     const sel = nav.selectedCatalogStar;
-    renderer.uploadSelectedStar(sel && !sel.id.startsWith("galaxy:") && !sel.id.startsWith("mwmodel:") && !sel.id.startsWith("nebula:") ? [sel.x, sel.y, sel.z] : null);
+    renderer.uploadSelectedStar(
+      sel &&
+        !sel.id.startsWith("galaxy:") &&
+        !sel.id.startsWith("mwmodel:") &&
+        !sel.id.startsWith("nebula:") &&
+        !sel.id.startsWith("blackhole:")
+        ? [sel.x, sel.y, sel.z]
+        : null,
+    );
     const focusedMembers = nav.focusedSystemMembers();
     const bodyVisibility = buildBodyRenderVisibility(bodies, camUniforms.viewProj, focusedMembers);
     renderer.uploadBodies(bodies, bodyVisibility);

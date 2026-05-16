@@ -99,85 +99,108 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   let deltaUv = in.uv - centerUv;
   let p = vec2<f32>(deltaUv.x * aspect, deltaUv.y);
   let r = length(p);
-  let safeR = max(r, shadowR * 0.055);
+  let invShadowR = 1.0 / max(shadowR, 0.0001);
+  let u = r * invShadowR;
+  let safeR = max(r, shadowR * 0.050);
   let dir = p / safeR;
   let tangent = vec2<f32>(-dir.y, dir.x);
   let theta = atan2(p.y, p.x);
 
-  // Background lensing: strong near the photon sphere, fades smoothly outward.
-  let lensMask = 1.0 - smoothstep(shadowR * 3.2, shadowR * 6.4, r);
-  let bend = shadowR * shadowR / (safeR * safeR + shadowR * shadowR * 0.24);
-  let spinShear = blackHole.params.w * shadowR * 0.025 * lensMask / (1.0 + safeR / max(shadowR, 0.0001));
+  // Background lensing: approximate the reference simulations with a compact
+  // strong-lensing zone near the photon ring plus a weaker far-field bend.
+  let lensMask = 1.0 - smoothstep(4.3, 8.2, u);
+  let photonFold = exp(-pow((u - 1.08) / 0.42, 2.0));
+  let deflect = blackHole.params.w * shadowR *
+    (0.50 / (u + 0.32) + 0.21 * photonFold) * lensMask;
+  let spinShear = blackHole.params.w * shadowR * 0.030 * lensMask / (u + 0.55);
   let lensedAspect = p
-    + dir * bend * shadowR * 0.42 * lensMask * blackHole.params.w
-    + tangent * (spinShear + sin(theta * 2.0 + blackHole.params.x * 0.22) * shadowR * 0.005 * lensMask);
+    + dir * deflect
+    + tangent * (spinShear + sin(theta * 2.0 + blackHole.params.x * 0.18) * shadowR * 0.004 * lensMask);
   let lensedUv = centerUv + vec2<f32>(lensedAspect.x / aspect, lensedAspect.y);
-  let nearLens = 1.0 - smoothstep(shadowR * 0.95, shadowR * 3.65, r);
-  let lensBlend = lensMask * (0.18 + 0.16 * smoothstep(shadowR * 1.15, shadowR * 3.4, r));
+  let secondaryUv = centerUv + vec2<f32>(
+    (-p.x * (1.0 + 0.13 / (u + 0.18)) + tangent.x * spinShear * 0.9) / aspect,
+    -p.y * (1.0 + 0.13 / (u + 0.18)) + tangent.y * spinShear * 0.9
+  );
+  let secondaryImage = ring_gauss(u, 1.15, 0.42) * lensMask * 0.20;
+  let nearLens = 1.0 - smoothstep(0.92, 3.85, u);
+  let lensBlend = lensMask * (0.18 + 0.22 * smoothstep(1.00, 3.20, u));
   var col = mix(raw, sample_scene(lensedUv), lensBlend);
-  col = mix(col, vec3<f32>(0.003, 0.0025, 0.006), nearLens * 0.56);
+  col += sample_scene(secondaryUv) * secondaryImage;
+  col = mix(col, vec3<f32>(0.002, 0.0018, 0.005), nearLens * 0.48);
 
-  // The apparent black-hole shadow is larger than the event horizon. The old
-  // shader only dimmed this region, which made the hole look like a smoky blob.
-  let shadowCore = 1.0 - smoothstep(shadowR * 0.70, shadowR * 0.84, r);
-  let shadowFeather = 1.0 - smoothstep(shadowR * 0.84, shadowR * 1.00, r);
-  col *= 1.0 - shadowFeather * 0.50;
-  col = mix(col, vec3<f32>(0.0), shadowCore * 0.995);
+  // Mild Kerr-like horizontal asymmetry. This is intentionally small because
+  // Sgr A* spin/orientation is not fixed in the app data.
+  let shadowSpinX = clamp(p.x * invShadowR, -1.0, 1.0);
+  let shadowScaleX = 1.0 - 0.055 * smoothstep(-0.12, 0.95, shadowSpinX);
+  let shadowP = vec2<f32>(
+    (p.x + shadowR * 0.035) / max(shadowR * shadowScaleX, 0.0001),
+    p.y * invShadowR
+  );
+  let shadowDist = length(shadowP);
+  let shadowHard = 1.0 - smoothstep(0.88, 0.995, shadowDist);
+  let shadowFeather = 1.0 - smoothstep(0.995, 1.18, shadowDist);
+  col = mix(col, vec3<f32>(0.0), shadowFeather * 0.42);
+  col = mix(col, vec3<f32>(0.0), shadowHard * 0.96);
 
-  // Hot edge-on accretion disk. Separate lensed back arcs from the foreground
-  // band so the silhouette stays black while the disk wraps around it.
-  let diskTilt = -0.075;
+  // Hot edge-on accretion disk. The top image is gravitationally lensed over
+  // the hole while the thinner foreground band crosses the lower edge.
+  let diskTilt = -0.065;
   let c = cos(diskTilt);
   let s = sin(diskTilt);
   let q = vec2<f32>(p.x * c - p.y * s, p.x * s + p.y * c);
-  let absX = abs(q.x);
-  let diskOuter = shadowR * 3.65;
-  let diskInner = shadowR * 0.76;
+  let qn = q * invShadowR;
+  let absXn = abs(qn.x);
+  let radialBand = smoothstep(0.82, 1.04, absXn) * (1.0 - smoothstep(3.55, 4.20, absXn));
 
-  let backEllipse = length(vec2<f32>(q.x / (shadowR * 2.55), (q.y + shadowR * 0.12) / (shadowR * 0.58)));
-  let upperArcMask = smoothstep(-shadowR * 0.12, shadowR * 0.34, q.y);
-  let upperArc = ring_gauss(backEllipse, 1.0, 0.075) * upperArcMask * disk_range(absX, diskInner, diskOuter);
+  let backEllipse = length(vec2<f32>(qn.x / 2.72, (qn.y + 0.18) / 0.52));
+  let upperArcMask = smoothstep(-0.10, 0.44, qn.y);
+  let upperArc = ring_gauss(backEllipse, 1.0, 0.070) * upperArcMask * radialBand * (1.0 - shadowHard * 0.86);
 
-  let lowerEllipse = length(vec2<f32>(q.x / (shadowR * 2.20), (q.y - shadowR * 0.16) / (shadowR * 0.45)));
-  let lowerArcMask = 1.0 - smoothstep(-shadowR * 0.30, shadowR * 0.05, q.y);
-  let lowerArc = ring_gauss(lowerEllipse, 1.0, 0.105) * lowerArcMask * disk_range(absX, diskInner, diskOuter) * 0.45;
+  let lowerEllipse = length(vec2<f32>(qn.x / 2.22, (qn.y - 0.18) / 0.42));
+  let lowerArcMask = 1.0 - smoothstep(-0.36, 0.05, qn.y);
+  let lowerArc = ring_gauss(lowerEllipse, 1.0, 0.092) * lowerArcMask * radialBand * 0.38;
 
-  let frontY = q.y + shadowR * 0.20;
-  let frontBand = exp(-pow(frontY / max(shadowR * 0.070, 0.0002), 2.0))
-    * disk_range(absX, shadowR * 0.88, diskOuter * 1.16);
+  let frontBand = exp(-pow((qn.y + 0.185) / 0.060, 2.0))
+    * smoothstep(0.76, 1.00, absXn)
+    * (1.0 - smoothstep(3.70, 4.35, absXn));
 
-  let laneY = q.y + shadowR * 0.05;
-  let dustLane = exp(-pow(laneY / max(shadowR * 0.050, 0.0002), 2.0))
-    * disk_range(absX, shadowR * 0.82, diskOuter * 1.05);
+  let dustLane = exp(-pow((qn.y + 0.035) / 0.050, 2.0))
+    * smoothstep(0.78, 1.02, absXn)
+    * (1.0 - smoothstep(3.55, 4.10, absXn));
 
-  let orbit = q.x / max(shadowR, 0.0001);
+  let orbit = qn.x;
   let bands = 0.72
-    + 0.18 * sin(orbit * 10.0 - blackHole.params.x * 0.90)
-    + 0.10 * sin(orbit * 24.0 + sin(orbit * 2.3) * 2.0 + blackHole.params.x * 0.35);
-  let grain = 0.88 + 0.12 * hash1(floor((theta + PI) * 95.0) + floor(r / max(shadowR, 0.0001) * 28.0) * 17.0);
-  let doppler = 0.58 + 1.18 * smoothstep(-1.0, 0.85, -dir.x);
-  let redshift = 0.78 + 0.34 * smoothstep(shadowR * 2.6, shadowR * 0.65, r);
-  let disk = max(max(upperArc * 1.20, lowerArc), frontBand * 1.05) * max(0.0, bands) * grain * doppler * redshift;
+    + 0.16 * sin(orbit * 10.0 - blackHole.params.x * 0.72)
+    + 0.08 * sin(orbit * 23.0 + sin(orbit * 2.1) * 1.8 + blackHole.params.x * 0.30);
+  let grain = 0.86 + 0.14 * hash1(floor((theta + PI) * 110.0) + floor(u * 31.0) * 17.0);
+  let doppler = 0.42 + 1.38 * smoothstep(-1.10, 0.78, -dir.x);
+  let redshift = 0.70 + 0.42 * smoothstep(2.9, 0.72, u);
+  let disk = max(max(upperArc * 1.25, lowerArc), frontBand * 1.12) * max(0.0, bands) * grain * doppler * redshift;
 
-  let diskHot = mix(vec3<f32>(0.95, 0.28, 0.08), vec3<f32>(1.0, 0.86, 0.55), clamp(doppler * 0.48, 0.0, 1.0));
+  let diskHot = mix(vec3<f32>(0.95, 0.26, 0.07), vec3<f32>(1.0, 0.90, 0.62), clamp(doppler * 0.50, 0.0, 1.0));
   let diskWarm = vec3<f32>(0.95, 0.40, 0.12);
-  col += mix(diskWarm, diskHot, upperArc + frontBand) * disk * 0.52;
-  col *= 1.0 - dustLane * 0.18;
+  col += mix(diskWarm, diskHot, clamp(upperArc + frontBand, 0.0, 1.0)) * disk * 0.62;
+  col *= 1.0 - dustLane * 0.22;
 
-  // Photon ring and secondary inner ring. Narrow, bright, and mostly white,
-  // similar to the user references, instead of a broad orange haze.
-  let photonAzimuth = 0.72 + 0.34 * smoothstep(-1.0, 0.92, -dir.x);
-  let photon = ring_gauss(r, shadowR * 0.845, shadowR * 0.022) * photonAzimuth;
-  let secondary = ring_gauss(r, shadowR * 0.955, shadowR * 0.030) * 0.38;
-  let photonCol = mix(vec3<f32>(1.0, 0.52, 0.20), vec3<f32>(1.0, 0.93, 0.76), clamp(photonAzimuth * 0.65, 0.0, 1.0));
-  col += photonCol * photon * 1.30;
-  col += vec3<f32>(1.0, 0.70, 0.34) * secondary * 0.54;
+  // Photon ring: narrow, bright, and aligned to the actual apparent shadow
+  // boundary instead of floating inside it.
+  let photonAzimuth = 0.66 + 0.42 * smoothstep(-1.05, 0.86, -dir.x);
+  let photon = ring_gauss(shadowDist, 1.015, 0.033) * photonAzimuth;
+  let innerEcho = ring_gauss(shadowDist, 0.925, 0.026) * 0.22 * (1.0 - shadowHard);
+  let outerEcho = ring_gauss(shadowDist, 1.118, 0.060) * 0.20;
+  let photonCol = mix(vec3<f32>(1.0, 0.50, 0.18), vec3<f32>(1.0, 0.95, 0.78), clamp(photonAzimuth * 0.66, 0.0, 1.0));
+  col += photonCol * photon * 1.45;
+  col += vec3<f32>(1.0, 0.70, 0.34) * (innerEcho + outerEcho) * 0.46;
 
   // Soft glow outside the disk. Kept subdued so it reads as plasma emission,
   // not as the hole itself becoming physically larger.
-  let halo = ring_gauss(r, shadowR * 1.20, shadowR * 0.52) * lensMask;
-  col += vec3<f32>(0.90, 0.22, 0.055) * halo * 0.060;
-  col = mix(col, vec3<f32>(0.0), shadowCore * 0.998);
+  let halo = ring_gauss(u, 1.28, 0.58) * lensMask;
+  col += vec3<f32>(0.88, 0.20, 0.052) * halo * 0.050;
+
+  let finalCore = 1.0 - smoothstep(0.84, 0.98, shadowDist);
+  let finalFeather = 1.0 - smoothstep(0.98, 1.10, shadowDist);
+  col = mix(col, vec3<f32>(0.0), finalFeather * 0.35);
+  col = mix(col, vec3<f32>(0.0), finalCore * 0.998);
 
   return vec4<f32>(clamp(col, vec3<f32>(0.0), vec3<f32>(1.0)), 1.0);
 }
