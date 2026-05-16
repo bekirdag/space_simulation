@@ -168,6 +168,8 @@ export class LabelManager {
   private mouseY    = 0;
   private bodyLabelClickHandler: BodyLabelClickHandler | null = null;
   private starLabelEl: HTMLDivElement;
+  private starLabelNameEl: HTMLSpanElement;
+  private starLabelSubEl: HTMLSpanElement;
 
   // Nearby-star label spans keyed by star name
   private nearbyStarSpans = new Map<string, HTMLSpanElement>();
@@ -208,10 +210,18 @@ export class LabelManager {
     this.starLabelEl = document.createElement('div');
     this.starLabelEl.className = 'catalog-star-label';
     this.starLabelEl.style.display = 'none';
-    this.starLabelEl.addEventListener('mousedown', event => event.stopPropagation());
-    this.starLabelEl.addEventListener('mouseup', event => event.stopPropagation());
-    this.starLabelEl.addEventListener('click', event => event.stopPropagation());
-    this.starLabelEl.addEventListener('dblclick', event => event.stopPropagation());
+    this.starLabelNameEl = document.createElement('span');
+    this.starLabelNameEl.className = 'csl-name';
+    this.starLabelSubEl = document.createElement('span');
+    this.starLabelSubEl.className = 'csl-sub';
+    this.starLabelEl.append(this.starLabelNameEl, this.starLabelSubEl);
+    const stopStarLabelEvent = (event: Event): void => {
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    for (const eventType of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'click', 'dblclick', 'contextmenu']) {
+      this.starLabelEl.addEventListener(eventType, stopStarLabelEvent, { capture: true });
+    }
     document.body.appendChild(this.starLabelEl);
   }
 
@@ -388,7 +398,7 @@ export class LabelManager {
    * Called each frame so the label tracks the star as the camera moves.
    */
   updateCatalogStarLabel(star: CatalogStarInfo | null, viewProj: Mat4): void {
-    if (!star) {
+    if (!this._visible || !star) {
       this.starLabelEl.style.display = 'none';
       return;
     }
@@ -402,9 +412,9 @@ export class LabelManager {
     this.starLabelEl.style.display = 'block';
     this.starLabelEl.style.left = `${pos.x + 14}px`;
     this.starLabelEl.style.top  = `${pos.y - 8}px`;
-    this.starLabelEl.innerHTML  =
-      `<span class="csl-name">${star.label}</span>` +
-      `<span class="csl-sub">${star.subtitle}</span>`;
+    this.starLabelNameEl.textContent = star.label;
+    this.starLabelSubEl.textContent = star.subtitle;
+    this.starLabelSubEl.style.display = star.subtitle ? 'block' : 'none';
   }
 
   /**
@@ -594,6 +604,7 @@ export class LabelManager {
     milkyWayRadiusAu: number,
     visible: boolean,
     onClick: () => void,
+    selected = false,
   ): number {
     if (!visible || !this._visible) {
       if (this.milkyWayEl) this.milkyWayEl.style.display = 'none';
@@ -607,6 +618,10 @@ export class LabelManager {
     );
     const opacity = milkyWayLabelOpacity(cameraDistanceFromCenterAu, milkyWayRadiusAu);
     if (opacity <= MILKY_WAY_LABEL_MIN_OPACITY) {
+      if (this.milkyWayEl) this.milkyWayEl.style.display = 'none';
+      return opacity;
+    }
+    if (selected) {
       if (this.milkyWayEl) this.milkyWayEl.style.display = 'none';
       return opacity;
     }
@@ -656,6 +671,7 @@ export class LabelManager {
     milkyWayCenter: Vec3,
     visible: boolean,
     onGalaxyClick?: GalaxyNameClickHandler,
+    selectedGalaxyId: string | null = null,
   ): void {
     if (!visible || !this._visible || galaxies.length === 0) {
       for (const sp of this.galaxyNameSpans.values()) sp.style.display = 'none';
@@ -673,6 +689,11 @@ export class LabelManager {
 
     for (const galaxy of galaxies) {
       active.add(galaxy.id);
+      if (selectedGalaxyId === galaxy.id) {
+        const sp = this.galaxyNameSpans.get(galaxy.id);
+        if (sp) sp.style.display = 'none';
+        continue;
+      }
       const galaxyDistanceAu = Math.hypot(
         galaxy.x - milkyWayCenter[0],
         galaxy.y - milkyWayCenter[1],

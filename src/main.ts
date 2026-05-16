@@ -1709,6 +1709,9 @@ async function main(): Promise<void> {
       selectedNearbyStarName,
     );
     labels.updateConstellationLabels(constellationLabels, camUniforms.viewProj, showConstellations);
+    const selectedGalaxyId = sel?.id.startsWith("galaxy:")
+      ? sel.id.slice("galaxy:".length)
+      : null;
     const milkyWayLabelOpacity = labels.updateMilkyWayLabel(
       SGR_A_STAR_POS,
       camUniforms.viewProj,
@@ -1716,6 +1719,7 @@ async function main(): Promise<void> {
       MILKY_WAY_RADIUS_AU,
       showGalaxies,
       focusMilkyWay,
+      selectedGalaxyId === "milky-way",
     );
     labels.updateGalaxyNameLabels(
       LOCAL_GROUP_GALAXY_LABELS,
@@ -1724,6 +1728,7 @@ async function main(): Promise<void> {
       SGR_A_STAR_POS,
       showGalaxies,
       focusGalaxyLabel,
+      selectedGalaxyId,
     );
     const sgrASelected = nav.selectedCatalogStar?.id === "blackhole:sgr-a";
     labels.updateGalacticCenterLabel(SGR_A_STAR_POS, camUniforms.viewProj, () => {
