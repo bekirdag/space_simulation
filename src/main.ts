@@ -84,7 +84,7 @@ const SGR_A_EVENT_HORIZON_RADIUS_AU =
   1000 /
   KM_PER_AU;
 const SGR_A_SHADOW_RADIUS_AU = SGR_A_EVENT_HORIZON_RADIUS_AU * 2.6;
-const SGR_A_BLACK_HOLE_FOCUS_AU = SGR_A_SHADOW_RADIUS_AU * 8;
+const SGR_A_BLACK_HOLE_FOCUS_AU = SGR_A_SHADOW_RADIUS_AU * 5.5;
 const SGR_A_SEARCH_RESULT: StarSearchResult = {
   id: "blackhole:sgr-a",
   label: "Sagittarius A*",
@@ -1490,13 +1490,14 @@ async function main(): Promise<void> {
       showGalaxies,
       focusGalaxyLabel,
     );
+    const sgrASelected = nav.selectedCatalogStar?.id === "blackhole:sgr-a";
     labels.updateGalacticCenterLabel(SGR_A_STAR_POS, camUniforms.viewProj, () => {
       setExoplanetBodies(null);
       nav.selectCatalogStar(SGR_A_SEARCH_RESULT);
       renderer.uploadBodies(bodies);
-    }, true, 1 - milkyWayLabelOpacity);
+    }, !sgrASelected, 1 - milkyWayLabelOpacity);
     const selectedCatalogLabel =
-      nav.selectedCatalogStar?.id === "blackhole:sgr-a" && milkyWayLabelOpacity > 0.55
+      sgrASelected
         ? null
         : nav.selectedCatalogStar;
     labels.updateCatalogStarLabel(selectedCatalogLabel, camUniforms.viewProj);
