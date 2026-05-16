@@ -31,7 +31,7 @@ import { type TrailSystem, TRAIL_VTXFLOATS, TRAIL_SLOT_BYTES } from "../scene/tr
 import { type OctantRange } from "./sky-cull";
 import { type CameraUniforms } from "../scene/camera";
 import { parseMilkyWayModel } from "./model-loader";
-import { backendFetch } from "../services/backend";
+import { BackendUnavailableError, backendFetch } from "../services/backend";
 
 // Camera uniform: mat4 (64) + right/min vec4 + up/focal vec4 + eye vec4 = 112 bytes
 const CAMERA_BYTES = 112;
@@ -51,6 +51,7 @@ const DUST_RENDER_FADE_END_AU = 16_000;
 const DUST_MAX_OPACITY = 0.24;
 const DUST_RAYMARCH_STEPS = 10;
 const MILKY_WAY_MODEL_RETRY_MS = 120_000;
+const MILKY_WAY_MODEL_BACKEND_RETRY_MS = 120_000;
 
 const KM_PER_AU = 149_597_870.7;
 const SUN_APPARENT_MAG = -26.74;
@@ -208,6 +209,7 @@ export class Renderer {
   private milkyWayModelEntries = new Map<string, MilkyWayModelEntry>();
   private milkyWayModelLoading = new Set<string>();
   private milkyWayModelFailedAt = new Map<string, number>();
+  private milkyWayModelBackendRetryAt = 0;
   private activeMilkyWayModelId: string | null = null;
   private dustComputeBindGroup!: GPUBindGroup;
   private dustBindGroup!:   GPUBindGroup;
@@ -1099,6 +1101,7 @@ export class Renderer {
   }
 
   ensureVisibleMilkyWayModels(models: readonly MilkyWayModelObject[], eye: readonly [number, number, number]): void {
+    if (Date.now() < this.milkyWayModelBackendRetryAt) return;
     this.pruneMilkyWayModelFailures();
     if (this.activeMilkyWayModelId) {
       const activeModel = models.find(model => model.id === this.activeMilkyWayModelId);
@@ -1182,6 +1185,10 @@ export class Renderer {
       );
     } catch (e) {
       this.milkyWayModelFailedAt.set(model.id, Date.now());
+      if (e instanceof BackendUnavailableError) {
+        this.milkyWayModelBackendRetryAt = Date.now() + MILKY_WAY_MODEL_BACKEND_RETRY_MS;
+        return;
+      }
       console.warn(`Failed to load Milky Way model ${model.name}:`, e);
     } finally {
       this.milkyWayModelLoading.delete(model.id);

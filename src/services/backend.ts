@@ -89,19 +89,35 @@ async function firstHealthyFallback(origins: string[]): Promise<string | null> {
   });
 }
 
+async function resolveBackendOrigin(): Promise<string> {
+  const origins = localBackendOrigins();
+  const sameOrigin = origins[0] ?? window.location.origin;
+  if (await probeBackend(sameOrigin)) return sameOrigin;
+
+  const fallback = await firstHealthyFallback(origins.slice(1));
+  if (fallback) return fallback;
+
+  throw new BackendUnavailableError("No healthy CosmosMap backend was found.");
+}
+
 export async function backendOrigin(): Promise<string> {
-  backendOriginPromise ??= (async () => {
-    const origins = localBackendOrigins();
-    const sameOrigin = origins[0] ?? window.location.origin;
-    if (await probeBackend(sameOrigin)) return sameOrigin;
-    return await firstHealthyFallback(origins.slice(1)) ?? window.location.origin;
-  })();
-  return backendOriginPromise;
+  backendOriginPromise ??= resolveBackendOrigin();
+  try {
+    return await backendOriginPromise;
+  } catch (error) {
+    backendOriginPromise = null;
+    throw error;
+  }
 }
 
 export async function backendFetch(path: string, init?: RequestInit): Promise<Response> {
   const origin = await backendOrigin();
-  return fetch(new URL(path, origin), init);
+  try {
+    return await fetch(new URL(path, origin), init);
+  } catch {
+    backendOriginPromise = null;
+    throw new BackendUnavailableError(`The CosmosMap backend request failed at ${origin}.`);
+  }
 }
 
 export async function readBackendJson<T>(response: Response): Promise<T> {
