@@ -11,6 +11,15 @@ const MAX_DISTANCE = FAR;
 const CLOSEUP_VIEW_FILL = 0.88;
 const ORBIT_POLE_MARGIN = 0.02;
 
+interface CameraTravelAnimation {
+  fromTarget: Vec3;
+  toTarget:   Vec3;
+  fromDistance: number;
+  toDistance:   number;
+  startMs:  number;
+  durationMs: number;
+}
+
 function clampDistance(distance: number): number {
   return Math.max(MIN_DISTANCE, Math.min(MAX_DISTANCE, distance));
 }
@@ -45,6 +54,7 @@ export class Camera {
 
   // Computed each frame by update()
   private _uniforms!: CameraUniforms;
+  private travelAnimation: CameraTravelAnimation | null = null;
 
   attach(canvas: HTMLCanvasElement): void {
     let orbiting = false;
@@ -54,11 +64,13 @@ export class Camera {
     // Middle-click or right-click + drag = orbit; left-click drag = pan
     canvas.addEventListener("mousedown", (e) => {
       if (e.button === 1 || e.button === 2) {
+        this.cancelTravelAnimation();
         orbiting = true;
         lastX = e.clientX; lastY = e.clientY;
         e.preventDefault();
         canvas.style.cursor = "move";
       } else if (e.button === 0) {
+        this.cancelTravelAnimation();
         panning = true;
         lastX = e.clientX; lastY = e.clientY;
         canvas.style.cursor = "grabbing";
@@ -100,6 +112,7 @@ export class Camera {
 
     canvas.addEventListener("wheel", (e) => {
       e.preventDefault();
+      this.cancelTravelAnimation();
       const factor = e.deltaY < 0 ? 0.9 : 1.1;
       const oldDist = this.distance;
       this.distance  = clampDistance(oldDist * factor);
@@ -126,9 +139,48 @@ export class Camera {
     }, { passive: false });
   }
 
-  travelTo(x: number, y: number, z: number, distance: number): void {
-    this.target   = [x, y, z];
-    this.distance = clampDistance(distance);
+  private cancelTravelAnimation(): void {
+    this.travelAnimation = null;
+  }
+
+  private updateTravelAnimation(nowMs: number): void {
+    const anim = this.travelAnimation;
+    if (!anim) return;
+
+    const linearT = Math.min(1, Math.max(0, (nowMs - anim.startMs) / anim.durationMs));
+    const t = linearT * linearT * (3 - 2 * linearT);
+    this.target = [
+      anim.fromTarget[0] + (anim.toTarget[0] - anim.fromTarget[0]) * t,
+      anim.fromTarget[1] + (anim.toTarget[1] - anim.fromTarget[1]) * t,
+      anim.fromTarget[2] + (anim.toTarget[2] - anim.fromTarget[2]) * t,
+    ];
+    this.distance = clampDistance(anim.fromDistance + (anim.toDistance - anim.fromDistance) * t);
+
+    if (linearT >= 1) {
+      this.travelAnimation = null;
+      this.target = [...anim.toTarget];
+      this.distance = anim.toDistance;
+    }
+  }
+
+  travelTo(x: number, y: number, z: number, distance: number, durationSeconds = 0): void {
+    const toTarget: Vec3 = [x, y, z];
+    const toDistance = clampDistance(distance);
+    if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+      this.travelAnimation = null;
+      this.target = toTarget;
+      this.distance = toDistance;
+      return;
+    }
+
+    this.travelAnimation = {
+      fromTarget: [...this.target],
+      toTarget,
+      fromDistance: this.distance,
+      toDistance,
+      startMs: performance.now(),
+      durationMs: Math.max(1, durationSeconds * 1000),
+    };
   }
 
   distanceForViewRadius(radius: number, fill = CLOSEUP_VIEW_FILL): number {
@@ -145,6 +197,8 @@ export class Camera {
 
   /** Compute and cache view-projection matrix + billboard vectors. */
   update(aspect: number): CameraUniforms {
+    this.updateTravelAnimation(performance.now());
+
     const cosPhi   = Math.cos(this.elevation);
     const sinPhi   = Math.sin(this.elevation);
     const cosTheta = Math.cos(this.azimuth);

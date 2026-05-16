@@ -12,6 +12,7 @@ import { type StarSearchResult } from "../catalog/stars";
 const DEFAULT_TRAVEL_DIST = 0.5;
 const MOON_SYSTEM_PADDING = 1.15;
 const MOON_SYSTEM_VIEW_FILL = 0.82;
+const CLOSE_TRAVEL_SECONDS = 2;
 
 type TravelMode = "system" | "close";
 
@@ -137,14 +138,12 @@ export class NavPanel {
     return this.camera.distanceForViewRadius(systemRadius * MOON_SYSTEM_PADDING, MOON_SYSTEM_VIEW_FILL);
   }
 
-  private closeDistanceFor(name: string, body: Body): number {
-    const bodyDistance = this.camera.closeDistanceForRadius(body.radius);
-    const systemDistance = this.systemDistanceFor(name, body);
-    return systemDistance === null ? bodyDistance : Math.max(bodyDistance, systemDistance);
+  private closeDistanceFor(body: Body): number {
+    return this.camera.closeDistanceForRadius(body.radius);
   }
 
   private distanceFor(name: string, body: Body, mode: TravelMode): number {
-    if (mode === "close") return this.closeDistanceFor(name, body);
+    if (mode === "close") return this.closeDistanceFor(body);
     return this.systemDistanceFor(name, body) ?? this.travelDistanceFor(name);
   }
 
@@ -207,7 +206,7 @@ export class NavPanel {
     if (!body) return;
     const dist = this.distanceFor(name, body, mode);
     this.setFocusedBody(name);
-    this.camera.travelTo(body.x, body.y, body.z, dist);
+    this.camera.travelTo(body.x, body.y, body.z, dist, mode === "close" ? CLOSE_TRAVEL_SECONDS : 0);
   }
 
   /** Travel to a planet with a zoom that shows all its moons. */
@@ -215,7 +214,7 @@ export class NavPanel {
     this.travelTo(name, "system");
   }
 
-  /** Travel close; planets with known moons keep their local moon system in frame. */
+  /** Travel close enough for the selected body itself to fit the screen. */
   travelToClose(name: string): void {
     this.travelTo(name, "close");
   }
