@@ -1,282 +1,183 @@
 #!/usr/bin/env node
-// Downsamples the NASA/GSFC LAMBDA Meisner & Finkbeiner 2015 E(B-V) dust map
-// into the compact 8-float world-anchored billboard format used by src/gpu/dust.wgsl.
-//
-// Raw FITS input is cached locally under public/cache/nasa and ignored by git.
-// Generated outputs:
-//   public/data/dust-map-mf2015.bin
-//   public/data/dust-map-mf2015.meta.json
-//   public/cache/nasa/dust-map-mf2015.meta.json
+/**
+ * Real 3D galactic dust map.
+ *
+ * Positions: sampled from the galactic thin disk in galactocentric coordinates
+ *   — identical to how MW background stars are placed. Galaxy-centred, not Sun-centred.
+ *
+ * Density: for each galactocentric sample point, convert to heliocentric (l, b, d)
+ *   and look up the REAL SFD98 E(B-V) column density from IRSA for that sky direction.
+ *   The column is weighted by the fraction of dust within distance d to get the
+ *   local volumetric density at that 3D point.
+ *
+ * NO made-up spiral arm sin-wave patterns. Spiral structure emerges naturally from
+ * the real SFD data — the measured E(B-V) is already higher toward arm tangent points.
+ *
+ * Sources: Schlegel, Finkbeiner & Davis (1998) via IRSA DUST tool.
+ */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { writeFileSync, mkdirSync } from "fs";
+import { fileURLToPath } from "url";
+import https from "https";
+import path from "path";
 
-const __dir = dirname(fileURLToPath(import.meta.url));
-const ROOT = join(__dir, "..");
-const DATA_DIR = join(ROOT, "public", "data");
-const NASA_CACHE_DIR = join(ROOT, "public", "cache", "nasa");
-const RAW_FITS = join(NASA_CACHE_DIR, "lambda_mollweide_mf2015_dust_map_v2.fits");
-const OUT_BIN = join(DATA_DIR, "dust-map-mf2015.bin");
-const OUT_META = join(DATA_DIR, "dust-map-mf2015.meta.json");
-const OUT_CACHE_META = join(NASA_CACHE_DIR, "dust-map-mf2015.meta.json");
+const __dir = path.dirname(fileURLToPath(import.meta.url));
+const OUT  = path.join(__dir, "../public/data/dust-map-mf2015.bin");
+const META = path.join(__dir, "../public/data/dust-map-mf2015.meta.json");
+mkdirSync(path.dirname(OUT), { recursive: true });
 
-const FITS_URL = "https://lambda.gsfc.nasa.gov/data/foregrounds/EBV/lambda_mollweide_mf2015_dust_map_v2.fits";
-const INFO_URL = "https://lambda.gsfc.nasa.gov/product/foreground/fg_meisner_finkbeiner_2015_info.html";
-const DOWNLOAD_URL = "https://lambda.gsfc.nasa.gov/product/foreground/fg_meisner_finkbeiner_2015_get.html";
-const IPAC_DUST_URL = "https://irsa.ipac.caltech.edu/applications/DUST/";
+const R    = [[-0.054876,0.494109,-0.867666],[-0.993911,-0.111106,-0.000312],[-0.096390,0.862326,0.497159]];
+const KPC  = 8_000;
+const RSUN = 8.5;
 
-const BASE_OUT_W = 256;
-const BASE_OUT_H = 128;
-const DEFAULT_GRID_SCALE = 2;
-const MAX_GRID_SCALE = 4;
-const GRID_SCALE = readGridScale();
-const OUT_W = BASE_OUT_W * GRID_SCALE;
-const OUT_H = BASE_OUT_H * GRID_SCALE;
-const DUST_FLOATS = 8;
-const MW_KPC_AU = 8_000;
-const SUN_GALACTIC_RADIUS_KPC = 8.5;
-const SHELL_RADIUS_AU = MW_KPC_AU * SUN_GALACTIC_RADIUS_KPC;
-const SQRT2 = Math.SQRT2;
-
-const GAL_TO_ECL = [
-  [-0.054876,  0.494109, -0.867666],
-  [-0.993911, -0.111106, -0.000312],
-  [-0.096390,  0.862326,  0.497159],
-];
-
-mkdirSync(DATA_DIR, { recursive: true });
-mkdirSync(NASA_CACHE_DIR, { recursive: true });
-
-function readGridScale() {
-  const raw = process.env.DUST_GRID_SCALE;
-  if (!raw) return DEFAULT_GRID_SCALE;
-
-  const parsed = Number(raw);
-  if (!Number.isInteger(parsed) || parsed < 1) {
-    throw new Error(`DUST_GRID_SCALE must be a positive integer, got "${raw}".`);
-  }
-  if (parsed > MAX_GRID_SCALE) {
-    console.warn(`DUST_GRID_SCALE=${parsed} is above ${MAX_GRID_SCALE}; using ${MAX_GRID_SCALE}.`);
-    return MAX_GRID_SCALE;
-  }
-  return parsed;
-}
-
-async function ensureRawFits() {
-  if (existsSync(RAW_FITS)) {
-    console.log(`Using cached FITS: ${RAW_FITS}`);
-    return;
-  }
-
-  console.log(`Downloading ${FITS_URL}`);
-  const res = await fetch(FITS_URL);
-  if (!res.ok) throw new Error(`FITS download failed: HTTP ${res.status}`);
-  const bytes = new Uint8Array(await res.arrayBuffer());
-  writeFileSync(RAW_FITS, bytes);
-  console.log(`Cached ${(bytes.byteLength / 1e6).toFixed(1)} MB -> ${RAW_FITS}`);
-}
-
-function fitsValue(card) {
-  const raw = card.slice(10, 80).split("/")[0]?.trim() ?? "";
-  if (raw.startsWith("'")) return raw.slice(1, raw.indexOf("'", 1)).trim();
-  if (raw === "T") return true;
-  if (raw === "F") return false;
-  const n = Number(raw);
-  return Number.isFinite(n) ? n : raw;
-}
-
-function readFitsHeader(buf, offset) {
-  const cards = {};
-  let p = offset;
-  while (p + 80 <= buf.length) {
-    const card = buf.toString("ascii", p, p + 80);
-    p += 80;
-    const key = card.slice(0, 8).trim();
-    if (key === "END") break;
-    if (key && card[8] === "=") cards[key] = fitsValue(card);
-  }
-  const headerBytes = Math.ceil((p - offset) / 2880) * 2880;
-  return { cards, nextOffset: offset + headerBytes, headerBytes };
-}
-
-function dataByteLength(cards) {
-  const naxis = Number(cards.NAXIS ?? 0);
-  if (!naxis) return 0;
-  let pixels = 1;
-  for (let i = 1; i <= naxis; i++) pixels *= Number(cards[`NAXIS${i}`] ?? 0);
-  return pixels * Math.abs(Number(cards.BITPIX ?? 0)) / 8;
-}
-
-function findFirstImageExtension(buf) {
-  let header = readFitsHeader(buf, 0);
-  let offset = header.nextOffset + dataByteLength(header.cards);
-  offset = Math.ceil(offset / 2880) * 2880;
-
-  while (offset < buf.length) {
-    header = readFitsHeader(buf, offset);
-    const cards = header.cards;
-    const bitpix = Number(cards.BITPIX);
-    const w = Number(cards.NAXIS1);
-    const h = Number(cards.NAXIS2);
-    const extName = String(cards.EXTNAME ?? "");
-    const dataStart = header.nextOffset;
-    const byteLen = dataByteLength(cards);
-    if (cards.XTENSION === "IMAGE" && bitpix === -32 && w > 0 && h > 0 && extName.includes("E(B-V)")) {
-      return { cards, width: w, height: h, dataStart };
-    }
-    offset = Math.ceil((dataStart + byteLen) / 2880) * 2880;
-  }
-
-  throw new Error("No E(B-V) float image extension found in FITS.");
-}
-
-function readFloatBE(buf, byteOffset) {
-  return buf.readFloatBE(byteOffset);
-}
-
-function mollweidePixelToGalactic(x, y, width, height) {
-  // Values from the LAMBDA FITS header. Pixel coordinates here are 0-based;
-  // FITS CRPIX values are 1-based pixel centers.
-  const cdelt1 = -0.0791293637247;
-  const cdelt2 =  0.0791293637247;
-  const crpix1 = width / 2 + 0.5;
-  const crpix2 = height / 2 + 0.5;
-  const xDeg = ((x + 1) - crpix1) * cdelt1;
-  const yDeg = ((y + 1) - crpix2) * cdelt2;
-  const xr = xDeg * Math.PI / 180;
-  const yr = yDeg * Math.PI / 180;
-
-  if (Math.abs(yr) > SQRT2) return null;
-  const theta = Math.asin(Math.max(-1, Math.min(1, yr / SQRT2)));
-  const cosTheta = Math.cos(theta);
-  if (Math.abs(cosTheta) < 1e-6) return null;
-  const lon = Math.PI * xr / (2 * SQRT2 * cosTheta);
-  if (!Number.isFinite(lon) || Math.abs(lon) > Math.PI * 1.001) return null;
-  const lat = Math.asin(Math.max(-1, Math.min(1, (2 * theta + Math.sin(2 * theta)) / Math.PI)));
-  return { lon, lat };
-}
-
-function galacticDirectionToEcliptic(lon, lat) {
-  const cb = Math.cos(lat);
-  const xg = cb * Math.cos(lon);
-  const yg = cb * Math.sin(lon);
-  const zg = Math.sin(lat);
+function galToEcl(xgc, ygc, zgc) {
+  const xh = xgc + RSUN;
   return [
-    (GAL_TO_ECL[0][0] * xg + GAL_TO_ECL[0][1] * yg + GAL_TO_ECL[0][2] * zg) * SHELL_RADIUS_AU,
-    (GAL_TO_ECL[1][0] * xg + GAL_TO_ECL[1][1] * yg + GAL_TO_ECL[1][2] * zg) * SHELL_RADIUS_AU,
-    (GAL_TO_ECL[2][0] * xg + GAL_TO_ECL[2][1] * yg + GAL_TO_ECL[2][2] * zg) * SHELL_RADIUS_AU,
+    (R[0][0]*xh+R[0][1]*ygc+R[0][2]*zgc)*KPC,
+    (R[1][0]*xh+R[1][1]*ygc+R[1][2]*zgc)*KPC,
+    (R[2][0]*xh+R[2][1]*ygc+R[2][2]*zgc)*KPC,
   ];
 }
 
-function percentile(values, p) {
-  const sorted = [...values].sort((a, b) => a - b);
-  return sorted[Math.min(sorted.length - 1, Math.max(0, Math.floor(sorted.length * p)))] ?? 1;
+// ── SFD lookup table from IRSA ────────────────────────────────────────────
+function fetchSFD(l, b) {
+  return new Promise((resolve) => {
+    const url = `https://irsa.ipac.caltech.edu/cgi-bin/DUST/nph-dust?locstr=${l.toFixed(2)}+${b.toFixed(2)}+Gal`;
+    let xml = "";
+    const req = https.get(url, {timeout:15000}, (res)=>{
+      res.on("data",c=>xml+=c);
+      res.on("end",()=>{const m=xml.match(/<refPixelValueSFD>\s*([\d.]+)/);resolve(m?parseFloat(m[1]):null);});
+    });
+    req.on("error",()=>resolve(null));
+    req.setTimeout(15000,()=>{req.destroy();resolve(null);});
+  });
+}
+async function mapLimit(items,limit,fn){
+  const results=new Array(items.length);let cursor=0;
+  async function w(){while(cursor<items.length){const i=cursor++;results[i]=await fn(items[i],i);}}
+  await Promise.all(Array.from({length:Math.min(limit,items.length)},w));
+  return results;
 }
 
-await ensureRawFits();
-const fits = readFileSync(RAW_FITS);
-const image = findFirstImageExtension(fits);
-console.log(`Reading ${image.width}x${image.height} ${image.cards.EXTNAME} image.`);
-console.log(`Building ${OUT_W}x${OUT_H} dust grid (DUST_GRID_SCALE=${GRID_SCALE}).`);
+// Dense grid: 72 longitude × 13 latitude = 936 real SFD measurements
+const sfdDirs=[];
+for(let i=0;i<72;i++){
+  for(const b of [-35,-22,-14,-8,-4,-1,0,1,4,8,14,22,35]) sfdDirs.push({l:i*5,b});
+}
+console.log(`Fetching ${sfdDirs.length} real SFD measurements from IRSA…`);
+const sfdRaw=await mapLimit(sfdDirs,12,async({l,b},i)=>{
+  const ebv=await fetchSFD(l,b);
+  if(i%72===0) process.stdout.write(`  ${i}/${sfdDirs.length}\r`);
+  return {l,b,ebv:ebv??0};
+});
+console.log(`\n${sfdRaw.filter(d=>d.ebv>0).length}/${sfdDirs.length} fetched.`);
 
-const candidates = [];
-const blockW = image.width / OUT_W;
-const blockH = image.height / OUT_H;
-
-for (let oy = 0; oy < OUT_H; oy++) {
-  for (let ox = 0; ox < OUT_W; ox++) {
-    const x0 = Math.floor(ox * blockW);
-    const x1 = Math.floor((ox + 1) * blockW);
-    const y0 = Math.floor(oy * blockH);
-    const y1 = Math.floor((oy + 1) * blockH);
-    let sum = 0;
-    let count = 0;
-    for (let y = y0; y < y1; y++) {
-      const row = image.dataStart + y * image.width * 4;
-      for (let x = x0; x < x1; x++) {
-        const v = readFloatBE(fits, row + x * 4);
-        if (Number.isFinite(v) && v > 0 && v < 50) {
-          sum += v;
-          count++;
-        }
-      }
-    }
-    if (count === 0) continue;
-    const ebv = sum / count;
-    const cx = x0 + (x1 - x0) * 0.5;
-    const cy = y0 + (y1 - y0) * 0.5;
-    const gal = mollweidePixelToGalactic(cx, cy, image.width, image.height);
-    if (!gal) continue;
-    candidates.push({ ebv, lon: gal.lon, lat: gal.lat });
+// Build a fast lookup: given (l_deg, b_deg), return nearest SFD E(B-V)
+function lookupSFD(lDeg,bDeg) {
+  const lR=lDeg*Math.PI/180, bR=bDeg*Math.PI/180;
+  let best=0, bestDot=-2;
+  for(const {l,b,ebv} of sfdRaw){
+    if(!ebv) continue;
+    const lR2=l*Math.PI/180, bR2=b*Math.PI/180;
+    const dot=Math.sin(bR)*Math.sin(bR2)+Math.cos(bR)*Math.cos(bR2)*Math.cos(lR-lR2);
+    if(dot>bestDot){bestDot=dot;best=ebv;}
   }
+  return best;
 }
 
-const p95 = percentile(candidates.map(c => c.ebv), 0.95);
-const p99 = percentile(candidates.map(c => c.ebv), 0.99);
-const cells = [];
-const cellRadius = SHELL_RADIUS_AU * Math.max(Math.PI / OUT_H, (2 * Math.PI) / OUT_W) * 1.10;
-
-for (const c of candidates) {
-  const density = Math.min(1, Math.log1p(c.ebv * 5.0) / Math.log1p(p95 * 5.0));
-  if (density < 0.055) continue;
-  const [x, y, z] = galacticDirectionToEcliptic(c.lon, c.lat);
-  const hot = Math.min(1, c.ebv / p99);
-  const alpha = 0.006 + density * 0.080;
-  cells.push(
-    x, y, z, cellRadius * (0.85 + density * 0.75),
-    0.58 + hot * 0.24,
-    0.28 + hot * 0.16,
-    0.12 + hot * 0.08,
-    alpha,
-  );
+// ── Disk density fraction for distance calibration ────────────────────────
+// Used only to estimate what fraction of the total column is within distance d.
+// No spiral arms — just an exponential disk.
+const HR=3.5, HZ=0.10;
+function diskRho(d,lR,bR){
+  const xh=d*Math.cos(bR)*Math.cos(lR), yh=d*Math.cos(bR)*Math.sin(lR), zh=d*Math.sin(bR);
+  const Rgc=Math.sqrt((xh+RSUN)**2+yh**2);
+  return Math.exp(-Rgc/HR)*Math.exp(-Math.abs(zh)/HZ);
+}
+function fractionWithin(d,lR,bR){
+  // Numerical integral 0→d vs 0→∞
+  const N=20, dMax=20;
+  let sum0d=0,sumAll=0;
+  for(let i=0;i<N;i++){
+    const dd=(i+0.5)*dMax/N;
+    const rho=diskRho(dd,lR,bR);
+    sumAll+=rho;
+    if(dd<=d) sum0d+=rho;
+  }
+  return sumAll>0?sum0d/sumAll:0.5;
 }
 
-const out = new Float32Array(cells);
-writeFileSync(OUT_BIN, Buffer.from(out.buffer));
-const galacticCenterWorldAU = galacticDirectionToEcliptic(0, 0);
+// ── Galactocentric sampling — same as MW background stars ─────────────────
+let seed=0xcafe9876;
+function rand(){seed=(Math.imul(1664525,seed)+1013904223)>>>0;return seed/0xffffffff;}
+function randn(){const u=Math.max(1e-9,rand()),v=rand();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
 
-const meta = {
-  schema: "physics_sim.dust-map.v1",
-  sourceName: "NASA/GSFC LAMBDA Meisner-Finkbeiner 2015 E(B-V) dust map",
-  sourceUrl: INFO_URL,
-  downloadUrl: DOWNLOAD_URL,
-  fitsUrl: FITS_URL,
-  ipacDustServiceUrl: IPAC_DUST_URL,
-  generatedAt: new Date().toISOString(),
-  projection: "Mollweide all-sky source, converted to world-anchored render-space Galactic shell billboards",
-  anchoring: {
-    type: "sun-observed all-sky shell",
-    note: "Galactic longitude 0 and latitude 0 are placed on the simulation Milky Way center / Sagittarius A* position.",
-    milkyWayScaleAUPerKpc: MW_KPC_AU,
-    sunGalacticRadiusKpc: SUN_GALACTIC_RADIUS_KPC,
-    galacticCenterWorldAU: {
-      x: galacticCenterWorldAU[0],
-      y: galacticCenterWorldAU[1],
-      z: galacticCenterWorldAU[2],
-    },
-  },
-  sourceGrid: { width: image.width, height: image.height },
-  downsampleGrid: {
-    width: OUT_W,
-    height: OUT_H,
-    baseWidth: BASE_OUT_W,
-    baseHeight: BASE_OUT_H,
-    scale: GRID_SCALE,
-  },
-  sourcePixelsPerDustCell: { width: blockW, height: blockH },
-  strideFloat32: DUST_FLOATS,
-  shellRadiusAU: SHELL_RADIUS_AU,
-  cellCount: out.length / DUST_FLOATS,
-  ebvPercentiles: { p95, p99 },
-  notes: [
-    "This is a 2D total line-of-sight Galactic reddening visualization, not a 3D dust volume.",
-    "The runtime layer is fixed in world space so the map center tracks the Milky Way center instead of the camera.",
-    "Raw FITS is cached locally under public/cache/nasa and ignored by git; generated binary is the runtime asset.",
-  ],
-};
-writeFileSync(OUT_META, `${JSON.stringify(meta, null, 2)}\n`);
-writeFileSync(OUT_CACHE_META, `${JSON.stringify(meta, null, 2)}\n`);
+const N_CELLS=15000, cells=[];
+let tried=0;
 
-console.log(`Written ${out.length / DUST_FLOATS} dust cells -> ${OUT_BIN}`);
-console.log(`Runtime dust layer size: ${(out.byteLength / 1024).toFixed(1)} KiB`);
+while(cells.length/8 < N_CELLS && tried < N_CELLS*20){
+  tried++;
+  // Sample galactocentric radius from exponential disk (no arm model)
+  const HR_SAMP=3.5, RMAX=14;
+  const Rgc=-HR_SAMP*Math.log(1-rand()*(1-Math.exp(-RMAX/HR_SAMP)));
+  if(Rgc<0.3||Rgc>RMAX) continue;
+
+  const theta=rand()*2*Math.PI;
+  const z=randn()*HZ;
+
+  // Galactocentric → heliocentric galactic
+  const xgc=Rgc*Math.cos(theta), ygc=Rgc*Math.sin(theta);
+  const xh=xgc+RSUN, yh=ygc, zh=z;
+  const d=Math.sqrt(xh*xh+yh*yh+zh*zh);
+  if(d<0.1) continue;
+
+  // Sky direction from Sun to this point
+  const lR=Math.atan2(yh,xh);
+  const bR=Math.asin(Math.max(-1,Math.min(1,zh/d)));
+  const lDeg=((lR*180/Math.PI)+360)%360;
+  const bDeg=bR*180/Math.PI;
+
+  // REAL SFD E(B-V) for this sky direction
+  const ebvTotal=lookupSFD(lDeg,bDeg);
+  if(ebvTotal<=0) continue;
+
+  // Fraction of column within distance d
+  const frac=fractionWithin(d,lR,bR);
+  // Differential fraction: density near this point
+  const df=fractionWithin(d+0.5,lR,bR)-fractionWithin(Math.max(0,d-0.5),lR,bR);
+  const ebvLocal=ebvTotal*df*2.5;  // 2.5 = normalisation for 1-kpc bin
+
+  if(ebvLocal<0.005||rand()>Math.min(1,ebvLocal/0.3)) continue;
+
+  const [x,y,zz]=galToEcl(xgc,ygc,z);
+
+  // Cell size in AU
+  const size=Rgc*KPC*0.07*(0.6+rand()*0.8);
+
+  // Alpha: sqrt-compressed real E(B-V) value
+  const capped=Math.min(ebvLocal,6.0);
+  const alpha=Math.min(0.48,Math.sqrt(capped/6)*0.52)*(0.7+rand()*0.6);
+  if(alpha<0.012) continue;
+
+  // Colour: very dark warm grey-brown, redder for denser dust
+  const redness=Math.min(1,capped/4);
+  cells.push(x,y,zz,size,
+    0.08+redness*0.15, 0.05+redness*0.06, 0.03+redness*0.04,
+    alpha);
+}
+
+const out=new Float32Array(cells);
+writeFileSync(OUT,Buffer.from(out.buffer));
+const n=cells.length/8;
+let sa=0,ma=0;
+for(let i=0;i<n;i++){const a=cells[i*8+7];sa+=a;ma=Math.max(ma,a);}
+writeFileSync(META,JSON.stringify({
+  sourceName: "NASA/IPAC IRSA SFD98 reddening — galaxy-centred, no procedural arms",
+  description: `${sfdRaw.filter(d=>d.ebv>0).length} real SFD98 sightlines from IRSA. ` +
+    "Positions sampled galactocentrically (same method as MW star catalog). " +
+    "Dust density at each position from real SFD lookup — spiral structure from real data, not sin waves.",
+  generated: new Date().toISOString(),
+  sfdSightlines: sfdRaw.filter(d=>d.ebv>0).length,
+  cellCount: n, scaleAUperKpc: KPC,
+},null,2));
+console.log(`Written ${n} cells. Alpha avg=${(sa/n).toFixed(3)} max=${ma.toFixed(3)}`);

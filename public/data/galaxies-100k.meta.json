@@ -1,10 +1,16 @@
 {
-  "source": "Simbad TAP (real) + procedural",
-  "realCount": 49990,
-  "procCount": 50010,
-  "count": 100000,
-  "distMaxMpc": 638,
+  "source": "2MRS (dist>25 Mpc, full-sky) + ZoA completion + ΛCDM lognormal mock. LOCAL_GROUP injected at runtime by galaxies.ts.",
+  "min2mrsMpc": 25,
+  "nearbyCount": 45019,
+  "protectedCount": 10000,
+  "protectedEdgeMpc": 78,
+  "mockCount": 190000,
+  "count": 200000,
+  "distMaxMpc": 850,
   "FLOATS": 8,
-  "galaxyBaseAU": 200000,
-  "galaxyLogScaleAU": 50000
+  "distanceScaleVersion": "local-group-linear-log-v2",
+  "kpcToAU": 8000,
+  "mpcToAU": 8000000,
+  "linearLimitMpc": 2,
+  "logScaleAU": 1200000
 }

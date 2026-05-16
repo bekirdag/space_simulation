@@ -103,6 +103,7 @@ export class NavPanel {
 
   private catalogObjectType(hit: StarSearchResult): string {
     if (hit.id.startsWith("blackhole:")) return "black hole";
+    if (hit.id.startsWith("galaxy:")) return "galaxy";
     if (hit.id.startsWith("exo:")) return "exoplanet";
     if (hit.id.startsWith("nearby:")) return "star";
     return "exoplanet host star";

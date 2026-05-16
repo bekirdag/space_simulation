@@ -110,7 +110,7 @@ export const NEARBY_STAR_LABELS: NearbyStarLabel[] = [
   s("Pollux",            116.329,  28.026,  10.340, 1),
   s("Arcturus",          213.915,  19.182,  11.260, 1),
   s("Capella",            79.172,  45.998,  13.160, 1),
-  s("Alpha Lupi",        220.480, -47.380,  14.000, 1),
+  s("Alpha Lupi",        220.480, -47.380, 114.000, 2),  // HIP 71860; actual ~114 pc (was wrongly entered as 14)
   s("Castor",            113.649,  31.888,  15.600, 1),
   s("Gemma (Alphecca)",  233.672,  26.715,  22.700, 1),
   s("Mizar",             200.981,  54.925,  23.000, 1),
@@ -119,7 +119,7 @@ export const NEARBY_STAR_LABELS: NearbyStarLabel[] = [
   s("Gacrux",            187.791, -57.113,  27.200, 1),
   s("Regulus",           152.093,  11.967,  24.300, 1),
   s("Shaula",            263.402, -37.104,  216.00, 2), // moved to tier 2
-  s("Castor B",          113.649,  31.888,  15.600, 1),
+  // Castor B removed — duplicate position of Castor A; both are the same binary.
   s("Izar",              221.247,  27.074,  64.100, 2), // moved to tier 2
   s("Denebola",          177.265,  14.572,  11.000, 1),
   s("Wezen",             107.098, -26.393, 490.000, 3),

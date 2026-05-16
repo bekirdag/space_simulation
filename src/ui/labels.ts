@@ -36,12 +36,31 @@ function smoother01(value: number): number {
   return t * t * t * (t * (t * 6 - 15) + 10);
 }
 
+// Visual AU at which the MW background star disk ends (15 kpc × 8 AU/kpc).
+// Stars whose HYG position (80 AU/pc) exceeds this appear outside the visible
+// Milky Way when the camera zooms to galactic scale.  We cap their label
+// fade-out at this boundary so they disappear before that happens.
+const MW_DISK_VISUAL_AU     = 120_000; // 15 kpc × 8 AU/pc
+const MW_DISK_VIRTUAL_LY    = MW_DISK_VISUAL_AU / NEARBY_STAR_AU_PER_LIGHT_YEAR; // ≈ 4 888 "visual ly"
+
 function nearbyStarShellOpacity(star: NearbyStarLabel, cameraDistanceLy: number): number {
   const starDistanceLy = Math.max(star.distPc * LIGHT_YEARS_PER_PARSEC, 0.05);
   const fadeInStartLy  = Math.max(0.05, starDistanceLy * 0.24);
   const fadeInEndLy    = Math.max(fadeInStartLy + 0.35, starDistanceLy * 0.55);
-  const fadeOutStartLy = Math.max(fadeInEndLy + 0.50, starDistanceLy * 2.35);
-  const fadeOutEndLy   = Math.max(fadeOutStartLy + 2.00, starDistanceLy * 3.40);
+
+  // If the star's HYG-scale position exceeds the visual MW disk boundary, cap
+  // the fade-out so the label disappears before the camera exits the disk.
+  // This prevents labels from floating visually outside the Milky Way structure
+  // (e.g. Eta Carinae at 2300 pc → 184 kAU, while MW disk ends at 120 kAU).
+  const starVisualAu   = star.distPc * NEARBY_STAR_AU_PER_PARSEC;
+  const outsideMWDisk  = starVisualAu > MW_DISK_VISUAL_AU;
+  const rawFadeOutEnd  = Math.max(fadeInEndLy + 0.50, starDistanceLy * 3.40);
+  const fadeOutEndLy   = outsideMWDisk ? Math.min(rawFadeOutEnd, MW_DISK_VIRTUAL_LY) : rawFadeOutEnd;
+  const fadeOutStartLy = Math.min(
+    Math.max(fadeInEndLy + 0.50, starDistanceLy * 2.35),
+    Math.max(fadeInEndLy + 0.25, fadeOutEndLy - 0.5),
+  );
+
   const fadeIn  = smoother01((cameraDistanceLy - fadeInStartLy) / (fadeInEndLy - fadeInStartLy));
   const fadeOut = 1 - smoother01((cameraDistanceLy - fadeOutStartLy) / (fadeOutEndLy - fadeOutStartLy));
   return fadeIn * fadeOut;
@@ -202,6 +221,12 @@ export class LabelManager {
       if (!ids.has(id)) { sp.remove(); this.spans.delete(id); }
     }
 
+    // ── Galaxy-scale check: hide ALL solar system labels beyond 100 kpc ──────
+    // At 100 kpc the MW reduces to a single point; the Sun label adds clutter.
+    const camDistAU  = Math.hypot(cameraEye[0], cameraEye[1], cameraEye[2]);
+    const camDistKpc = camDistAU / 8_000;
+    const beyondMilkyWay = camDistKpc > 400;
+
     // ── Solar system cluster detection ────────────────────────────────────────
     // When camera is zoomed out far enough, all solar system bodies cluster into
     // a tiny dot.  Measure the pixel spread from Sun to a 30 AU reference point
@@ -254,6 +279,15 @@ export class LabelManager {
         b.type === BodyType.Planet ||
         b.type === BodyType.DwarfPlanet ||
         b.type === BodyType.Moon;
+
+      // Beyond 100 kpc the MW is a single point — hide every solar system label
+      // including the Sun (which is just one of 200 billion stars at this scale).
+      if (beyondMilkyWay && isSolarSystemBody && !isFocusedSystemMember) {
+        sp.style.display = 'none';
+        sp.classList.remove('pinned', 'hovered', 'system');
+        continue;
+      }
+
       if (solarSystemClustered && isSolarSystemBody && b.name !== "Sun" && !isFocusedSystemMember) {
         sp.style.display = 'none';
         sp.classList.remove('pinned', 'hovered', 'system');

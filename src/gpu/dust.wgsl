@@ -92,15 +92,23 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   let d = length(in.uv);
   if d > 1.0 { discard; }
 
-  let p = in.uv * 2.8 + vec2<f32>(in.seed * 11.7, in.seed * 5.3);
+  let p = in.uv * 3.2 + vec2<f32>(in.seed * 11.7, in.seed * 5.3);
   let wisps = noise2(p) * 0.55 + noise2(p * 2.1 + 3.7) * 0.30 + noise2(p * 4.2 + 1.9) * 0.15;
-  let softEdge = 1.0 - smoothstep(0.45, 1.0, d);
-  let filament = smoothstep(0.18, 0.92, wisps) * softEdge;
-  let veil = (1.0 - smoothstep(0.0, 1.0, d)) * 0.35;
-  let density = max(filament, veil);
-  if density < 0.015 { discard; }
+  let softEdge = 1.0 - smoothstep(0.30, 1.0, d);
+  // Purely filamentary — NO solid veil baseline.  This keeps the clouds
+  // wispy so stars show through the gaps between filaments.
+  let filament = smoothstep(0.30, 0.88, wisps) * softEdge;
+  if filament < 0.04 { discard; }
 
-  let a = clamp(density * in.alpha, 0.0, 0.28);
-  let col = mix(in.color * 0.70, in.color, filament);
-  return vec4<f32>(col * a, a);
+  // Multiply blend: output is a TRANSMISSION factor, not an additive colour.
+  // 1.0 = fully transparent (no dust), 0.0 = fully opaque (max absorption).
+  // Dust absorbs blue more than red (interstellar reddening, R_V ≈ 3.1).
+  let absorb = clamp(filament * in.alpha, 0.0, 0.92);
+  let trans = vec3<f32>(
+    1.0 - absorb * 0.72,   // red:   least absorbed
+    1.0 - absorb * 0.88,   // green: moderate
+    1.0 - absorb * 1.00,   // blue:  most absorbed  → reddening effect
+  );
+  // Stars drawn before dust are dimmed+reddened; stars drawn after are unaffected.
+  return vec4<f32>(clamp(trans, vec3<f32>(0.0), vec3<f32>(1.0)), 1.0);
 }

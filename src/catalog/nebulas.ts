@@ -1030,3 +1030,43 @@ export function nebulaPositions(): NebulaDet[] {
     return { name: def.name, x, y, z, type: def.type };
   });
 }
+
+// ── Eta Carinae Homunculus Nebula — real NASA/ESA Hubble texture ───────────
+//
+// The Homunculus Nebula is the small bipolar cloud (~18"×12" real size) ejected
+// by Eta Carinae during the Great Eruption of 1843. It is rendered separately
+// from the procedural Carina Nebula using the actual HST image.
+//
+// Image: ESA/NASA HST ACS/WFPC2 composite (opo9110a), CC BY 4.0 international.
+// Position: exact J2000 coordinates of Eta Carinae (HD 93308).
+export const HOMUNCULUS_NEBULA = {
+  name:   "Eta Carinae (Homunculus Nebula)",
+  ra:     161.265,   // J2000 RA degrees
+  dec:    -59.685,   // J2000 Dec degrees
+  dist:   2300,      // parsecs (Panagia 2008, Smith 2006)
+  // Visual diameter boosted for sim visibility; actual angular size is ~18".
+  // At 2300 pc × 8 AU/pc = 18400 AU scale: diam=50' gives a nice visible blob.
+  diam:   50,        // arcminutes (inflated for visibility — actual 0.3')
+  // Image aspect ratio: the HST opo9110a image is wider than tall
+  aspectRatio: 1.35, // width / height of the ESA image
+  type:   NebType.EMISSION,
+} as const;
+
+/** One-entry Float32Array for the textured Homunculus pipeline. */
+export function buildHomunculusBuffer(): { buf: Float32Array; x: number; y: number; z: number } {
+  const def = HOMUNCULUS_NEBULA;
+  const [x, y, z] = nebulaWorldPos(def.ra, def.dec, def.dist);
+
+  const dist_au        = def.dist * AU_PER_PARSEC;
+  const ang_radius_rad = (def.diam / 2) / 60 * Math.PI / 180;
+  const radius_au      = dist_au * ang_radius_rad * NEBULA_VISIBILITY_BOOST;
+
+  // Neutral tint: let the real image colours show through
+  const buf = new Float32Array(NEBULA_FLOATS);
+  buf[0]  = x;           buf[1]  = y;    buf[2]  = z;    buf[3]  = radius_au;
+  buf[4]  = 1.0;         buf[5]  = 1.0;  buf[6]  = 1.0;  buf[7]  = 0.92;  // alpha
+  buf[8]  = def.type;    buf[9]  = 0;    buf[10] = 1.0;   buf[11] = def.aspectRatio;
+  // buf[12-15]: padding zero
+
+  return { buf, x, y, z };
+}

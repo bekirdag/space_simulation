@@ -22,28 +22,20 @@ struct Star {
 @group(0) @binding(0) var<uniform>       camera:       Camera;
 @group(0) @binding(1) var<storage, read> stars:        array<Star>;
 @group(0) @binding(2) var<uniform>       selectedStar: vec4<f32>; // xyz=pos, w=active
-@group(0) @binding(3) var<uniform>       lodFade:      vec4<f32>; // x=brightness, y=camera radius from Sun
-
-// src/catalog/stars.ts compresses catalog positions to 80 render AU per parsec.
-const RENDER_AU_PER_LIGHT_YEAR: f32 = 80.0 / 3.26156;
+@group(0) @binding(3) var<uniform>       lodFade:      vec4<f32>; // x=1 (unused), y=camera AU from Sun
 
 struct VertexOut {
   @builtin(position) clip_pos: vec4<f32>,
   @location(0)       uv:       vec2<f32>,
   @location(1)       color:    vec3<f32>,
   @location(2)       alpha:    f32,
-  @location(3)       selected: f32, // 1.0 if this is the selected star
+  @location(3)       selected: f32,
 };
 
 var<private> quad: array<vec2<f32>, 6> = array<vec2<f32>, 6>(
   vec2(-1.0,-1.0), vec2(1.0,-1.0), vec2(-1.0,1.0),
   vec2(-1.0, 1.0), vec2(1.0,-1.0), vec2( 1.0,1.0),
 );
-
-fn smoother01(v: f32) -> f32 {
-  let t = clamp(v, 0.0, 1.0);
-  return t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
-}
 
 @vertex
 fn vs_main(
@@ -61,27 +53,23 @@ fn vs_main(
   out.alpha    = star.color_alpha.w;
   out.selected = 0.0;
 
-  let selectedMatch = selectedStar.w > 0.5 && length(center - selectedStar.xyz) < 0.5;
-  let starDistanceLy = max(length(center) / RENDER_AU_PER_LIGHT_YEAR, 0.05);
-  let cameraDistanceLy = max(lodFade.y / RENDER_AU_PER_LIGHT_YEAR, 0.0);
-  let fadeInStartLy  = max(0.05, starDistanceLy * 0.24);
-  let fadeInEndLy    = max(fadeInStartLy + 0.35, starDistanceLy * 0.55);
-  let fadeOutStartLy = max(fadeInEndLy + 0.50, starDistanceLy * 2.35);
-  let fadeOutEndLy   = max(fadeOutStartLy + 2.00, starDistanceLy * 3.40);
-  let fadeIn  = smoother01((cameraDistanceLy - fadeInStartLy) / (fadeInEndLy - fadeInStartLy));
-  let fadeOut = 1.0 - smoother01((cameraDistanceLy - fadeOutStartLy) / (fadeOutEndLy - fadeOutStartLy));
-  let shellVisibility = fadeIn * fadeOut;
-  out.alpha *= clamp(lodFade.x, 0.0, 1.0) * select(shellVisibility, max(shellVisibility, 0.9), selectedMatch);
+  // ── Global LOD fade ────────────────────────────────────────────────────────
+  // HYG nearby stars fade out as the camera moves far from the solar system
+  // (>500 AU). At galaxy scale they all cluster into a dot and add visual noise.
+  let cameraAU   = lodFade.y;
+  let globalFade = clamp(1.0 - (cameraAU - 500.0) / 19500.0, 0.0, 1.0);
+  let isSelected = selectedStar.w > 0.5 && length(center - selectedStar.xyz) < 0.5;
+  out.alpha     *= select(globalFade, max(globalFade, 0.9), isSelected);
 
-  if out.alpha <= 0.001 && !selectedMatch {
+  if out.alpha <= 0.001 && !isSelected {
     out.clip_pos = vec4(10.0, 10.0, 10.0, 1.0);
     return out;
   }
-
   if clip_c.w <= 0.0 {
     out.clip_pos = vec4(10.0, 10.0, 10.0, 1.0);
     return out;
   }
+  out.selected = select(0.0, 1.0, isSelected);
 
   // ── Frustum culling ────────────────────────────────────────────────────────
   // Cull only when the whole billboard is outside the frame plus a small margin.
@@ -102,8 +90,7 @@ fn vs_main(
   // A fixed-NDC billboard stays the same size regardless of distance, which
   // makes zoom feel broken. A sphere with radius ≈ 1 solar radius in our
   // compressed coordinate system creates the natural "approaching a star" sensation.
-  if selectedMatch {
-    out.selected = 1.0;
+  if isSelected {
 
     // Physical radius ≈ 1 solar radius = 0.005 AU in compressed coordinates.
     // At 0.5 AU camera distance: apparent radius ≈ 24px. At 0.05 AU: ≈ 240px.

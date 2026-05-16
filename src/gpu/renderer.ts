@@ -2,7 +2,9 @@ import renderWGSL   from "./render.wgsl?raw";
 import starWGSL     from "./star.wgsl?raw";
 import milkywayWGSL from "./milkyway.wgsl?raw";
 import galaxyWGSL   from "./galaxy.wgsl?raw";
-import nebulaWGSL   from "./nebula.wgsl?raw";
+import galaxyTexturedWGSL from "./galaxy-textured.wgsl?raw";
+import nebulaWGSL         from "./nebula.wgsl?raw";
+import nebulaTexturedWGSL from "./nebula-textured.wgsl?raw";
 import dustWGSL     from "./dust.wgsl?raw";
 import blackholeWGSL from "./blackhole.wgsl?raw";
 import constellationWGSL from "./constellation.wgsl?raw";
@@ -13,6 +15,7 @@ import { BodyType } from "../physics/constants";
 import { STAR_FLOATS } from "../catalog/stars";
 import { MW_FLOATS } from "../catalog/milkyway";
 import { GALAXY_FLOATS } from "../catalog/galaxies";
+import { GALAXY_MODEL_FLOATS, type GalaxyTextureModel } from "../catalog/galaxy-models";
 import { NEBULA_FLOATS } from "../catalog/nebulas";
 import { DUST_FLOATS } from "../catalog/dust";
 import { CONSTELLATION_FLOATS } from "../catalog/constellations";
@@ -23,6 +26,7 @@ import { type CameraUniforms } from "../scene/camera";
 // Camera uniform: mat4 (64) + right/min vec4 + up/focal vec4 + eye vec4 = 112 bytes
 const CAMERA_BYTES = 112;
 const BLACK_HOLE_BYTES = 32;
+const TEXTURED_GALAXY_MODEL_CAPACITY = 32;
 
 const KM_PER_AU = 149_597_870.7;
 const SUN_APPARENT_MAG = -26.74;
@@ -90,7 +94,9 @@ export class Renderer {
   private starPipeline!:    GPURenderPipeline;
   private mwPipeline!:      GPURenderPipeline;
   private galaxyPipeline!:  GPURenderPipeline;
-  private nebulaPipeline!:  GPURenderPipeline;
+  private galaxyTexturedPipeline!: GPURenderPipeline;
+  private nebulaPipeline!:          GPURenderPipeline;
+  private nebulaTexturedPipeline!:  GPURenderPipeline;
   private dustPipeline!:    GPURenderPipeline;
   private blackHolePipeline!: GPURenderPipeline;
   private constellationPipeline!: GPURenderPipeline;
@@ -101,7 +107,9 @@ export class Renderer {
   private starBuffer!:        GPUBuffer;
   private mwStarBuffer!:      GPUBuffer;
   private galaxyBuffer!:      GPUBuffer;
-  private nebulaBuffer!:      GPUBuffer;
+  private galaxyModelBuffer!: GPUBuffer;
+  private nebulaBuffer!:          GPUBuffer;
+  private homunculusBuffer!:      GPUBuffer;
   private dustBuffer!:        GPUBuffer;
   private blackHoleBuffer!:   GPUBuffer;
   private constellationBuffer!: GPUBuffer;
@@ -111,7 +119,15 @@ export class Renderer {
   private starBindGroup!:   GPUBindGroup;
   private mwBindGroup!:     GPUBindGroup;
   private galaxyBindGroup!: GPUBindGroup;
-  private nebulaBindGroup!: GPUBindGroup;
+  private galaxyModelBGL!: GPUBindGroupLayout;
+  private galaxyModelSampler!: GPUSampler;
+  private galaxyModelDraws: Array<{ bindGroup: GPUBindGroup; index: number }> = [];
+  private galaxyModelTextures: GPUTexture[] = [];
+  private nebulaBindGroup!:          GPUBindGroup;
+  private homunculusBindGroup:       GPUBindGroup | null = null;
+  private homunculusBGL!:            GPUBindGroupLayout;
+  private homunculusTexture:         GPUTexture | null = null;
+  private homunculusSampler!:        GPUSampler;
   private dustBindGroup!:   GPUBindGroup;
   private blackHoleBindGroup!: GPUBindGroup;
   private constellationBindGroup!: GPUBindGroup;
@@ -137,12 +153,21 @@ export class Renderer {
   private starCount    = 0;
   private mwStarCount  = 0;
   private galaxyCount  = 0;
+  private galaxyModelCount = 0;
   private nebulaCount  = 0;
   private dustCount    = 0;
   private constellationCount = 0;
   private starCapacity = 0;
   private dustCapacity = 0;
   private constellationCapacity = 0;
+
+  // Single-entry "Milky Way as a galaxy" billboard — fades in when individual
+  // MW stars fade out (camera > 10 kpc). Uses the galaxy pipeline with actual=false
+  // so the stored alpha is used directly instead of the brightness formula.
+  private mwSelfBuffer!:    GPUBuffer;
+  private mwSelfLodBuffer!: GPUBuffer;   // always actual=0 so stored alpha is authoritative
+  private mwSelfBindGroup!: GPUBindGroup;
+  private _mwSelfAlpha = 0;
 
   // Octant ranges are used only to spread Settings LOD caps across the sky.
   // Actual frustum rejection for catalog billboards happens per instance in WGSL.
@@ -230,12 +255,33 @@ export class Renderer {
       size:  Math.max(1, maxGalaxies) * GALAXY_FLOATS * 4,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
+    this.galaxyModelBuffer = device.createBuffer({
+      label: "textured-galaxy-model-storage",
+      size: TEXTURED_GALAXY_MODEL_CAPACITY * GALAXY_MODEL_FLOATS * 4,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    this.galaxyModelSampler = device.createSampler({
+      label: "textured-galaxy-model-sampler",
+      magFilter: "linear", minFilter: "linear", mipmapFilter: "linear",
+      addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge",
+    });
 
     // Nebula buffer: fixed-size (≤ 1 600 nebulas × 64 bytes = 102 kB — still tiny)
     this.nebulaBuffer = device.createBuffer({
       label: "nebula-storage",
       size:  1_600 * NEBULA_FLOATS * 4,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    // Homunculus buffer: single 64-byte entry for the textured Eta Carinae billboard
+    this.homunculusBuffer = device.createBuffer({
+      label: "homunculus-storage",
+      size:  NEBULA_FLOATS * 4,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    this.homunculusSampler = device.createSampler({
+      label: "homunculus-sampler",
+      magFilter: "linear", minFilter: "linear", mipmapFilter: "linear",
+      addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge",
     });
 
     this.dustCapacity = 1;
@@ -326,6 +372,21 @@ export class Renderer {
       label: "galaxy-lod", size: 16,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
+    // MW self: 1-entry galaxy storage + flat lod (actual=0 → use stored alpha)
+    this.mwSelfBuffer = device.createBuffer({
+      label: "mw-self-storage",
+      size:  GALAXY_FLOATS * 4,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    this.mwSelfLodBuffer = device.createBuffer({
+      label: "mw-self-lod", size: 16,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    // actual=0 → galaxy shader uses stored alpha directly, no brightness formula
+    device.queue.writeBuffer(this.mwSelfLodBuffer, 0, new Float32Array([0, 0, 0, 0]));
+    // Initialise with invisible MW (alpha=0); updated each frame via uploadMilkywayGalaxy()
+    device.queue.writeBuffer(this.mwSelfBuffer, 0, new Float32Array([0,0,0, 5.0, 1.0,0.90,0.70, 0.0]));
+
     // Catalog stars use camera-distance shell culling in star.wgsl; named
     // nearby-star labels handle their own DOM visibility in LabelManager.
     this.syncBrightnessUniforms();
@@ -426,6 +487,15 @@ export class Renderer {
         { binding: 2, resource: { buffer: this.galaxyLodBuffer } },
       ],
     });
+    // MW self uses the same galaxy pipeline/BGL but with its own storage+lod
+    this.mwSelfBindGroup = device.createBindGroup({
+      label: "mw-self-bg", layout: this.galaxyBGL,
+      entries: [
+        { binding: 0, resource: { buffer: this.cameraBuffer } },
+        { binding: 1, resource: { buffer: this.mwSelfBuffer } },
+        { binding: 2, resource: { buffer: this.mwSelfLodBuffer } },
+      ],
+    });
     const galaxyShader = device.createShaderModule({ code: galaxyWGSL });
     this.galaxyPipeline = device.createRenderPipeline({
       label: "galaxy-pipeline",
@@ -433,6 +503,34 @@ export class Renderer {
       vertex:   { module: galaxyShader, entryPoint: "vs_main" },
       fragment: {
         module: galaxyShader, entryPoint: "fs_main",
+        targets: [{
+          format,
+          blend: {
+            color: { srcFactor: "src-alpha", dstFactor: "one", operation: "add" },
+            alpha: { srcFactor: "one",       dstFactor: "one", operation: "add" },
+          },
+        }],
+      },
+      primitive: { topology: "triangle-list" },
+    });
+
+    // ── Textured close-LOD galaxy model pipeline ───────────────────────────
+    this.galaxyModelBGL = device.createBindGroupLayout({
+      label: "textured-galaxy-model-bgl",
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
+        { binding: 1, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "read-only-storage" } },
+        { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float" } },
+        { binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
+      ],
+    });
+    const galaxyTexturedShader = device.createShaderModule({ code: galaxyTexturedWGSL });
+    this.galaxyTexturedPipeline = device.createRenderPipeline({
+      label: "textured-galaxy-model-pipeline",
+      layout: device.createPipelineLayout({ bindGroupLayouts: [this.galaxyModelBGL] }),
+      vertex:   { module: galaxyTexturedShader, entryPoint: "vs_main" },
+      fragment: {
+        module: galaxyTexturedShader, entryPoint: "fs_main",
         targets: [{
           format,
           blend: {
@@ -478,6 +576,34 @@ export class Renderer {
       primitive: { topology: "triangle-list" },
     });
 
+    // ── Homunculus (textured) pipeline — real NASA Hubble image of Eta Carinae
+    this.homunculusBGL = device.createBindGroupLayout({
+      label: "homunculus-bgl",
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
+        { binding: 1, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "read-only-storage" } },
+        { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float" } },
+        { binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
+      ],
+    });
+    const homunculusShader = device.createShaderModule({ code: nebulaTexturedWGSL });
+    this.nebulaTexturedPipeline = device.createRenderPipeline({
+      label: "nebula-textured-pipeline",
+      layout: device.createPipelineLayout({ bindGroupLayouts: [this.homunculusBGL] }),
+      vertex:   { module: homunculusShader, entryPoint: "vs_main" },
+      fragment: {
+        module: homunculusShader, entryPoint: "fs_main",
+        targets: [{
+          format,
+          blend: {
+            color: { srcFactor: "src-alpha", dstFactor: "one", operation: "add" },
+            alpha: { srcFactor: "one",       dstFactor: "one", operation: "add" },
+          },
+        }],
+      },
+      primitive: { topology: "triangle-list" },
+    });
+
     // ── Galactic dust map pipeline (premultiplied alpha overlay) ───────────
     this.dustBGL = device.createBindGroupLayout({
       label: "dust-bgl",
@@ -502,9 +628,13 @@ export class Renderer {
         module: dustShader, entryPoint: "fs_main",
         targets: [{
           format,
+          // Multiply blend: output_rgb = dust_transmission × background_rgb
+          // Dust shader outputs RGB transmission factors (1=transparent, <1=absorbing).
+          // Background stars are darkened+reddened but NOT replaced — stars drawn
+          // AFTER dust with additive blend punch through at full brightness.
           blend: {
-            color: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" },
-            alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" },
+            color: { srcFactor: "dst",  dstFactor: "zero", operation: "add" },
+            alpha: { srcFactor: "zero", dstFactor: "one",  operation: "add" },
           },
         }],
       },
@@ -647,9 +777,129 @@ export class Renderer {
     this.ctx.device.queue.writeBuffer(this.galaxyBuffer, 0, galaxies as GPUAllowSharedBufferSource);
   }
 
+  async loadGalaxyTextureModels(models: readonly GalaxyTextureModel[]): Promise<void> {
+    const usable = models.slice(0, TEXTURED_GALAXY_MODEL_CAPACITY);
+    this.galaxyModelCount = usable.length;
+    const data = new Float32Array(usable.length * GALAXY_MODEL_FLOATS);
+
+    for (let i = 0; i < usable.length; i++) {
+      const model = usable[i]!;
+      const o = i * GALAXY_MODEL_FLOATS;
+      data[o + 0] = model.x;
+      data[o + 1] = model.y;
+      data[o + 2] = model.z;
+      data[o + 3] = model.radiusAU;
+      data[o + 4] = model.right[0];
+      data[o + 5] = model.right[1];
+      data[o + 6] = model.right[2];
+      data[o + 7] = model.aspect;
+      data[o + 8] = model.up[0];
+      data[o + 9] = model.up[1];
+      data[o + 10] = model.up[2];
+      data[o + 11] = model.opacity;
+      data[o + 12] = model.fadeNearAU;
+      data[o + 13] = model.fadeFarAU;
+      data[o + 14] = 0;
+      data[o + 15] = 0;
+    }
+
+    if (data.length > 0) {
+      this.ctx.device.queue.writeBuffer(this.galaxyModelBuffer, 0, data as GPUAllowSharedBufferSource);
+    }
+
+    for (const texture of this.galaxyModelTextures) texture.destroy();
+    this.galaxyModelTextures = [];
+    this.galaxyModelDraws = [];
+
+    for (let i = 0; i < usable.length; i++) {
+      const model = usable[i]!;
+      try {
+        const resp = await fetch(model.textureUrl);
+        if (!resp.ok) {
+          console.warn(`Galaxy texture fetch failed for ${model.name}: ${resp.status}`);
+          continue;
+        }
+        const blob = await resp.blob();
+        const bitmap = await createImageBitmap(blob, { colorSpaceConversion: "none" });
+        const width = bitmap.width;
+        const height = bitmap.height;
+        const texture = this.ctx.device.createTexture({
+          label: `galaxy-model-${model.id}`,
+          size: [width, height],
+          format: "rgba8unorm",
+          usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+        });
+        this.ctx.device.queue.copyExternalImageToTexture(
+          { source: bitmap },
+          { texture },
+          [width, height],
+        );
+        bitmap.close();
+
+        const bindGroup = this.ctx.device.createBindGroup({
+          label: `galaxy-model-bg-${model.id}`,
+          layout: this.galaxyModelBGL,
+          entries: [
+            { binding: 0, resource: { buffer: this.cameraBuffer } },
+            { binding: 1, resource: { buffer: this.galaxyModelBuffer } },
+            { binding: 2, resource: texture.createView() },
+            { binding: 3, resource: this.galaxyModelSampler },
+          ],
+        });
+        this.galaxyModelTextures.push(texture);
+        this.galaxyModelDraws.push({ bindGroup, index: i });
+      } catch (e) {
+        console.warn(`Failed to load galaxy texture for ${model.name}:`, e);
+      }
+    }
+
+    console.info(`Loaded ${this.galaxyModelDraws.length} textured galaxy LOD models.`);
+  }
+
   uploadNebulas(nebulas: Float32Array): void {
     this.nebulaCount = nebulas.length / NEBULA_FLOATS;
     this.ctx.device.queue.writeBuffer(this.nebulaBuffer, 0, nebulas as GPUAllowSharedBufferSource);
+  }
+
+  uploadHomunculus(buf: Float32Array): void {
+    this.ctx.device.queue.writeBuffer(this.homunculusBuffer, 0, buf as GPUAllowSharedBufferSource);
+  }
+
+  async loadEtaCarinaTexture(url: string): Promise<void> {
+    try {
+      const resp   = await fetch(url);
+      if (!resp.ok) { console.warn(`Eta Carinae texture fetch failed: ${resp.status}`); return; }
+      const blob   = await resp.blob();
+      const bitmap = await createImageBitmap(blob, { colorSpaceConversion: "none" });
+
+      const texture = this.ctx.device.createTexture({
+        label:  "eta-carinae-tex",
+        size:   [bitmap.width, bitmap.height],
+        format: "rgba8unorm",
+        usage:  GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+      });
+      this.ctx.device.queue.copyExternalImageToTexture(
+        { source: bitmap },
+        { texture },
+        [bitmap.width, bitmap.height],
+      );
+      bitmap.close();
+
+      this.homunculusTexture = texture;
+      this.homunculusBindGroup = this.ctx.device.createBindGroup({
+        label: "homunculus-bg",
+        layout: this.homunculusBGL,
+        entries: [
+          { binding: 0, resource: { buffer: this.cameraBuffer } },
+          { binding: 1, resource: { buffer: this.homunculusBuffer } },
+          { binding: 2, resource: texture.createView() },
+          { binding: 3, resource: this.homunculusSampler },
+        ],
+      });
+      console.info(`Eta Carinae Hubble texture loaded (${bitmap.width}×${bitmap.height})`);
+    } catch (e) {
+      console.warn("Failed to load Eta Carinae texture:", e);
+    }
   }
 
   uploadDust(dust: Float32Array): void {
@@ -774,9 +1024,30 @@ export class Renderer {
   private syncBrightnessUniforms(): void {
     if (!this.starLodBuffer || !this.mwLodBuffer || !this.galaxyLodBuffer) return;
     const actual = this._actualBrightness ? 1 : 0;
+
+    // MW individual stars disappear when camera > 400 kpc (3 200 000 AU).
+    // Transition: fully visible at 360 kpc → invisible at 400 kpc.
+    const camKpc     = this._cameraDistanceFromSun / 8_000;
+    const mwStarFade = Math.max(0, Math.min(1, (400 - camKpc) / 40));
+
+    // MW self (single galaxy blob) fades IN as individual stars fade OUT.
+    // Visible from 360 kpc, full brightness by 440 kpc. Max alpha 0.55.
+    this._mwSelfAlpha = Math.max(0, Math.min(0.55, (camKpc - 360) / 80)) * (this._showGalaxies ? 1 : 0);
+
     this.ctx.device.queue.writeBuffer(this.starLodBuffer, 0, new Float32Array([1, this._cameraDistanceFromSun, 0, 0]));
-    this.ctx.device.queue.writeBuffer(this.mwLodBuffer, 0, new Float32Array([1, actual, 0, 0]));
+    this.ctx.device.queue.writeBuffer(this.mwLodBuffer,  0, new Float32Array([mwStarFade, actual, 0, 0]));
     this.ctx.device.queue.writeBuffer(this.galaxyLodBuffer, 0, new Float32Array([actual, 0, 0, 0]));
+
+    // Update MW self billboard: centred on Sgr A* (galactic centre) not the Sun.
+    // The Sun is 8.5 kpc from the galactic centre; placing the blob at the
+    // galactic centre gives the correct visual anchor for the whole galaxy.
+    // Position = R_gal_to_ecl × (8.5 kpc, 0, 0) × 8000 AU/kpc ≈ (-3 732, -67 586, -6 555) AU
+    if (this.mwSelfBuffer) {
+      this.ctx.device.queue.writeBuffer(
+        this.mwSelfBuffer, 0,
+        new Float32Array([-3732, -67586, -6555, 5.0, 1.0, 0.90, 0.70, this._mwSelfAlpha]),
+      );
+    }
   }
 
   private ensureStarCapacity(count: number): void {
@@ -933,6 +1204,22 @@ export class Renderer {
         this.galaxyOctants, this._galaxyLimit, this.galaxyCount,
         () => pass.draw(6, Math.min(this.galaxyCount, this._galaxyLimit), 0, 0),
       );
+
+      // ── Milky Way as a single galaxy blob (shown when > 10 kpc from origin) ─
+      // Individual MW background stars fade out at 10 kpc; this single billboard
+      // fades in simultaneously so the Milky Way remains visible as one point.
+      if (this._mwSelfAlpha > 0.001) {
+        pass.setBindGroup(0, this.mwSelfBindGroup);
+        pass.draw(6, 1, 0, 0);
+      }
+
+      if (this.galaxyModelCount > 0 && this.galaxyModelDraws.length > 0) {
+        pass.setPipeline(this.galaxyTexturedPipeline);
+        for (const draw of this.galaxyModelDraws) {
+          pass.setBindGroup(0, draw.bindGroup);
+          pass.draw(6, 1, 0, draw.index);
+        }
+      }
     }
 
     // ── Nebulas (inside Milky Way — between galaxies and stars) ───────────
@@ -940,6 +1227,12 @@ export class Renderer {
       pass.setPipeline(this.nebulaPipeline);
       pass.setBindGroup(0, this.nebulaBindGroup);
       pass.draw(6, this.nebulaCount, 0, 0);
+    }
+    // ── Eta Carinae Homunculus — real NASA/ESA Hubble image billboard ─────
+    if (this.homunculusBindGroup !== null) {
+      pass.setPipeline(this.nebulaTexturedPipeline);
+      pass.setBindGroup(0, this.homunculusBindGroup);
+      pass.draw(6, 1, 0, 0);
     }
 
     // ── Milky Way background stars (galaxy-scale LOD layer) ───────────────
@@ -950,20 +1243,21 @@ export class Renderer {
       () => pass.draw(6, Math.min(this.mwStarCount, this._mwStarLimit), 0, 0),
     );
 
-    // ── Static catalog stars (nearby HYG, fades out when camera is far) ───
+    // ── Galactic dust — drawn after MW stars, before nearby catalog stars.
+    // Dust dims the galaxy background; nearby HYG stars render on top.
+    if (this._showDust && this.dustCount > 0) {
+      pass.setPipeline(this.dustPipeline);
+      pass.setBindGroup(0, this.dustBindGroup);
+      pass.draw(6, this.dustCount, 0, 0);
+    }
+
+    // ── Static catalog stars (nearby HYG) — appear in front of dust ───────
     pass.setPipeline(this.starPipeline);
     pass.setBindGroup(0, this.starBindGroup);
     drawOctants(
       this.starOctants, this._starLimit, this.starCount,
       () => pass.draw(6, Math.min(this.starCount, this._starLimit), 0, 0),
     );
-
-    // ── 2D Galactic dust/extinction map overlay ───────────────────────────
-    if (this._showDust && this.dustCount > 0) {
-      pass.setPipeline(this.dustPipeline);
-      pass.setBindGroup(0, this.dustBindGroup);
-      pass.draw(6, this.dustCount, 0, 0);
-    }
 
     // ── Constellation lines between snapped visible-star positions ─────────
     if (this._showConstellations && this.constellationCount > 0) {

@@ -27,7 +27,6 @@ import {
   STAR_FLOATS,
   catalogStarsToRenderBuffer,
   combineStarBuffers,
-  createVisibleStarField,
   loadExoplanetHostStars,
   loadVisibleStarField,
   searchCatalogStars,
@@ -54,6 +53,7 @@ import {
   type GalaxyBuffer,
   type NamedGalaxy,
 } from "./catalog/galaxies";
+import { galaxyModelFocusDistance, galaxyTextureModels } from "./catalog/galaxy-models";
 import { loadMilkywayStars } from "./catalog/milkyway";
 import { loadDustMap } from "./catalog/dust";
 import { NEARBY_STAR_LABELS, SGR_A_STAR_POS, type NearbyStarLabel } from "./catalog/nearby-stars";
@@ -61,15 +61,17 @@ import { sortIntoOctants } from "./gpu/sky-cull";
 import { loadConstellationLines, type ConstellationLabel } from "./catalog/constellations";
 import {
   buildNebulaBuffer,
+  buildHomunculusBuffer,
   nebulaPositions,
   NEB_COLOR,
+  HOMUNCULUS_NEBULA,
   type NebulaDet,
 } from "./catalog/nebulas";
 import { BackendUnavailableError, backendAssetUrl, backendFetch, readBackendJson } from "./services/backend";
 
 const MAX_BODIES = 1024;
 const MAX_CATALOG_STARS  = DEFAULT_VISIBLE_STAR_COUNT + 8_000;
-const MAX_CATALOG_GALAXIES = 100_000;
+const MAX_CATALOG_GALAXIES = 200_000;
 const MAX_STEPS  = 2000;
 const KM_PER_AU = 149_597_870.7;
 const SOLAR_MASS_KG = 1.98847e30;
@@ -239,13 +241,13 @@ function hideLoading() {
 }
 
 function horizonsSourceLabel(result: HorizonsResult, dateStr: string): string {
-  const source = result.source === "backend-network"
-    ? "NASA JPL backend live"
-    : result.source === "backend-stale"
-      ? "NASA JPL backend stale cache"
-      : result.source === "public-cache"
-        ? "NASA JPL public cache"
-        : "NASA JPL backend cache";
+  const source = result.source === "jpl-network"
+    ? "NASA JPL Horizons"
+    : result.source === "file-cache"
+      ? "NASA JPL file cache"
+      : result.source === "stale-cache"
+        ? `NASA JPL stale cache (${result.snapshot.date})`
+        : "NASA JPL browser cache";
   const fallback = result.warnings.length ? ` (${result.warnings.length} fallback)` : "";
   return `${source}${fallback} · SSB frame · ${dateStr}`;
 }
@@ -643,24 +645,31 @@ async function main(): Promise<void> {
   const hud    = new HUD();
   const scaleBar = new ScaleBar();
   const labels = new LabelManager();
-  let visibleStarBuffer: StarBuffer = createVisibleStarField();
+  // Start with empty buffers — real data loads from binary within milliseconds.
+  // Avoid the 100k-star placeholder allocation that can fail on low-memory devices.
+  let visibleStarBuffer: StarBuffer = new Float32Array(0);
   let exoplanetHostBuffer: StarBuffer = new Float32Array(0);
   let exoplanetHosts: CatalogStar[] = [];
   let catalogStatus = "Loading exoplanet host catalog...";
 
-  function uploadCatalogStars(): void {
-    renderer.uploadStars(combineStarBuffers(visibleStarBuffer, exoplanetHostBuffer));
+  // Single shared function that builds the combined buffer ONCE per update and
+  // uploads + sorts in one pass.  Avoids creating multiple large allocations.
+  function refreshStarCatalog(): void {
+    try {
+      const combined = combineStarBuffers(visibleStarBuffer, exoplanetHostBuffer);
+      renderer.setStarOctants(sortIntoOctants(combined));
+      renderer.uploadStars(combined);
+    } catch (e) {
+      console.warn("Star catalog upload failed (low memory?):", e);
+    }
   }
 
-  uploadCatalogStars();
+  // No initial upload — both buffers are empty and the GPU already has a zeroed
+  // star buffer from init().  Stars appear as soon as the binary is fetched.
 
   void loadVisibleStarField().then(({ data, source }) => {
     visibleStarBuffer = data;
-    uploadCatalogStars();
-    // Sort the HYG star buffer into octants only for even Settings LOD caps.
-    const combined = combineStarBuffers(visibleStarBuffer, exoplanetHostBuffer);
-    renderer.setStarOctants(sortIntoOctants(combined));
-    renderer.uploadStars(combined);
+    refreshStarCatalog();
     console.info(`Loaded ${data.length / STAR_FLOATS} visible stars from ${source}.`);
   }).catch(err => {
     console.warn("Visible star catalog failed:", err);
@@ -670,7 +679,7 @@ async function main(): Promise<void> {
     exoplanetHosts = stars;
     catalogStatus = `${stars.length.toLocaleString()} host stars loaded`;
     exoplanetHostBuffer = catalogStarsToRenderBuffer(stars);
-    uploadCatalogStars();
+    refreshStarCatalog();
     console.info(`Loaded ${stars.length} exoplanet host stars from ${source}.`);
   }).catch(err => {
     catalogStatus = "Star catalog unavailable";
@@ -690,6 +699,7 @@ async function main(): Promise<void> {
   }).catch(err => {
     console.warn("Galaxy catalog failed:", err);
   });
+  void renderer.loadGalaxyTextureModels(galaxyTextureModels());
 
   // ── Milky Way background star catalog (galaxy-scale LOD layer) ───────────
   void loadMilkywayStars().then(({ data, source }) => {
@@ -713,6 +723,13 @@ async function main(): Promise<void> {
   renderer.uploadNebulas(nebulaBuf);
   const nebulaDets: NebulaDet[] = nebulaPositions();
   console.info(`Loaded ${nebulaDets.length} Milky Way nebulas`);
+
+  // ── Eta Carinae Homunculus Nebula — real NASA/ESA Hubble image ────────────
+  const { buf: homunculusBuf, x: hx, y: hy, z: hz } = buildHomunculusBuffer();
+  renderer.uploadHomunculus(homunculusBuf);
+  // Also expose it in the context menu via nebulaDets
+  nebulaDets.push({ name: HOMUNCULUS_NEBULA.name, x: hx, y: hy, z: hz, type: HOMUNCULUS_NEBULA.type });
+  void renderer.loadEtaCarinaTexture("/textures/nebula-eta-carinae.jpg");
 
   // ── Constellation lines snapped to real visible-star positions ───────────
   let constellationLabels: ConstellationLabel[] = [];
@@ -882,9 +899,24 @@ async function main(): Promise<void> {
         "milky way center".includes(q)
       ) ? [SGR_A_SEARCH_RESULT] : [];
       const starHits = searchCatalogStars(exoplanetHosts, query, 5);
+      const galaxyHits = searchGalaxies(galaxyNames, galaxyBuffer, query, 5).map(r => {
+        const label = LOCAL_GROUP_GALAXY_LABELS.find(g => g.name === r.name);
+        const focusDistance = label
+          ? galaxyModelFocusDistance(label.id) ?? label.focusDistance
+          : Math.min(10_000, Math.max(500, Math.hypot(r.x, r.y, r.z) * 0.02));
+        return {
+          id: `galaxy:${label?.id ?? r.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+          label: r.name,
+          subtitle: galaxyFocusSubtitle(r.dist),
+          x: r.x, y: r.y, z: r.z,
+          focusDistance,
+          color: [0.82, 0.88, 1.00] as [number, number, number],
+        };
+      });
       const exoHits  = searchExoplanets(query, getStarWorldPos, simYears, 5);
       return [
         ...blackHoleHits,
+        ...galaxyHits,
         ...starHits,
         // Map exoplanet results to StarSearchResult shape
         ...exoHits.map(r => ({
@@ -902,6 +934,8 @@ async function main(): Promise<void> {
     // If the id encodes an exoplanet, load that star's planet bodies.
     onCatalogItemClick: (id: string) => {
       if (id === "blackhole:sgr-a") {
+        setExoplanetBodies(null);
+      } else if (id.startsWith("galaxy:")) {
         setExoplanetBodies(null);
       } else if (id.startsWith("exo:")) {
         const hostName = id.split(":")[1] ?? null;
@@ -964,7 +998,7 @@ async function main(): Promise<void> {
     nav.clearFocusedBody();
     renderer.uploadSelectedStar(null);
     setFocusTitle(galaxy.name, galaxyFocusSubtitle(galaxy.dist), "galaxy");
-    camera.travelTo(galaxy.x, galaxy.y, galaxy.z, galaxy.focusDistance);
+    camera.travelTo(galaxy.x, galaxy.y, galaxy.z, galaxyModelFocusDistance(galaxy.id) ?? galaxy.focusDistance);
     renderer.uploadBodies(bodies);
   }
 
@@ -1116,9 +1150,13 @@ async function main(): Promise<void> {
       nearbyGalaxies,
       (gal) => {
         const r = Math.sqrt(gal.x**2 + gal.y**2 + gal.z**2);
+        const label = LOCAL_GROUP_GALAXY_LABELS.find(item => item.name === gal.name);
         nav.clearFocusedBody();
         setFocusTitle(gal.name, galaxyFocusSubtitle(gal.dist), "galaxy");
-        camera.travelTo(gal.x, gal.y, gal.z, Math.min(10_000, Math.max(500, r * 0.02)));
+        camera.travelTo(
+          gal.x, gal.y, gal.z,
+          label ? galaxyModelFocusDistance(label.id) ?? label.focusDistance : Math.min(10_000, Math.max(500, r * 0.02)),
+        );
       },
       nearbyNebulas,
       (neb) => {
@@ -1430,7 +1468,7 @@ async function main(): Promise<void> {
     renderer.updateLOD(eyeDistFromSun);
 
     const sel = nav.selectedCatalogStar;
-    renderer.uploadSelectedStar(sel ? [sel.x, sel.y, sel.z] : null);
+    renderer.uploadSelectedStar(sel && !sel.id.startsWith("galaxy:") ? [sel.x, sel.y, sel.z] : null);
     const focusedMembers = nav.focusedSystemMembers();
     const bodyVisibility = buildBodyRenderVisibility(bodies, camUniforms.viewProj, focusedMembers);
     renderer.uploadBodies(bodies, bodyVisibility);

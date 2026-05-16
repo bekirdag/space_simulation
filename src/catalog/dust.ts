@@ -70,35 +70,57 @@ export async function loadDustMap(): Promise<DustMapBuffer> {
 }
 
 function createFallbackDustMap(): Float32Array {
-  const lonSteps = 160;
-  const latSteps = 48;
+  // Distribute dust at MULTIPLE distances along each line of sight so it
+  // fills the galactic disk volumetrically instead of forming a single ring.
+  // Radii are in the MW star scale (8 000 AU/kpc): 1 kpc → 8 000 AU.
+  // Dust is denser in the inner disk and drops off exponentially outward.
+  const KPC_TO_AU = 8_000;
+  const lonSteps  = 120;
+  const latSteps  = 32;
+  // Distance shells: 0.5, 1, 2, 3.5, 6, 10 kpc from Sun
+  const shells: { kpc: number; weight: number }[] = [
+    { kpc: 0.5,  weight: 0.55 },
+    { kpc: 1.0,  weight: 0.80 },
+    { kpc: 2.0,  weight: 1.00 },
+    { kpc: 3.5,  weight: 0.85 },
+    { kpc: 6.0,  weight: 0.65 },
+    { kpc: 10.0, weight: 0.40 },
+  ];
+
   const cells: number[] = [];
-  const radius = DUST_SHELL_RADIUS_AU;
-  const baseSize = radius * (Math.PI / lonSteps) * 2.2;
 
-  for (let j = 0; j < latSteps; j++) {
-    const t = (j + 0.5) / latSteps;
-    const lat = (t - 0.5) * Math.PI;
-    const plane = Math.exp(-Math.pow(lat / 0.16, 2));
-    if (plane < 0.025) continue;
+  for (const { kpc, weight } of shells) {
+    const radius   = kpc * KPC_TO_AU;
+    const baseSize = radius * (Math.PI / lonSteps) * 2.4;
 
-    for (let i = 0; i < lonSteps; i++) {
-      const lon = ((i + 0.5) / lonSteps) * Math.PI * 2;
-      const arm = 0.55
-        + 0.25 * Math.sin(lon * 2.0 + Math.sin(lon * 3.0))
-        + 0.20 * Math.sin(lon * 5.0 + lat * 9.0);
-      const density = Math.max(0, Math.min(1, plane * arm));
-      if (density < 0.08) continue;
+    for (let j = 0; j < latSteps; j++) {
+      const t   = (j + 0.5) / latSteps;
+      const lat = (t - 0.5) * Math.PI;
+      // Disk scale height shrinks with distance (outer disk is thinner)
+      const hz    = 0.12 + 0.04 * (kpc / 10);
+      const plane = Math.exp(-Math.pow(lat / hz, 2)) * weight;
+      if (plane < 0.03) continue;
 
-      const [x, y, z] = galacticDirectionToEcliptic(lon, lat, radius);
-      const alpha = 0.010 + density * 0.075;
-      cells.push(
-        x, y, z, baseSize * (0.8 + density * 0.9),
-        0.66 + density * 0.16,
-        0.34 + density * 0.10,
-        0.16 + density * 0.05,
-        alpha,
-      );
+      for (let i = 0; i < lonSteps; i++) {
+        const lon = ((i + 0.5) / lonSteps) * Math.PI * 2;
+        // Spiral arm modulation + inner bulge concentration
+        const arm = 0.50
+          + 0.28 * Math.sin(lon * 2.0 + Math.sin(lon * 3.0))
+          + 0.22 * Math.sin(lon * 5.0 + lat * 9.0);
+        const density = Math.max(0, Math.min(1, plane * arm));
+        if (density < 0.06) continue;
+
+        const [x, y, z] = galacticDirectionToEcliptic(lon, lat, radius);
+        // Alpha is lower for distant shells (more diffuse) and higher nearby
+        const alpha = (0.008 + density * 0.055) * (1.0 - kpc / 14);
+        cells.push(
+          x, y, z, baseSize * (0.7 + density * 0.8),
+          0.62 + density * 0.18,
+          0.30 + density * 0.12,
+          0.12 + density * 0.06,
+          alpha,
+        );
+      }
     }
   }
 
