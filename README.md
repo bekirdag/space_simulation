@@ -27,8 +27,8 @@ help from Claude and Codex 5.5.
   These stars can be searched and focused without being listed in the right nav.
 - 200,000 Milky Way background stars and a 100,000-entry galaxy layer.
 - NASA SVS constellation lines and titles.
-- High-resolution visual Galactic dust map layer derived from NASA/GSFC LAMBDA
-  data and anchored so its Galactic center aligns with Sagittarius A*.
+- Procedural Galactic dust layer with tens of thousands of low-opacity 3D
+  cloud meshes distributed through the Milky Way disk and spiral arms.
 - Visual Sagittarius A* black-hole lensing approximation using the physical
   event-horizon radius derived from a 4.3-million-solar-mass black hole.
 - Camera-distance adjusted apparent brightness mode for bodies, Milky Way
@@ -113,11 +113,6 @@ after install:
 - `public/cache/nasa/constellation_figures_4k.tif` and
   `public/cache/nasa/constellations.meta.json`: NASA SVS Deep Star Maps 2020
   source reference for the constellation layer.
-- `public/data/dust-map-mf2015.bin`: high-resolution visual dust overlay
-  derived from NASA/GSFC LAMBDA Meisner & Finkbeiner 2015 data. Its all-sky
-  Galactic coordinate center is placed at the simulation's Sagittarius A*
-  position using the same 8,000 AU/kpc Milky Way scale as the star field.
-
 Horizons data is loaded through the local backend at `/api/horizons`. The
 backend serves `cache/nasa/horizons/<date>.json` first, seeds that runtime cache
 from committed `public/cache/horizons/<date>.json` files when available, and
@@ -144,10 +139,9 @@ astrophysical solver.
 - Sagittarius A* uses a physical event-horizon radius of about 0.085 AU
   derived from a 4.3-million-solar-mass black hole. The lensing/accretion
   visuals are still illustrative and are not a relativistic ray tracer.
-- Galactic dust currently affects the visual overlay only; it does not change
-  star brightness or physics. The NASA/GSFC LAMBDA source is a 2D total
-  line-of-sight map, so CosmosMap renders it as a fixed Galactic sky shell,
-  not as a true 3D dust-volume model.
+- Galactic dust currently affects visuals only; it does not change star
+  brightness or physics. The active dust layer is procedural and uses faceted
+  low-poly cloud meshes, not calibrated 3D extinction data.
 
 ## Culling And LOD
 
@@ -174,14 +168,6 @@ Refresh the HYG visible star render buffer:
 
 ```sh
 npm run catalog:stars
-```
-
-Refresh the NASA/GSFC LAMBDA dust overlay. The default build uses a 512x256
-runtime grid; set `DUST_GRID_SCALE=1` for the older 256x128 asset or up to
-`DUST_GRID_SCALE=4` for a denser local experiment.
-
-```sh
-npm run catalog:dust
 ```
 
 Refresh the NASA/JPL Horizons cache for today:

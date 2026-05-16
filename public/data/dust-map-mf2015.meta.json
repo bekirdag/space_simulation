@@ -1,8 +1,0 @@
-{
-  "sourceName": "NASA/IPAC IRSA SFD98 reddening — galaxy-centred, no procedural arms",
-  "description": "936 real SFD98 sightlines from IRSA. Positions sampled galactocentrically (same method as MW star catalog). Dust density at each position from real SFD lookup — spiral structure from real data, not sin waves.",
-  "generated": "2026-05-15T16:01:31.428Z",
-  "sfdSightlines": 936,
-  "cellCount": 15000,
-  "scaleAUperKpc": 8000
-}

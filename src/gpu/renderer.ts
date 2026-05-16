@@ -27,6 +27,7 @@ import { type CameraUniforms } from "../scene/camera";
 const CAMERA_BYTES = 112;
 const BLACK_HOLE_BYTES = 32;
 const TEXTURED_GALAXY_MODEL_CAPACITY = 32;
+const DUST_MESH_VERTEX_COUNT = 60;
 
 const KM_PER_AU = 149_597_870.7;
 const SUN_APPARENT_MAG = -26.74;
@@ -286,7 +287,7 @@ export class Renderer {
 
     this.dustCapacity = 1;
     this.dustBuffer = device.createBuffer({
-      label: "dust-map-storage",
+      label: "procedural-dust-cloud-storage",
       size: DUST_FLOATS * 4,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
@@ -604,7 +605,7 @@ export class Renderer {
       primitive: { topology: "triangle-list" },
     });
 
-    // ── Galactic dust map pipeline (premultiplied alpha overlay) ───────────
+    // ── Procedural galactic dust cloud pipeline ────────────────────────────
     this.dustBGL = device.createBindGroupLayout({
       label: "dust-bgl",
       entries: [
@@ -628,13 +629,11 @@ export class Renderer {
         module: dustShader, entryPoint: "fs_main",
         targets: [{
           format,
-          // Multiply blend: output_rgb = dust_transmission × background_rgb
-          // Dust shader outputs RGB transmission factors (1=transparent, <1=absorbing).
-          // Background stars are darkened+reddened but NOT replaced — stars drawn
-          // AFTER dust with additive blend punch through at full brightness.
+          // Standard translucent over blend. Each faceted dust cloud is capped
+          // at 10% alpha; overlapping clouds naturally darken dense regions.
           blend: {
-            color: { srcFactor: "dst",  dstFactor: "zero", operation: "add" },
-            alpha: { srcFactor: "zero", dstFactor: "one",  operation: "add" },
+            color: { srcFactor: "src-alpha", dstFactor: "one-minus-src-alpha", operation: "add" },
+            alpha: { srcFactor: "one",       dstFactor: "one-minus-src-alpha", operation: "add" },
           },
         }],
       },
@@ -1079,7 +1078,7 @@ export class Renderer {
     this.dustCapacity = Math.ceil(count * 1.10);
     this.dustBuffer.destroy();
     this.dustBuffer = device.createBuffer({
-      label: "dust-map-storage",
+      label: "procedural-dust-cloud-storage",
       size: this.dustCapacity * DUST_FLOATS * 4,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
@@ -1243,12 +1242,12 @@ export class Renderer {
       () => pass.draw(6, Math.min(this.mwStarCount, this._mwStarLimit), 0, 0),
     );
 
-    // ── Galactic dust — drawn after MW stars, before nearby catalog stars.
+    // ── Procedural galactic dust — drawn after MW stars, before nearby catalog stars.
     // Dust dims the galaxy background; nearby HYG stars render on top.
     if (this._showDust && this.dustCount > 0) {
       pass.setPipeline(this.dustPipeline);
       pass.setBindGroup(0, this.dustBindGroup);
-      pass.draw(6, this.dustCount, 0, 0);
+      pass.draw(DUST_MESH_VERTEX_COUNT, this.dustCount, 0, 0);
     }
 
     // ── Static catalog stars (nearby HYG) — appear in front of dust ───────

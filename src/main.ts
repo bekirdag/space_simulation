@@ -55,7 +55,7 @@ import {
 } from "./catalog/galaxies";
 import { galaxyModelFocusDistance, galaxyTextureModels } from "./catalog/galaxy-models";
 import { loadMilkywayStars } from "./catalog/milkyway";
-import { loadDustMap } from "./catalog/dust";
+import { buildProceduralDustClouds, DUST_FLOATS } from "./catalog/dust";
 import { NEARBY_STAR_LABELS, SGR_A_STAR_POS, type NearbyStarLabel } from "./catalog/nearby-stars";
 import { sortIntoOctants } from "./gpu/sky-cull";
 import { loadConstellationLines, type ConstellationLabel } from "./catalog/constellations";
@@ -590,7 +590,7 @@ async function main(): Promise<void> {
     const showLabels = (document.getElementById("set-labels") as HTMLInputElement).checked;
     const showTrails = (document.getElementById("set-trails") as HTMLInputElement).checked;
     showConstellations = (document.getElementById("set-constellations") as HTMLInputElement).checked;
-    const showDust = (document.getElementById("set-dust-maps") as HTMLInputElement).checked;
+    const showDust = (document.getElementById("set-dust-clouds") as HTMLInputElement).checked;
     const showBlackHole = (document.getElementById("set-black-hole") as HTMLInputElement).checked;
     const actualBodyBrightness = (document.getElementById("set-body-brightness") as HTMLInputElement).checked;
     showGalaxies    = (document.getElementById("set-galaxies") as HTMLInputElement).checked;
@@ -710,13 +710,10 @@ async function main(): Promise<void> {
     console.warn("Milky Way star catalog failed:", err);
   });
 
-  // ── Galactic dust map (2D all-sky line-of-sight reddening layer) ──────────
-  void loadDustMap().then(({ data, source }) => {
-    renderer.uploadDust(data);
-    console.info(`Loaded ${data.length / 8} dust map cells from ${source}`);
-  }).catch(err => {
-    console.warn("Galactic dust map failed:", err);
-  });
+  // ── Procedural Milky Way dust clouds (render-only galaxy layer) ──────────
+  const dustClouds = buildProceduralDustClouds();
+  renderer.uploadDust(dustClouds.data);
+  console.info(`Loaded ${dustClouds.data.length / DUST_FLOATS} dust clouds from ${dustClouds.source}`);
 
   // ── Nebula catalog (Milky Way gas clouds) ─────────────────────────────────
   const nebulaBuf = buildNebulaBuffer();

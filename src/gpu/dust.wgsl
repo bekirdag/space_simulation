@@ -1,8 +1,8 @@
-// Galactic dust map renderer.
+// Procedural Milky Way dust cloud renderer.
 //
-// Buffer layout per cell (32 bytes):
-//   vec4 pos_size:    xyz = world AU position on the Galactic sky shell, w = billboard radius AU
-//   vec4 color_alpha: rgb = dust colour, w = base alpha
+// Each instance is a low-poly faceted ellipsoid. The mesh is generated in the
+// vertex shader from an icosahedron and a stable shape id, so many clouds can
+// share the same draw call without texture lookups or blur-like impostors.
 
 struct Camera {
   viewProj:    mat4x4<f32>,
@@ -11,104 +11,128 @@ struct Camera {
   eyeAndFlags: vec4<f32>,
 };
 
-struct DustCell {
-  pos_size:    vec4<f32>,
-  color_alpha: vec4<f32>,
+struct DustCloud {
+  center_radius: vec4<f32>,
+  color_alpha:   vec4<f32>,
+  axis_x:        vec4<f32>,
+  axis_y:        vec4<f32>,
+  axis_z:        vec4<f32>,
+  shape:         vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform>       camera: Camera;
-@group(0) @binding(1) var<storage, read> dust:   array<DustCell>;
+@group(0) @binding(1) var<storage, read> dust:   array<DustCloud>;
 
 struct VertexOut {
   @builtin(position) clip_pos: vec4<f32>,
-  @location(0)       uv:       vec2<f32>,
-  @location(1)       color:    vec3<f32>,
-  @location(2)       alpha:    f32,
-  @location(3)       seed:     f32,
+  @location(0)       color:    vec3<f32>,
+  @location(1)       alpha:    f32,
+  @location(2)       shade:    f32,
 };
 
-var<private> quad: array<vec2<f32>, 6> = array<vec2<f32>, 6>(
-  vec2(-1.0,-1.0), vec2(1.0,-1.0), vec2(-1.0,1.0),
-  vec2(-1.0, 1.0), vec2(1.0,-1.0), vec2( 1.0,1.0),
+const X: f32 = 0.5257311121;
+const Z: f32 = 0.8506508084;
+
+var<private> icoVerts: array<vec3<f32>, 12> = array<vec3<f32>, 12>(
+  vec3<f32>(-X, 0.0,  Z), vec3<f32>( X, 0.0,  Z),
+  vec3<f32>(-X, 0.0, -Z), vec3<f32>( X, 0.0, -Z),
+  vec3<f32>(0.0,  Z,  X), vec3<f32>(0.0,  Z, -X),
+  vec3<f32>(0.0, -Z,  X), vec3<f32>(0.0, -Z, -X),
+  vec3<f32>( Z,  X, 0.0), vec3<f32>(-Z,  X, 0.0),
+  vec3<f32>( Z, -X, 0.0), vec3<f32>(-Z, -X, 0.0),
 );
+
+var<private> icoFaces: array<u32, 60> = array<u32, 60>(
+   0u,  4u,  1u,   0u,  9u,  4u,   9u,  5u,  4u,   4u,  5u,  8u,
+   4u,  8u,  1u,   8u, 10u,  1u,   8u,  3u, 10u,   5u,  3u,  8u,
+   5u,  2u,  3u,   2u,  7u,  3u,   7u, 10u,  3u,   7u,  6u, 10u,
+   7u, 11u,  6u,  11u,  0u,  6u,   0u,  1u,  6u,   6u,  1u, 10u,
+   9u,  0u, 11u,   9u, 11u,  2u,   9u,  2u,  5u,   7u,  2u, 11u,
+);
+
+fn hash11(n: f32) -> f32 {
+  return fract(sin(n) * 43758.5453123);
+}
+
+fn shapeLobe(shapeId: f32, vertexId: u32, roughness: f32, dir: vec3<f32>) -> f32 {
+  let v = f32(vertexId);
+  let a = hash11(shapeId * 17.17 + v * 23.31);
+  let b = hash11(shapeId * 31.71 + dot(dir, vec3<f32>(91.7, 37.3, 13.1)));
+  let c = hash11(shapeId * 7.93 + dir.x * 53.0 + dir.y * 97.0 + dir.z * 29.0);
+  return max(0.42, 1.0 + ((a - 0.5) * 0.95 + (b - 0.5) * 0.45 + (c - 0.5) * 0.30) * roughness);
+}
+
+fn hiddenVertex() -> VertexOut {
+  var out: VertexOut;
+  out.clip_pos = vec4<f32>(10.0, 10.0, 10.0, 1.0);
+  out.color = vec3<f32>(0.0);
+  out.alpha = 0.0;
+  out.shade = 0.0;
+  return out;
+}
 
 @vertex
 fn vs_main(
   @builtin(vertex_index)   vi:  u32,
   @builtin(instance_index) idx: u32,
 ) -> VertexOut {
-  let cell = dust[idx];
-  let uv = quad[vi];
-  let center = cell.pos_size.xyz;
-  let radius = cell.pos_size.w;
-  let clip_c = camera.viewProj * vec4(center, 1.0);
+  let cloud = dust[idx];
+  let center = cloud.center_radius.xyz;
+  let radius = cloud.center_radius.w;
+  let alpha = cloud.color_alpha.w;
 
-  var out: VertexOut;
-  out.uv = uv;
-  out.color = cell.color_alpha.xyz;
-  out.alpha = cell.color_alpha.w;
-  out.seed = fract(f32(idx) * 0.61803398875);
+  if radius <= 0.0 || alpha <= 0.0001 {
+    return hiddenVertex();
+  }
 
-  if radius <= 0.0 || out.alpha <= 0.0001 || clip_c.w <= 0.0 {
-    out.clip_pos = vec4(10.0, 10.0, 10.0, 1.0);
-    return out;
+  let clip_c = camera.viewProj * vec4<f32>(center, 1.0);
+  let boundRadius = radius * cloud.shape.z * 1.65;
+
+  if clip_c.w <= 0.0 {
+    return hiddenVertex();
   }
 
   let ndcX = clip_c.x / clip_c.w;
   let ndcY = clip_c.y / clip_c.w;
-  let pxSize = radius * camera.upAndFocal.w / clip_c.w;
-  if ndcX - pxSize > 1.20 || ndcX + pxSize < -1.20 ||
-     ndcY - pxSize > 1.20 || ndcY + pxSize < -1.20 {
-    out.clip_pos = vec4(10.0, 10.0, 10.0, 1.0);
-    return out;
+  let ndcRadius = boundRadius * camera.upAndFocal.w / clip_c.w;
+  if ndcRadius < 0.00035 ||
+     ndcX - ndcRadius > 1.20 || ndcX + ndcRadius < -1.20 ||
+     ndcY - ndcRadius > 1.20 || ndcY + ndcRadius < -1.20 {
+    return hiddenVertex();
   }
 
-  let world_pos = center
-    + uv.x * camera.rightAndMNR.xyz * radius
-    + uv.y * camera.upAndFocal.xyz  * radius;
+  let faceVertex = icoFaces[vi % 60u];
+  let dir = icoVerts[faceVertex];
+  let lobe = shapeLobe(cloud.shape.x, faceVertex, cloud.shape.y, dir);
+  let local = dir * lobe;
 
-  out.clip_pos = camera.viewProj * vec4(world_pos, 1.0);
+  let worldOffset =
+      cloud.axis_x.xyz * (local.x * radius * cloud.axis_x.w)
+    + cloud.axis_y.xyz * (local.y * radius * cloud.axis_y.w)
+    + cloud.axis_z.xyz * (local.z * radius * cloud.axis_z.w);
+  let worldPos = center + worldOffset;
+
+  let normal = normalize(worldOffset);
+  let lightDir = normalize(vec3<f32>(-0.33, 0.44, 0.83));
+  let viewDir = normalize(camera.eyeAndFlags.xyz - worldPos);
+  let light = max(0.0, dot(normal, lightDir));
+  let rim = 1.0 - abs(dot(normal, viewDir));
+  let shapeDark = hash11(cloud.shape.x * 19.19 + f32(faceVertex) * 5.13);
+
+  var out: VertexOut;
+  out.clip_pos = camera.viewProj * vec4<f32>(worldPos, 1.0);
+  out.color = cloud.color_alpha.xyz;
+  out.alpha = min(0.10, alpha);
+  out.shade = clamp(0.58 + light * 0.25 + rim * 0.10 - shapeDark * 0.10, 0.42, 0.96);
   return out;
-}
-
-fn hash2(p: vec2<f32>) -> f32 {
-  let h = dot(p, vec2<f32>(127.1, 311.7));
-  return fract(sin(h) * 43758.5453123);
-}
-
-fn noise2(p: vec2<f32>) -> f32 {
-  let i = floor(p);
-  let f = fract(p);
-  let u = f * f * (3.0 - 2.0 * f);
-  return mix(
-    mix(hash2(i), hash2(i + vec2<f32>(1.0, 0.0)), u.x),
-    mix(hash2(i + vec2<f32>(0.0, 1.0)), hash2(i + vec2<f32>(1.0, 1.0)), u.x),
-    u.y,
-  );
 }
 
 @fragment
 fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
-  let d = length(in.uv);
-  if d > 1.0 { discard; }
+  if in.alpha <= 0.0001 {
+    discard;
+  }
 
-  let p = in.uv * 3.2 + vec2<f32>(in.seed * 11.7, in.seed * 5.3);
-  let wisps = noise2(p) * 0.55 + noise2(p * 2.1 + 3.7) * 0.30 + noise2(p * 4.2 + 1.9) * 0.15;
-  let softEdge = 1.0 - smoothstep(0.30, 1.0, d);
-  // Purely filamentary — NO solid veil baseline.  This keeps the clouds
-  // wispy so stars show through the gaps between filaments.
-  let filament = smoothstep(0.30, 0.88, wisps) * softEdge;
-  if filament < 0.04 { discard; }
-
-  // Multiply blend: output is a TRANSMISSION factor, not an additive colour.
-  // 1.0 = fully transparent (no dust), 0.0 = fully opaque (max absorption).
-  // Dust absorbs blue more than red (interstellar reddening, R_V ≈ 3.1).
-  let absorb = clamp(filament * in.alpha, 0.0, 0.92);
-  let trans = vec3<f32>(
-    1.0 - absorb * 0.72,   // red:   least absorbed
-    1.0 - absorb * 0.88,   // green: moderate
-    1.0 - absorb * 1.00,   // blue:  most absorbed  → reddening effect
-  );
-  // Stars drawn before dust are dimmed+reddened; stars drawn after are unaffected.
-  return vec4<f32>(clamp(trans, vec3<f32>(0.0), vec3<f32>(1.0)), 1.0);
+  let color = clamp(in.color * in.shade, vec3<f32>(0.0), vec3<f32>(0.58));
+  return vec4<f32>(color, in.alpha);
 }
