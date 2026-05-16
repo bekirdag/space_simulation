@@ -16,7 +16,7 @@ interface PrimitiveData {
   vertexCount: number;
 }
 
-const MAX_TRIANGLES = 38_000;
+const MAX_TRIANGLES = 160_000;
 let gltfLoader: GLTFLoader | null = null;
 
 function getGltfLoader(): GLTFLoader {

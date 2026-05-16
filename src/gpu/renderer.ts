@@ -768,11 +768,7 @@ export class Renderer {
         }],
       },
       primitive: { topology: "triangle-list" },
-      depthStencil: {
-        format: MODEL_DEPTH_FORMAT,
-        depthWriteEnabled: true,
-        depthCompare: "less",
-      },
+      depthStencil: SCENE_DEPTH_DISABLED,
     });
 
     // ── Procedural galactic dust volume pipeline ───────────────────────────

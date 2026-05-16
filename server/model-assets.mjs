@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { createReadStream, createWriteStream } from "node:fs";
-import { mkdir, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { mkdir, open, rename, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
@@ -238,6 +238,44 @@ async function extractArchiveMember(archivePath, member, outputPath) {
   ]);
 }
 
+async function readHeader(filePath, byteLength) {
+  const handle = await open(filePath, "r");
+  try {
+    const buffer = Buffer.alloc(byteLength);
+    const { bytesRead } = await handle.read(buffer, 0, byteLength, 0);
+    return buffer.subarray(0, bytesRead);
+  } finally {
+    await handle.close();
+  }
+}
+
+async function isValidModelFile(asset, filePath) {
+  const info = await stat(filePath);
+  if (!info.isFile() || info.size <= 0) return false;
+
+  if (asset.contentType === GLB_CONTENT_TYPE) {
+    const header = await readHeader(filePath, 12);
+    if (header.length < 12 || header.subarray(0, 4).toString("ascii") !== "glTF") return false;
+    const declaredLength = header.readUInt32LE(8);
+    return declaredLength === info.size;
+  }
+
+  if (asset.contentType === STL_CONTENT_TYPE) {
+    const header = await readHeader(filePath, 84);
+    if (header.length < 84) return false;
+    const triangles = header.readUInt32LE(80);
+    return 84 + triangles * 50 === info.size;
+  }
+
+  return true;
+}
+
+async function assertValidModelFile(asset, filePath) {
+  if (!(await isValidModelFile(asset, filePath))) {
+    throw new Error("downloaded model failed format validation");
+  }
+}
+
 async function downloadToCache(asset, cachePath) {
   await mkdir(path.dirname(cachePath), { recursive: true });
   const tempPath = `${cachePath}.${process.pid}.${Date.now()}.tmp`;
@@ -258,11 +296,13 @@ async function downloadToCache(asset, cachePath) {
       await downloadUpstreamToFile(asset, tempPath);
     }
 
+    await assertValidModelFile(asset, tempPath);
     await rename(tempPath, cachePath);
   } catch (err) {
     await unlink(tempPath).catch(() => {});
-    await unlink(tempArchivePath).catch(() => {});
     throw err;
+  } finally {
+    await unlink(tempArchivePath).catch(() => {});
   }
 }
 
@@ -270,7 +310,10 @@ async function ensureCached(asset) {
   const cachePath = path.join(CACHE_ROOT, asset.filename);
   try {
     const info = await stat(cachePath);
-    if (info.isFile() && info.size > 0) return { cachePath, size: info.size, cacheState: "hit" };
+    if (info.isFile() && info.size > 0 && await isValidModelFile(asset, cachePath)) {
+      return { cachePath, size: info.size, cacheState: "hit" };
+    }
+    await unlink(cachePath).catch(() => {});
   } catch (err) {
     if (!err || err.code !== "ENOENT") throw err;
   }
