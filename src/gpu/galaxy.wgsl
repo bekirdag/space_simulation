@@ -129,7 +129,14 @@ fn vs_main(
   // Size also scales with the boosted brightness so galaxies look like proper
   // blobs (not just single pixels) when the whole catalog is visible.
   let sizeMult = g.pos_size.w * select(1.0, clamp(0.55 + boostedBr * 2.5, 0.55, 2.0), actual);
-  let pxRadius = camera.rightAndMNR.w * max(sizeMult * 2.5, 0.8);
+  let catalogRadius = camera.rightAndMNR.w * max(sizeMult * 2.5, 0.8);
+
+  // Catalog-only galaxies do not have physical 3D meshes. When the camera has
+  // intentionally traveled very close to one, expand the billboard so the
+  // clicked galaxy reads as a close-up target instead of remaining a tiny dot.
+  let closeDist = length(center - camera.eyeAndFlags.xyz);
+  let closeFocus = 1.0 - smoothstep(220.0, 900.0, closeDist);
+  let pxRadius = max(catalogRadius, closeFocus * 0.5);
 
   // ── Frustum culling ────────────────────────────────────────────────────────
   // Cull only when the whole billboard is outside the frame plus a small margin.

@@ -5,7 +5,8 @@ import {
 } from "./galaxies";
 
 export const GALAXY_MODEL_FLOATS = 16;
-const GALAXY_MODEL_FOCUS_RADIUS_MULTIPLIER = 1.15;
+const GALAXY_MODEL_FOCUS_RADIUS_MULTIPLIER = 0.55;
+const GALAXY_MODEL_LOD_RADIUS_MULTIPLIER = 1.15;
 
 export interface GalaxyTextureModel {
   id: string;
@@ -195,6 +196,7 @@ export function galaxyTextureModels(): GalaxyTextureModel[] {
     const majorRadiusAU = Math.max(1, def.diameterKpc * GALAXY_KPC_TO_AU * 0.5);
     const radiusAU = majorRadiusAU / Math.max(0.2, def.aspect);
     const focusDistance = Math.max(900, majorRadiusAU * GALAXY_MODEL_FOCUS_RADIUS_MULTIPLIER);
+    const lodDistance = Math.max(900, majorRadiusAU * GALAXY_MODEL_LOD_RADIUS_MULTIPLIER);
     const { right, up } = basisForLabel(label, def.rotationDeg ?? 0);
 
     return [{
@@ -211,8 +213,8 @@ export function galaxyTextureModels(): GalaxyTextureModel[] {
       right,
       up,
       opacity: def.opacity,
-      fadeNearAU: focusDistance * 1.15,
-      fadeFarAU: focusDistance * 5.2,
+      fadeNearAU: lodDistance * 1.15,
+      fadeFarAU: lodDistance * 5.2,
       focusDistance,
     }];
   });

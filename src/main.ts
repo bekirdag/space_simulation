@@ -118,6 +118,7 @@ const KNOWN_GALAXY_ALIASES: Record<string, readonly string[]> = {
   "m104": ["sombrero galaxy"],
   "m87": ["virgo a"],
 };
+const GENERIC_GALAXY_CLOSE_FOCUS_AU = 220;
 const LIGHT_YEARS_PER_PARSEC = 3.26156;
 const SELECTED_NEARBY_STAR_RENDER_RADIUS_AU = 0.005; // keep in sync with src/gpu/star.wgsl
 const SELECTED_NEARBY_STAR_SCREEN_WIDTH_FRACTION = 0.50;
@@ -630,6 +631,10 @@ async function main(): Promise<void> {
     return `${prefix}:${name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
   }
 
+  function galaxySelectionFocusDistance(id: string): number {
+    return galaxyModelFocusDistance(id) ?? GENERIC_GALAXY_CLOSE_FOCUS_AU;
+  }
+
   function knownGalaxySearchRank(
     query: string,
     id: string,
@@ -663,7 +668,7 @@ async function main(): Promise<void> {
       x: galaxy.x,
       y: galaxy.y,
       z: galaxy.z,
-      focusDistance: galaxyModelFocusDistance(galaxy.id) ?? galaxy.focusDistance,
+      focusDistance: galaxySelectionFocusDistance(galaxy.id),
       color: [galaxy.color[0], galaxy.color[1], galaxy.color[2]],
     };
   }
@@ -705,8 +710,8 @@ async function main(): Promise<void> {
   function catalogGalaxyResult(r: ReturnType<typeof searchGalaxies>[number]): StarSearchResult {
     const label = LOCAL_GROUP_GALAXY_LABELS.find(g => g.name === r.name);
     const focusDistance = label
-      ? galaxyModelFocusDistance(label.id) ?? label.focusDistance
-      : Math.min(10_000, Math.max(500, Math.hypot(r.x, r.y, r.z) * 0.02));
+      ? galaxySelectionFocusDistance(label.id)
+      : GENERIC_GALAXY_CLOSE_FOCUS_AU;
     return {
       id: label ? `galaxy:${label.id}` : galaxySearchId(r.name),
       label: r.name,
@@ -1238,7 +1243,7 @@ async function main(): Promise<void> {
       x: galaxy.x,
       y: galaxy.y,
       z: galaxy.z,
-      focusDistance: galaxyModelFocusDistance(galaxy.id) ?? galaxy.focusDistance,
+      focusDistance: galaxySelectionFocusDistance(galaxy.id),
       color: [0.82, 0.88, 1.00],
     });
     renderer.uploadBodies(bodies);
@@ -1393,7 +1398,6 @@ async function main(): Promise<void> {
       nearbyGalaxies,
       (gal) => {
         renderer.setActiveMilkyWayModel(null);
-        const r = Math.sqrt(gal.x**2 + gal.y**2 + gal.z**2);
         const label = LOCAL_GROUP_GALAXY_LABELS.find(item => item.name === gal.name);
         nav.selectCatalogStar({
           id: label ? `galaxy:${label.id}` : galaxySearchId(gal.name),
@@ -1402,7 +1406,7 @@ async function main(): Promise<void> {
           x: gal.x,
           y: gal.y,
           z: gal.z,
-          focusDistance: label ? galaxyModelFocusDistance(label.id) ?? label.focusDistance : Math.min(10_000, Math.max(500, r * 0.02)),
+          focusDistance: label ? galaxySelectionFocusDistance(label.id) : GENERIC_GALAXY_CLOSE_FOCUS_AU,
           color: [0.82, 0.88, 1.00],
         });
       },
