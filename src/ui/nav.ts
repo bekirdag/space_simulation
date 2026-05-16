@@ -39,15 +39,16 @@ export class NavPanel {
   private readonly modelPageSize = 10;
   private open     = true;
 
-  /** The catalog star (exoplanet host) most recently selected from search results. */
+  /** The catalog/map object most recently selected from search results or map labels. */
   get selectedCatalogStar(): StarSearchResult | null { return this._selectedCatalogStar; }
 
-  /** Select a catalog star externally (e.g. from the right-click context menu). */
+  /** Select a catalog/map object externally (e.g. from search or the map). */
   selectCatalogStar(hit: StarSearchResult): void {
     this.clearFocusedBody();
     this._selectedCatalogStar = hit;
     this.catalogSearch?.onFocusTitleChange?.(hit.label, hit.subtitle, this.catalogObjectType(hit));
     this.camera.travelTo(hit.x, hit.y, hit.z, hit.focusDistance);
+    this.camera.lockTarget = true;
   }
 
   constructor(
@@ -113,6 +114,7 @@ export class NavPanel {
     if (hit.id.startsWith("blackhole:")) return "black hole";
     if (hit.id.startsWith("galaxy:")) return "galaxy";
     if (hit.id.startsWith("mwmodel:")) return "3D model";
+    if (hit.id.startsWith("nebula:")) return "nebula";
     if (hit.id.startsWith("exo:")) return "exoplanet";
     if (hit.id.startsWith("nearby:")) return "star";
     return "exoplanet host star";
@@ -372,10 +374,7 @@ export class NavPanel {
       copy.append(label, subtitle);
       btn.append(swatch, copy);
       btn.addEventListener("click", () => {
-        this.clearFocusedBody();
-        this._selectedCatalogStar = hit;
-        this.catalogSearch?.onFocusTitleChange?.(hit.label, hit.subtitle, this.catalogObjectType(hit));
-        this.camera.travelTo(hit.x, hit.y, hit.z, hit.focusDistance);
+        this.selectCatalogStar(hit);
         this.search.value = hit.label;
         this.renderCatalogResults("", []);
         // Notify main.ts so it can load exoplanet bodies for this star/planet

@@ -559,6 +559,10 @@ async function main(): Promise<void> {
     return `galaxy:${name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
   }
 
+  function mapObjectSearchId(prefix: string, name: string): string {
+    return `${prefix}:${name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
+  }
+
   function knownGalaxySearchRank(
     query: string,
     id: string,
@@ -1108,24 +1112,33 @@ async function main(): Promise<void> {
 
   function focusMilkyWay(): void {
     setExoplanetBodies(null);
-    nav.clearFocusedBody();
     renderer.uploadSelectedStar(null);
-    setFocusTitle("Milky Way", "home galaxy · center at Sagittarius A*", "galaxy");
-    camera.travelTo(
-      SGR_A_STAR_POS[0],
-      SGR_A_STAR_POS[1],
-      SGR_A_STAR_POS[2],
-      camera.distanceForViewRadius(MILKY_WAY_RADIUS_AU * 1.18, 0.70),
-    );
+    nav.selectCatalogStar({
+      id: "galaxy:milky-way",
+      label: "Milky Way",
+      subtitle: "home galaxy · center at Sagittarius A*",
+      x: SGR_A_STAR_POS[0],
+      y: SGR_A_STAR_POS[1],
+      z: SGR_A_STAR_POS[2],
+      focusDistance: camera.distanceForViewRadius(MILKY_WAY_RADIUS_AU * 1.18, 0.70),
+      color: [0.82, 0.88, 1.00],
+    });
     renderer.uploadBodies(bodies);
   }
 
   function focusGalaxyLabel(galaxy: GalaxyNameLabel): void {
     setExoplanetBodies(null);
-    nav.clearFocusedBody();
     renderer.uploadSelectedStar(null);
-    setFocusTitle(galaxy.name, galaxyFocusSubtitle(galaxy.dist), "galaxy");
-    camera.travelTo(galaxy.x, galaxy.y, galaxy.z, galaxyModelFocusDistance(galaxy.id) ?? galaxy.focusDistance);
+    nav.selectCatalogStar({
+      id: `galaxy:${galaxy.id}`,
+      label: galaxy.name,
+      subtitle: galaxyFocusSubtitle(galaxy.dist),
+      x: galaxy.x,
+      y: galaxy.y,
+      z: galaxy.z,
+      focusDistance: galaxyModelFocusDistance(galaxy.id) ?? galaxy.focusDistance,
+      color: [0.82, 0.88, 1.00],
+    });
     renderer.uploadBodies(bodies);
   }
 
@@ -1278,19 +1291,31 @@ async function main(): Promise<void> {
       (gal) => {
         const r = Math.sqrt(gal.x**2 + gal.y**2 + gal.z**2);
         const label = LOCAL_GROUP_GALAXY_LABELS.find(item => item.name === gal.name);
-        nav.clearFocusedBody();
-        setFocusTitle(gal.name, galaxyFocusSubtitle(gal.dist), "galaxy");
-        camera.travelTo(
-          gal.x, gal.y, gal.z,
-          label ? galaxyModelFocusDistance(label.id) ?? label.focusDistance : Math.min(10_000, Math.max(500, r * 0.02)),
-        );
+        nav.selectCatalogStar({
+          id: label ? `galaxy:${label.id}` : galaxySearchId(gal.name),
+          label: gal.name,
+          subtitle: galaxyFocusSubtitle(gal.dist),
+          x: gal.x,
+          y: gal.y,
+          z: gal.z,
+          focusDistance: label ? galaxyModelFocusDistance(label.id) ?? label.focusDistance : Math.min(10_000, Math.max(500, r * 0.02)),
+          color: [0.82, 0.88, 1.00],
+        });
       },
       nearbyNebulas,
       (neb) => {
         const r = Math.sqrt(neb.x**2 + neb.y**2 + neb.z**2);
-        nav.clearFocusedBody();
-        setFocusTitle(neb.name, "nebula", "nebula");
-        camera.travelTo(neb.x, neb.y, neb.z, Math.max(200, r * 0.005));
+        const color = NEB_COLOR[neb.type] ?? [0.88, 0.35, 0.55];
+        nav.selectCatalogStar({
+          id: mapObjectSearchId("nebula", neb.name),
+          label: neb.name,
+          subtitle: "nebula",
+          x: neb.x,
+          y: neb.y,
+          z: neb.z,
+          focusDistance: Math.max(200, r * 0.005),
+          color,
+        });
       },
     );
   }
@@ -1596,7 +1621,7 @@ async function main(): Promise<void> {
     renderer.ensureVisibleMilkyWayModels(MILKY_WAY_MODEL_OBJECTS, camUniforms.eye);
 
     const sel = nav.selectedCatalogStar;
-    renderer.uploadSelectedStar(sel && !sel.id.startsWith("galaxy:") && !sel.id.startsWith("mwmodel:") ? [sel.x, sel.y, sel.z] : null);
+    renderer.uploadSelectedStar(sel && !sel.id.startsWith("galaxy:") && !sel.id.startsWith("mwmodel:") && !sel.id.startsWith("nebula:") ? [sel.x, sel.y, sel.z] : null);
     const focusedMembers = nav.focusedSystemMembers();
     const bodyVisibility = buildBodyRenderVisibility(bodies, camUniforms.viewProj, focusedMembers);
     renderer.uploadBodies(bodies, bodyVisibility);
