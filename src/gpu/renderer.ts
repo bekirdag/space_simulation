@@ -38,6 +38,11 @@ const CAMERA_BYTES = 112;
 const BLACK_HOLE_BYTES = 32;
 const MILKY_WAY_MODEL_UNIFORM_BYTES = 64;
 const MODEL_DEPTH_FORMAT: GPUTextureFormat = "depth24plus";
+const SCENE_DEPTH_DISABLED: GPUDepthStencilState = {
+  format: MODEL_DEPTH_FORMAT,
+  depthWriteEnabled: false,
+  depthCompare: "always",
+};
 const TEXTURED_GALAXY_MODEL_CAPACITY = 32;
 const DUST_VOLUME_UNIFORM_BYTES = 80;
 const DUST_COMPUTE_WORKGROUP_SIZE = 4;
@@ -461,6 +466,7 @@ export class Renderer {
         }],
       },
       primitive: { topology: "triangle-list" },
+      depthStencil: SCENE_DEPTH_DISABLED,
     });
 
     // ── Selected-star uniform (xyz pos + w=active flag, 16 bytes) ─────────────
@@ -545,6 +551,7 @@ export class Renderer {
         }],
       },
       primitive: { topology: "triangle-list" },
+      depthStencil: SCENE_DEPTH_DISABLED,
     });
 
     // ── Milky Way background star pipeline ────────────────────────────────
@@ -580,6 +587,7 @@ export class Renderer {
         }],
       },
       primitive: { topology: "triangle-list" },
+      depthStencil: SCENE_DEPTH_DISABLED,
     });
 
     // ── Galaxy pipeline ────────────────────────────────────────────────────
@@ -624,6 +632,7 @@ export class Renderer {
         }],
       },
       primitive: { topology: "triangle-list" },
+      depthStencil: SCENE_DEPTH_DISABLED,
     });
 
     // ── Textured close-LOD galaxy model pipeline ───────────────────────────
@@ -652,6 +661,7 @@ export class Renderer {
         }],
       },
       primitive: { topology: "triangle-list" },
+      depthStencil: SCENE_DEPTH_DISABLED,
     });
 
     // ── Nebula pipeline (alpha blend — drawn BEFORE stars, AFTER galaxies) ───
@@ -686,6 +696,7 @@ export class Renderer {
         }],
       },
       primitive: { topology: "triangle-list" },
+      depthStencil: SCENE_DEPTH_DISABLED,
     });
 
     // ── Homunculus (textured) pipeline — real NASA Hubble image of Eta Carinae
@@ -714,6 +725,7 @@ export class Renderer {
         }],
       },
       primitive: { topology: "triangle-list" },
+      depthStencil: SCENE_DEPTH_DISABLED,
     });
 
     // ── Milky Way object 3D models — lazy NASA/Chandra mesh LOD ───────────
@@ -819,6 +831,7 @@ export class Renderer {
         }],
       },
       primitive: { topology: "triangle-list" },
+      depthStencil: SCENE_DEPTH_DISABLED,
     });
     this.rebuildDustVolume();
 
@@ -880,6 +893,7 @@ export class Renderer {
         }],
       },
       primitive: { topology: "line-list" },
+      depthStencil: SCENE_DEPTH_DISABLED,
     });
 
     // ── Trail pipeline ─────────────────────────────────────────────────────
@@ -919,6 +933,7 @@ export class Renderer {
         }],
       },
       primitive: { topology: "line-strip" },
+      depthStencil: SCENE_DEPTH_DISABLED,
     });
   }
 
