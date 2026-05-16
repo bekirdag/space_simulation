@@ -1258,7 +1258,7 @@
       #modal-confirm:hover { background: rgba(136,170,255,0.3); }
       #modal-confirm:disabled { opacity: 0.4; cursor: default; }
 
-      /* ── NASA object information modal ── */
+      /* ── Object information modal ── */
       #object-info-modal {
         display: none;
         position: fixed;
@@ -1381,6 +1381,55 @@
         text-decoration: none;
       }
       #object-info-source:hover { text-decoration: underline; }
+      @keyframes object-info-skeleton {
+        0% { background-position: 160% 0; }
+        100% { background-position: -60% 0; }
+      }
+      #object-info-modal.loading #object-info-title,
+      #object-info-modal.loading .object-info-type,
+      #object-info-modal.loading #object-info-status,
+      #object-info-modal.loading #object-info-description,
+      #object-info-modal.loading #object-info-source,
+      #object-info-modal.loading .object-info-image-wrap {
+        color: transparent;
+        pointer-events: none;
+        background: linear-gradient(90deg, rgba(255,255,255,0.055), rgba(255,255,255,0.16), rgba(255,255,255,0.055));
+        background-size: 220% 100%;
+        animation: object-info-skeleton 1.15s ease-in-out infinite;
+      }
+      #object-info-modal.loading .object-info-type {
+        width: 86px;
+        height: 10px;
+        border-radius: 999px;
+      }
+      #object-info-modal.loading #object-info-title {
+        width: min(300px, 56vw);
+        height: 28px;
+        border-radius: 7px;
+      }
+      #object-info-modal.loading #object-info-status {
+        width: 180px;
+        height: 13px;
+        min-height: 13px;
+        border-radius: 999px;
+      }
+      #object-info-modal.loading #object-info-description {
+        width: 100%;
+        height: 152px;
+        border-radius: 9px;
+      }
+      #object-info-modal.loading #object-info-source {
+        width: 132px;
+        height: 14px;
+        border-radius: 999px;
+      }
+      #object-info-modal.loading .object-info-image-wrap {
+        border-color: rgba(255,255,255,0.08);
+      }
+      #object-info-modal.loading #object-info-image,
+      #object-info-modal.loading .object-info-empty-image {
+        display: none;
+      }
       @media (max-width: 680px) {
         .object-info-content {
           grid-template-columns: 1fr;
@@ -1417,12 +1466,12 @@
       </div>
     </div>
 
-    <!-- NASA object information modal -->
+    <!-- Object information modal -->
     <div id="object-info-modal" aria-hidden="true">
       <div class="modal-box object-info-box" role="dialog" aria-modal="true" aria-labelledby="object-info-title">
         <div class="object-info-header">
           <div class="object-info-title-wrap">
-            <div id="object-info-type" class="object-info-type">NASA</div>
+            <div id="object-info-type" class="object-info-type">Object</div>
             <h3 id="object-info-title">Object</h3>
           </div>
           <button id="object-info-close" type="button" title="Close">×</button>
@@ -1430,12 +1479,12 @@
         <div class="object-info-content">
           <div id="object-info-image-wrap" class="object-info-image-wrap empty">
             <img id="object-info-image" alt="" />
-            <div class="object-info-empty-image">No NASA image cached for this object.</div>
+            <div class="object-info-empty-image">No image available for this object.</div>
           </div>
           <div class="object-info-copy">
             <div id="object-info-status"></div>
             <p id="object-info-description"></p>
-            <a id="object-info-source" href="https://images.nasa.gov/" target="_blank" rel="noopener">NASA source</a>
+            <a id="object-info-source" href="https://en.wikipedia.org/" target="_blank" rel="noopener">Source</a>
           </div>
         </div>
       </div>

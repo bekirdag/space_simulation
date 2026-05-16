@@ -16,7 +16,7 @@ const NASA_SCIENCE_SEARCH_API = `${NASA_SCIENCE_WEB}/wp-json/wp/v2/search`;
 const WIKIPEDIA_SUMMARY_API = "https://en.wikipedia.org/api/rest_v1/page/summary";
 const WIKIPEDIA_SEARCH_API = "https://en.wikipedia.org/w/api.php";
 const WIKIPEDIA_WEB = "https://en.wikipedia.org/wiki";
-const OBJECT_INFO_CACHE_VERSION = 5;
+const OBJECT_INFO_CACHE_VERSION = 6;
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
 const DEFAULT_CACHE_TTL_DAYS = 30;
 const GENERAL_DESCRIPTION_MAX_LENGTH = 1400;
@@ -959,11 +959,11 @@ async function withFallbackImage(info, params) {
 
 async function nasaObjectInfo({ title, objectType, subtitle }) {
   const params = { title, objectType, subtitle };
-  const directScienceInfo = await tryInfoSource("NASA Science facts", () => nasaScienceObjectInfo({ title, objectType }));
-  if (directScienceInfo) return withFallbackImage(directScienceInfo, params);
-
   const wikipediaInfo = await tryInfoSource("Wikipedia summary", () => wikipediaObjectInfo(params));
   if (wikipediaInfo) return withFallbackImage(wikipediaInfo, params);
+
+  const directScienceInfo = await tryInfoSource("NASA Science facts", () => nasaScienceObjectInfo({ title, objectType }));
+  if (directScienceInfo) return withFallbackImage(directScienceInfo, params);
 
   const searchedScienceInfo = await tryInfoSource("NASA Science search", () => nasaScienceSearchInfo(params));
   if (searchedScienceInfo) return withFallbackImage(searchedScienceInfo, params);
@@ -976,7 +976,7 @@ async function nasaObjectInfo({ title, objectType, subtitle }) {
     imageUrl: null,
     nasaId: null,
     sourceTitle: "No encyclopedic source matched",
-    sourceUrl: NASA_SCIENCE_WEB,
+    sourceUrl: WIKIPEDIA_WEB,
     query: title,
     cachedImage: null,
     remoteImageUrl: null,
@@ -998,7 +998,7 @@ async function objectInfoResponse(params) {
     return { ...fresh, cacheHit: false };
   } catch (err) {
     if (cacheVersionIsCurrent(cached)) {
-      return { ...cached, cacheHit: true, stale: true, warning: "Returned stale cache after NASA lookup failed." };
+      return { ...cached, cacheHit: true, stale: true, warning: "Returned stale cache after object lookup failed." };
     }
     throw err;
   }
@@ -1097,7 +1097,7 @@ export async function handleObjectInfoRequest(req, res) {
   } catch (err) {
     console.error("CosmosMap object-info lookup failed:", err);
     sendJson(res, 502, {
-      error: "nasa_lookup_failed",
+      error: "object_lookup_failed",
       title,
       objectType,
       description: fallbackDescription(title, objectType),

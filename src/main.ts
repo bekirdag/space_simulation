@@ -398,6 +398,23 @@ async function main(): Promise<void> {
     }
   }
 
+  function setObjectInfoLoading(isLoading: boolean): void {
+    objectInfoModal.classList.toggle("loading", isLoading);
+    if (!isLoading) {
+      objectInfoSource.removeAttribute("aria-hidden");
+      return;
+    }
+
+    objectInfoTitle.textContent = "";
+    objectInfoType.textContent = "";
+    objectInfoDescription.textContent = "";
+    objectInfoSource.textContent = "";
+    objectInfoSource.removeAttribute("href");
+    objectInfoSource.setAttribute("aria-hidden", "true");
+    setObjectInfoStatus("");
+    setObjectInfoImage(null);
+  }
+
   function normalizeObjectInfoText(value: string | null | undefined): string {
     return (value ?? "")
       .replace(/<[^>]*>/g, " ")
@@ -437,13 +454,13 @@ async function main(): Promise<void> {
 
   function objectInfoSourceText(info: NasaObjectInfo): string {
     const provider = normalizeObjectInfoText(info.provider);
-    const sourceTitle = normalizeObjectInfoText(info.sourceTitle);
+    const sourceTitle = normalizeObjectInfoText(info.sourceTitle)
+      .replace(/^Wikipedia:\s*/i, "")
+      .replace(/^NASA(?:\s+Science)?[:\s-]*/i, "")
+      .replace(/^NASA Image and Video Library$/i, "")
+      .trim();
     if (/^wikipedia$/i.test(provider)) {
-      const title = sourceTitle.replace(/^Wikipedia:\s*/i, "") || "Wikipedia";
-      return `Wikipedia source: ${title}`;
-    }
-    if (/NASA/i.test(provider)) {
-      return sourceTitle ? `NASA source: ${sourceTitle}` : "NASA source";
+      return sourceTitle ? `Wikipedia: ${sourceTitle}` : "Wikipedia";
     }
     return sourceTitle ? `Source: ${sourceTitle}` : "Source";
   }
@@ -453,18 +470,19 @@ async function main(): Promise<void> {
   }
 
   function renderObjectInfo(info: NasaObjectInfo, focus: FocusInfo): void {
+    setObjectInfoLoading(false);
     objectInfoTitle.textContent = info.title || focus.title;
     objectInfoType.textContent = info.objectType || focus.objectType;
-    objectInfoDescription.textContent = info.description || "No NASA description was returned for this object.";
+    objectInfoDescription.textContent = info.description || "No description was returned for this object.";
     setObjectInfoImage(info.imageUrl);
 
-    objectInfoSource.href = info.sourceUrl || "https://images.nasa.gov/";
+    objectInfoSource.href = info.sourceUrl || "https://en.wikipedia.org/";
     objectInfoSource.textContent = objectInfoSourceText(info);
 
     if (info.error) {
-      setObjectInfoStatus("NASA lookup failed.", true);
+      setObjectInfoStatus("Object lookup failed.", true);
     } else if (info.stale) {
-      setObjectInfoStatus(info.warning || "Showing previously retrieved NASA data.");
+      setObjectInfoStatus("Showing previously retrieved object data.");
     } else {
       setObjectInfoStatus(objectInfoDataStatus(info, focus));
     }
@@ -475,13 +493,7 @@ async function main(): Promise<void> {
     if (!focus) return;
 
     const seq = ++objectInfoRequestSeq;
-    objectInfoTitle.textContent = focus.title;
-    objectInfoType.textContent = focus.objectType;
-    objectInfoDescription.textContent = "";
-    objectInfoSource.href = "https://images.nasa.gov/";
-    objectInfoSource.textContent = "NASA source";
-    setObjectInfoImage(null);
-    setObjectInfoStatus("Loading NASA data...");
+    setObjectInfoLoading(true);
     showObjectInfoModal(true);
 
     const params = new URLSearchParams({
@@ -504,13 +516,14 @@ async function main(): Promise<void> {
       if (seq !== objectInfoRequestSeq) return;
       const backendMessage = err instanceof BackendUnavailableError
         ? "This page is not connected to the CosmosMap backend. Start the app with npm run dev and open the CosmosMap dev server URL."
-        : "The local CosmosMap NASA information service is not reachable.";
+        : "The local CosmosMap information service is not reachable.";
       renderObjectInfo({
         title: focus.title,
         objectType: focus.objectType,
         description: backendMessage,
-        sourceUrl: "https://images.nasa.gov/",
-        sourceTitle: "NASA Image and Video Library",
+        sourceUrl: "https://en.wikipedia.org/",
+        sourceTitle: "Wikipedia",
+        provider: "Wikipedia",
         error: "service_unreachable",
       }, focus);
     }
@@ -550,8 +563,8 @@ async function main(): Promise<void> {
     const infoBtn = document.createElement("button");
     infoBtn.type = "button";
     infoBtn.className = "focus-info-btn";
-    infoBtn.title = "NASA information";
-    infoBtn.setAttribute("aria-label", `NASA information for ${title}`);
+    infoBtn.title = "Object information";
+    infoBtn.setAttribute("aria-label", `Object information for ${title}`);
     infoBtn.textContent = "ⓘ";
     infoBtn.addEventListener("click", e => {
       e.stopPropagation();
