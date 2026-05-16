@@ -162,8 +162,15 @@ interface NasaObjectInfo {
   objectType?: string;
   description?: string;
   imageUrl?: string | null;
+  imageCredit?: string | null;
+  imageLicense?: string | null;
+  imageLicenseUrl?: string | null;
+  imageProvider?: string | null;
+  imageSourceTitle?: string | null;
+  imageSourceUrl?: string | null;
   sourceTitle?: string | null;
   sourceUrl?: string | null;
+  wikipediaUrl?: string | null;
   provider?: string;
   cacheHit?: boolean;
   stale?: boolean;
@@ -377,6 +384,7 @@ async function main(): Promise<void> {
   const objectInfoSource = document.getElementById("object-info-source") as HTMLAnchorElement;
   const objectInfoImageWrap = document.getElementById("object-info-image-wrap")!;
   const objectInfoImage = document.getElementById("object-info-image") as HTMLImageElement;
+  const objectInfoImageCredit = document.getElementById("object-info-image-credit") as HTMLAnchorElement;
 
   let currentFocusInfo: FocusInfo | null = null;
   let objectInfoRequestSeq = 0;
@@ -391,13 +399,30 @@ async function main(): Promise<void> {
     objectInfoStatus.classList.toggle("error", isError);
   }
 
-  function setObjectInfoImage(imageUrl: string | null | undefined): void {
+  function objectInfoImageCreditText(info: NasaObjectInfo | null | undefined): string {
+    const credit = normalizeObjectInfoText(info?.imageCredit);
+    const license = normalizeObjectInfoText(info?.imageLicense);
+    if (credit && license) return `${credit} · ${license}`;
+    return credit || license;
+  }
+
+  function setObjectInfoImage(imageUrl: string | null | undefined, info?: NasaObjectInfo): void {
+    const creditText = objectInfoImageCreditText(info);
+    const creditHref = info?.imageSourceUrl || info?.imageLicenseUrl || "";
+
     if (imageUrl) {
       objectInfoImage.src = imageUrl;
       objectInfoImageWrap.classList.remove("empty");
+      objectInfoImageCredit.textContent = creditText;
+      objectInfoImageCredit.hidden = !creditText;
+      if (creditHref) objectInfoImageCredit.href = creditHref;
+      else objectInfoImageCredit.removeAttribute("href");
     } else {
       objectInfoImage.removeAttribute("src");
       objectInfoImageWrap.classList.add("empty");
+      objectInfoImageCredit.textContent = "";
+      objectInfoImageCredit.hidden = true;
+      objectInfoImageCredit.removeAttribute("href");
     }
   }
 
@@ -414,6 +439,9 @@ async function main(): Promise<void> {
     objectInfoSource.textContent = "";
     objectInfoSource.removeAttribute("href");
     objectInfoSource.setAttribute("aria-hidden", "true");
+    objectInfoImageCredit.textContent = "";
+    objectInfoImageCredit.hidden = true;
+    objectInfoImageCredit.removeAttribute("href");
     setObjectInfoStatus("");
     setObjectInfoImage(null);
   }
@@ -463,7 +491,8 @@ async function main(): Promise<void> {
       .replace(/^NASA Image and Video Library$/i, "")
       .trim();
     if (/^wikipedia$/i.test(provider)) {
-      return sourceTitle ? `Wikipedia: ${sourceTitle}` : "Wikipedia";
+      if (!sourceTitle || /^wikipedia$/i.test(sourceTitle)) return "Wikipedia";
+      return `Wikipedia: ${sourceTitle}`;
     }
     return sourceTitle ? `Source: ${sourceTitle}` : "Source";
   }
@@ -477,9 +506,9 @@ async function main(): Promise<void> {
     objectInfoTitle.textContent = info.title || focus.title;
     objectInfoType.textContent = info.objectType || focus.objectType;
     objectInfoDescription.textContent = info.description || "No description was returned for this object.";
-    setObjectInfoImage(info.imageUrl);
+    setObjectInfoImage(info.imageUrl, info);
 
-    objectInfoSource.href = info.sourceUrl || "https://en.wikipedia.org/";
+    objectInfoSource.href = info.wikipediaUrl || info.sourceUrl || "https://en.wikipedia.org/";
     objectInfoSource.textContent = objectInfoSourceText(info);
 
     if (info.error) {

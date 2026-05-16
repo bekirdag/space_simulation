@@ -1326,6 +1326,12 @@
         padding: 20px 22px 22px;
         overflow: auto;
       }
+      .object-info-media {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
       .object-info-image-wrap {
         min-height: 210px;
         display: flex;
@@ -1354,6 +1360,15 @@
         text-align: center;
       }
       .object-info-image-wrap.empty .object-info-empty-image { display: block; }
+      #object-info-image-credit {
+        color: rgba(255,255,255,0.45);
+        font-size: 10px;
+        line-height: 1.45;
+        text-decoration: none;
+        overflow-wrap: anywhere;
+      }
+      #object-info-image-credit:hover { text-decoration: underline; }
+      #object-info-image-credit[hidden] { display: none; }
       .object-info-copy {
         min-width: 0;
         display: flex;
@@ -1390,6 +1405,7 @@
       #object-info-modal.loading #object-info-status,
       #object-info-modal.loading #object-info-description,
       #object-info-modal.loading #object-info-source,
+      #object-info-modal.loading #object-info-image-credit,
       #object-info-modal.loading .object-info-image-wrap {
         color: transparent;
         pointer-events: none;
@@ -1423,6 +1439,11 @@
         height: 14px;
         border-radius: 999px;
       }
+      #object-info-modal.loading #object-info-image-credit {
+        width: 78%;
+        height: 12px;
+        border-radius: 999px;
+      }
       #object-info-modal.loading .object-info-image-wrap {
         border-color: rgba(255,255,255,0.08);
       }
@@ -1434,6 +1455,7 @@
         .object-info-content {
           grid-template-columns: 1fr;
         }
+        .object-info-media,
         .object-info-image-wrap,
         #object-info-image {
           min-height: 180px;
@@ -1477,9 +1499,12 @@
           <button id="object-info-close" type="button" title="Close">×</button>
         </div>
         <div class="object-info-content">
-          <div id="object-info-image-wrap" class="object-info-image-wrap empty">
-            <img id="object-info-image" alt="" />
-            <div class="object-info-empty-image">No image available for this object.</div>
+          <div class="object-info-media">
+            <div id="object-info-image-wrap" class="object-info-image-wrap empty">
+              <img id="object-info-image" alt="" />
+              <div class="object-info-empty-image">No image available for this object.</div>
+            </div>
+            <a id="object-info-image-credit" href="https://commons.wikimedia.org/" target="_blank" rel="noopener" hidden></a>
           </div>
           <div class="object-info-copy">
             <div id="object-info-status"></div>

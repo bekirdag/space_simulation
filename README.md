@@ -50,7 +50,7 @@ npm install
 ## Run Locally
 
 Start the CosmosMap development backend. It wraps Vite and also serves the
-NASA object-information API used by the top-center focus title:
+cached object-information API used by the top-center focus title:
 
 ```sh
 npm run dev
@@ -67,7 +67,7 @@ Create a production build:
 npm run build
 ```
 
-Preview the built app locally with the same local NASA information backend:
+Preview the built app locally with the same local information backend:
 
 ```sh
 npm run preview
@@ -118,10 +118,11 @@ backend serves `cache/nasa/horizons/<date>.json` first, seeds that runtime cache
 from committed `public/cache/horizons/<date>.json` files when available, and
 only then calls NASA/JPL Horizons with low concurrency and retry/backoff. The
 browser no longer calls NASA/JPL directly for simulation startup or date jumps.
-Focused-object information is requested from the local backend, which queries
-NASA Images and caches normalized JSON plus same-origin image files under
-`cache/nasa/object-info/`. Runtime backend caches under `cache/nasa/` are
-intentionally git-ignored.
+Focused-object information is requested from the local backend, which searches
+Wikipedia with the object type included in the query, looks up image candidates
+on Wikimedia Commons, and caches normalized JSON plus same-origin image files
+under `cache/wikimedia/object-info/`. Runtime backend NASA and Wikimedia cache
+paths under `cache/` are intentionally git-ignored.
 
 ## Limits And Assumptions
 
@@ -193,7 +194,7 @@ src/physics/              Bodies, constants, integration, moons, galactic frame
 src/scene/                Camera and trail systems
 src/services/horizons.ts  NASA/JPL Horizons client and cache loader
 src/ui/                   HUD, labels, navigation, context menu
-server/                   Local NASA Images object-info API and static server
+server/                   Local cached object-info API and static server
 scripts/                  Data generation and cache refresh scripts
 public/cache/             Committed runtime cache files
 public/data/              Generated catalog assets served by Vite
