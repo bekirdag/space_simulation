@@ -54,6 +54,12 @@ import {
   type NamedGalaxy,
 } from "./catalog/galaxies";
 import { galaxyModelFocusDistance, galaxyTextureModels } from "./catalog/galaxy-models";
+import {
+  MILKY_WAY_MODEL_OBJECTS,
+  milkyWayModelById,
+  milkyWayModelSearchResults,
+  searchMilkyWayModels,
+} from "./catalog/milkyway-models";
 import { loadMilkywayStars } from "./catalog/milkyway";
 import { buildProceduralDustClouds, DUST_FLOATS } from "./catalog/dust";
 import { NEARBY_STAR_LABELS, SGR_A_STAR_POS, type NearbyStarLabel } from "./catalog/nearby-stars";
@@ -896,6 +902,7 @@ async function main(): Promise<void> {
         "milky way center".includes(q)
       ) ? [SGR_A_SEARCH_RESULT] : [];
       const starHits = searchCatalogStars(exoplanetHosts, query, 5);
+      const modelHits = searchMilkyWayModels(query, 5);
       const galaxyHits = searchGalaxies(galaxyNames, galaxyBuffer, query, 5).map(r => {
         const label = LOCAL_GROUP_GALAXY_LABELS.find(g => g.name === r.name);
         const focusDistance = label
@@ -914,6 +921,7 @@ async function main(): Promise<void> {
       return [
         ...blackHoleHits,
         ...galaxyHits,
+        ...modelHits,
         ...starHits,
         // Map exoplanet results to StarSearchResult shape
         ...exoHits.map(r => ({
@@ -927,6 +935,7 @@ async function main(): Promise<void> {
       ];
     },
     getCatalogStatus: () => catalogStatus,
+    modelObjects: milkyWayModelSearchResults(),
     // Called whenever a catalog search result is clicked.
     // If the id encodes an exoplanet, load that star's planet bodies.
     onCatalogItemClick: (id: string) => {
@@ -934,6 +943,10 @@ async function main(): Promise<void> {
         setExoplanetBodies(null);
       } else if (id.startsWith("galaxy:")) {
         setExoplanetBodies(null);
+      } else if (id.startsWith("mwmodel:")) {
+        setExoplanetBodies(null);
+        const model = milkyWayModelById(id);
+        if (model) void renderer.ensureMilkyWayModelLoaded(model);
       } else if (id.startsWith("exo:")) {
         const hostName = id.split(":")[1] ?? null;
         setExoplanetBodies(hostName);
@@ -1463,9 +1476,10 @@ async function main(): Promise<void> {
     const auPerCssPixel = (camera.distance * 2 / camUniforms.focalY) / Math.max(1, window.innerHeight);
     scaleBar.update(auPerCssPixel, Math.max(eyeDistFromSun, targetDistFromSun));
     renderer.updateLOD(eyeDistFromSun);
+    renderer.ensureVisibleMilkyWayModels(MILKY_WAY_MODEL_OBJECTS, camUniforms.eye);
 
     const sel = nav.selectedCatalogStar;
-    renderer.uploadSelectedStar(sel && !sel.id.startsWith("galaxy:") ? [sel.x, sel.y, sel.z] : null);
+    renderer.uploadSelectedStar(sel && !sel.id.startsWith("galaxy:") && !sel.id.startsWith("mwmodel:") ? [sel.x, sel.y, sel.z] : null);
     const focusedMembers = nav.focusedSystemMembers();
     const bodyVisibility = buildBodyRenderVisibility(bodies, camUniforms.viewProj, focusedMembers);
     renderer.uploadBodies(bodies, bodyVisibility);

@@ -1,6 +1,9 @@
+node_modules/
+dist/
 /.docdex/
 /.docdex-state/
 cache/nasa/object-info/
 cache/nasa/horizons/
+cache/nasa/models/
 public/cache/nasa/*.fits
 public/cache/nasa/*.fits.gz

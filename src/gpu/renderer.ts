@@ -5,6 +5,7 @@ import galaxyWGSL   from "./galaxy.wgsl?raw";
 import galaxyTexturedWGSL from "./galaxy-textured.wgsl?raw";
 import nebulaWGSL         from "./nebula.wgsl?raw";
 import nebulaTexturedWGSL from "./nebula-textured.wgsl?raw";
+import milkyWayModelWGSL  from "./milkyway-model.wgsl?raw";
 import dustWGSL     from "./dust.wgsl?raw";
 import blackholeWGSL from "./blackhole.wgsl?raw";
 import constellationWGSL from "./constellation.wgsl?raw";
@@ -16,16 +17,19 @@ import { STAR_FLOATS } from "../catalog/stars";
 import { MW_FLOATS } from "../catalog/milkyway";
 import { GALAXY_FLOATS } from "../catalog/galaxies";
 import { GALAXY_MODEL_FLOATS, type GalaxyTextureModel } from "../catalog/galaxy-models";
+import { type MilkyWayModelObject } from "../catalog/milkyway-models";
 import { NEBULA_FLOATS } from "../catalog/nebulas";
 import { DUST_FLOATS } from "../catalog/dust";
 import { CONSTELLATION_FLOATS } from "../catalog/constellations";
 import { type TrailSystem, TRAIL_VTXFLOATS, TRAIL_SLOT_BYTES } from "../scene/trail-system";
 import { type OctantRange } from "./sky-cull";
 import { type CameraUniforms } from "../scene/camera";
+import { parseMilkyWayModel } from "./model-loader";
 
 // Camera uniform: mat4 (64) + right/min vec4 + up/focal vec4 + eye vec4 = 112 bytes
 const CAMERA_BYTES = 112;
 const BLACK_HOLE_BYTES = 32;
+const MILKY_WAY_MODEL_UNIFORM_BYTES = 64;
 const TEXTURED_GALAXY_MODEL_CAPACITY = 32;
 const DUST_MESH_VERTEX_COUNT = 60;
 
@@ -82,6 +86,14 @@ interface BodyBrightnessSample {
   observerDistanceAU: number;
 }
 
+interface MilkyWayModelEntry {
+  id: string;
+  vertexBuffer: GPUBuffer;
+  uniformBuffer: GPUBuffer;
+  bindGroup: GPUBindGroup;
+  vertexCount: number;
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
@@ -98,6 +110,7 @@ export class Renderer {
   private galaxyTexturedPipeline!: GPURenderPipeline;
   private nebulaPipeline!:          GPURenderPipeline;
   private nebulaTexturedPipeline!:  GPURenderPipeline;
+  private milkyWayModelPipeline!:   GPURenderPipeline;
   private dustPipeline!:    GPURenderPipeline;
   private blackHolePipeline!: GPURenderPipeline;
   private constellationPipeline!: GPURenderPipeline;
@@ -129,6 +142,9 @@ export class Renderer {
   private homunculusBGL!:            GPUBindGroupLayout;
   private homunculusTexture:         GPUTexture | null = null;
   private homunculusSampler!:        GPUSampler;
+  private milkyWayModelBGL!:         GPUBindGroupLayout;
+  private milkyWayModelEntries = new Map<string, MilkyWayModelEntry>();
+  private milkyWayModelLoading = new Set<string>();
   private dustBindGroup!:   GPUBindGroup;
   private blackHoleBindGroup!: GPUBindGroup;
   private constellationBindGroup!: GPUBindGroup;
@@ -605,6 +621,43 @@ export class Renderer {
       primitive: { topology: "triangle-list" },
     });
 
+    // ── Milky Way object 3D models — lazy NASA/Chandra mesh LOD ───────────
+    this.milkyWayModelBGL = device.createBindGroupLayout({
+      label: "milky-way-model-bgl",
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
+        { binding: 1, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
+      ],
+    });
+    const milkyWayModelShader = device.createShaderModule({ code: milkyWayModelWGSL });
+    this.milkyWayModelPipeline = device.createRenderPipeline({
+      label: "milky-way-model-pipeline",
+      layout: device.createPipelineLayout({ bindGroupLayouts: [this.milkyWayModelBGL] }),
+      vertex: {
+        module: milkyWayModelShader,
+        entryPoint: "vs_main",
+        buffers: [{
+          arrayStride: 6 * 4,
+          attributes: [
+            { shaderLocation: 0, offset: 0,     format: "float32x3" },
+            { shaderLocation: 1, offset: 3 * 4, format: "float32x3" },
+          ],
+        }],
+      },
+      fragment: {
+        module: milkyWayModelShader,
+        entryPoint: "fs_main",
+        targets: [{
+          format,
+          blend: {
+            color: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" },
+            alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" },
+          },
+        }],
+      },
+      primitive: { topology: "triangle-list" },
+    });
+
     // ── Procedural galactic dust cloud pipeline ────────────────────────────
     this.dustBGL = device.createBindGroupLayout({
       label: "dust-bgl",
@@ -901,6 +954,67 @@ export class Renderer {
     }
   }
 
+  ensureVisibleMilkyWayModels(models: readonly MilkyWayModelObject[], eye: readonly [number, number, number]): void {
+    let started = 0;
+    for (const model of models) {
+      if (this.milkyWayModelEntries.has(model.id) || this.milkyWayModelLoading.has(model.id)) continue;
+      const dist = Math.hypot(eye[0] - model.x, eye[1] - model.y, eye[2] - model.z);
+      if (dist <= model.loadDistanceAU) {
+        void this.ensureMilkyWayModelLoaded(model);
+        started++;
+        if (started >= 1) return;
+      }
+    }
+  }
+
+  async ensureMilkyWayModelLoaded(model: MilkyWayModelObject): Promise<void> {
+    if (this.milkyWayModelEntries.has(model.id) || this.milkyWayModelLoading.has(model.id)) return;
+    this.milkyWayModelLoading.add(model.id);
+    try {
+      const resp = await fetch(model.assetUrl);
+      if (!resp.ok) throw new Error(`asset ${resp.status}`);
+      const mesh = await parseMilkyWayModel(await resp.arrayBuffer(), model.format);
+      if (mesh.vertexCount <= 0) throw new Error("empty mesh");
+
+      const { device } = this.ctx;
+      const vertexBuffer = device.createBuffer({
+        label: `milky-way-model-vertices-${model.id}`,
+        size: mesh.vertices.byteLength,
+        usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+      });
+      device.queue.writeBuffer(vertexBuffer, 0, mesh.vertices as GPUAllowSharedBufferSource);
+
+      const uniformBuffer = device.createBuffer({
+        label: `milky-way-model-uniform-${model.id}`,
+        size: MILKY_WAY_MODEL_UNIFORM_BYTES,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      });
+      const entry: MilkyWayModelEntry = {
+        id: model.id,
+        vertexBuffer,
+        uniformBuffer,
+        bindGroup: device.createBindGroup({
+          label: `milky-way-model-bg-${model.id}`,
+          layout: this.milkyWayModelBGL,
+          entries: [
+            { binding: 0, resource: { buffer: this.cameraBuffer } },
+            { binding: 1, resource: { buffer: uniformBuffer } },
+          ],
+        }),
+        vertexCount: mesh.vertexCount,
+      };
+      this.writeMilkyWayModelUniform(entry, model);
+      this.milkyWayModelEntries.set(model.id, entry);
+      console.info(
+        `Loaded ${model.name} 3D model: ${mesh.usedTriangleCount.toLocaleString()} / ${mesh.sourceTriangleCount.toLocaleString()} triangles.`,
+      );
+    } catch (e) {
+      console.warn(`Failed to load Milky Way model ${model.name}:`, e);
+    } finally {
+      this.milkyWayModelLoading.delete(model.id);
+    }
+  }
+
   uploadDust(dust: Float32Array): void {
     if (dust.length % DUST_FLOATS !== 0) {
       throw new Error("Dust buffer length must be a multiple of DUST_FLOATS.");
@@ -1091,6 +1205,23 @@ export class Renderer {
     });
   }
 
+  private writeMilkyWayModelUniform(entry: MilkyWayModelEntry, model: MilkyWayModelObject): void {
+    const data = new Float32Array(MILKY_WAY_MODEL_UNIFORM_BYTES / 4);
+    data[0] = model.x;
+    data[1] = model.y;
+    data[2] = model.z;
+    data[3] = model.radiusAU;
+    data[4] = model.fadeNearAU;
+    data[5] = model.fadeFarAU;
+    data[6] = model.opacity;
+    data[7] = 0;
+    data[8] = model.color[0];
+    data[9] = model.color[1];
+    data[10] = model.color[2];
+    data[11] = 0;
+    this.ctx.device.queue.writeBuffer(entry.uniformBuffer, 0, data);
+  }
+
   private ensureSceneTexture(): void {
     const width = Math.max(1, Math.floor(this._blackHoleUniform[5] ?? 1));
     const height = Math.max(1, Math.floor(this._blackHoleUniform[6] ?? 1));
@@ -1232,6 +1363,16 @@ export class Renderer {
       pass.setPipeline(this.nebulaTexturedPipeline);
       pass.setBindGroup(0, this.homunculusBindGroup);
       pass.draw(6, 1, 0, 0);
+    }
+
+    // ── NASA/Chandra object meshes — close LOD only, shader fades by camera distance.
+    if (this.milkyWayModelEntries.size > 0) {
+      pass.setPipeline(this.milkyWayModelPipeline);
+      for (const entry of this.milkyWayModelEntries.values()) {
+        pass.setBindGroup(0, entry.bindGroup);
+        pass.setVertexBuffer(0, entry.vertexBuffer);
+        pass.draw(entry.vertexCount);
+      }
     }
 
     // ── Milky Way background stars (galaxy-scale LOD layer) ───────────────

@@ -18,6 +18,7 @@ type TravelMode = "system" | "close";
 interface CatalogSearchOptions {
   searchCatalog:      (query: string) => StarSearchResult[];
   getCatalogStatus:   () => string;
+  modelObjects?:      readonly StarSearchResult[];
   /** Called when any catalog search result is clicked, with its id. */
   onCatalogItemClick?: (id: string) => void;
   /** Called when navigation focus changes so the page can show the current focus. */
@@ -29,9 +30,13 @@ export class NavPanel {
   private toggle:  HTMLElement;
   private search:  HTMLInputElement;
   private catalogResults: HTMLElement;
+  private modelList: HTMLElement | null = null;
+  private modelPager: HTMLElement | null = null;
   private _focusedBodyName: string | null = null;
   private focusedSystemCenterName: string | null = null;
   private _selectedCatalogStar: StarSearchResult | null = null;
+  private modelPage = 0;
+  private readonly modelPageSize = 10;
   private open     = true;
 
   /** The catalog star (exoplanet host) most recently selected from search results. */
@@ -55,6 +60,8 @@ export class NavPanel {
     this.toggle = document.getElementById("nav-toggle")!;
     this.search = document.getElementById("nav-search") as HTMLInputElement;
     this.catalogResults = document.getElementById("catalog-search-results")!;
+    this.modelList = document.getElementById("mw-model-list");
+    this.modelPager = document.getElementById("mw-model-pagination");
 
     this.toggle.addEventListener("click", () => this.setOpen(!this.open));
     this.search.addEventListener("input",  () => this.filter());
@@ -62,6 +69,7 @@ export class NavPanel {
     this.catalogResults.addEventListener("click", e => e.stopPropagation());
 
     this.bindLinks();
+    this.renderModelList();
   }
 
   private bindLinks(): void {
@@ -104,6 +112,7 @@ export class NavPanel {
   private catalogObjectType(hit: StarSearchResult): string {
     if (hit.id.startsWith("blackhole:")) return "black hole";
     if (hit.id.startsWith("galaxy:")) return "galaxy";
+    if (hit.id.startsWith("mwmodel:")) return "3D model";
     if (hit.id.startsWith("exo:")) return "exoplanet";
     if (hit.id.startsWith("nearby:")) return "star";
     return "exoplanet host star";
@@ -226,16 +235,95 @@ export class NavPanel {
       el.style.display = (!q || text.includes(q)) ? "" : "none";
     });
 
+    this.panel.querySelectorAll<HTMLElement>("[data-catalog-model]").forEach(el => {
+      const text = (el.textContent ?? "").toLowerCase();
+      el.style.display = (!q || text.includes(q)) ? "" : "none";
+    });
+
     // Hide section headers + dividers when all their items are hidden
     this.panel.querySelectorAll<HTMLElement>(".nav-section-block").forEach(block => {
       const hasVisible = Array.from(
-        block.querySelectorAll<HTMLElement>("[data-travel],[data-preset]"),
+        block.querySelectorAll<HTMLElement>("[data-travel],[data-preset],[data-catalog-model]"),
       ).some(el => el.style.display !== "none");
       block.style.display = hasVisible ? "" : "none";
     });
 
     const catalogHits = this.catalogSearch?.searchCatalog(q) ?? [];
     this.renderCatalogResults(searchingCatalog ? q : "", catalogHits);
+  }
+
+  private renderModelList(): void {
+    if (!this.modelList || !this.modelPager) return;
+    const models = this.catalogSearch?.modelObjects ?? [];
+    this.modelList.replaceChildren();
+    this.modelPager.replaceChildren();
+
+    if (models.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "nav-model-empty";
+      empty.textContent = "No models";
+      this.modelList.appendChild(empty);
+      return;
+    }
+
+    const pageCount = Math.max(1, Math.ceil(models.length / this.modelPageSize));
+    this.modelPage = Math.max(0, Math.min(this.modelPage, pageCount - 1));
+    const start = this.modelPage * this.modelPageSize;
+
+    for (const hit of models.slice(start, start + this.modelPageSize)) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "nav-item nav-model-item";
+      btn.dataset["catalogModel"] = hit.id;
+
+      const dot = document.createElement("span");
+      dot.className = "nav-dot";
+      dot.style.background = `rgb(${Math.round(hit.color[0] * 255)}, ${Math.round(hit.color[1] * 255)}, ${Math.round(hit.color[2] * 255)})`;
+
+      const copy = document.createElement("span");
+      copy.className = "nav-model-copy";
+      const name = document.createElement("span");
+      name.className = "nav-model-name";
+      name.textContent = hit.label;
+      const meta = document.createElement("span");
+      meta.className = "nav-model-meta";
+      meta.textContent = hit.subtitle;
+      copy.append(name, meta);
+      btn.append(dot, copy);
+      btn.addEventListener("click", () => {
+        this.selectCatalogStar(hit);
+        this.catalogSearch?.onCatalogItemClick?.(hit.id);
+      });
+      this.modelList.appendChild(btn);
+    }
+
+    const prev = document.createElement("button");
+    prev.type = "button";
+    prev.className = "nav-model-page-btn";
+    prev.textContent = "‹";
+    prev.disabled = this.modelPage <= 0;
+    prev.addEventListener("click", () => {
+      this.modelPage--;
+      this.renderModelList();
+      this.filter();
+    });
+
+    const label = document.createElement("span");
+    label.className = "nav-model-page-label";
+    label.textContent = `${this.modelPage + 1} / ${pageCount}`;
+
+    const next = document.createElement("button");
+    next.type = "button";
+    next.className = "nav-model-page-btn";
+    next.textContent = "›";
+    next.disabled = this.modelPage >= pageCount - 1;
+    next.addEventListener("click", () => {
+      this.modelPage++;
+      this.renderModelList();
+      this.filter();
+    });
+
+    this.modelPager.append(prev, label, next);
   }
 
   private renderCatalogResults(query: string, hits: StarSearchResult[]): void {
@@ -253,8 +341,8 @@ export class NavPanel {
       } else {
         empty.innerHTML =
           `No match for "<b>${query}</b>".<br>` +
-          `Catalog: exoplanet host stars, planets, and Sgr A*.<br>` +
-          `Try: <em>Sgr A*, TRAPPIST-1, Proxima, 51 Peg, HD 209, Kepler</em>`;
+          `Catalog: exoplanet host stars, 3D models, planets, and Sgr A*.<br>` +
+          `Try: <em>Sgr A*, Crab, Cas A, TRAPPIST-1, Proxima</em>`;
       }
       this.catalogResults.appendChild(empty);
       return;

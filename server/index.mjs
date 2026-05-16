@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { handleHealthRequest } from "./health.mjs";
 import { handleHorizonsRequest } from "./horizons.mjs";
+import { handleModelAssetRequest } from "./model-assets.mjs";
 import { handleObjectInfoRequest } from "./object-info.mjs";
 
 const REPO_ROOT = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -137,6 +138,7 @@ function makeServer() {
     setIsolationHeaders(res);
     if (handleHealthRequest(req, res)) return;
     if (await handleHorizonsRequest(req, res)) return;
+    if (await handleModelAssetRequest(req, res)) return;
     if (await handleObjectInfoRequest(req, res)) return;
     await serveStatic(req, res);
   });

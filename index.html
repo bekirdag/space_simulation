@@ -551,6 +551,74 @@
         color: #fff;
       }
 
+      .nav-model-list {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+      }
+      .nav-model-item {
+        width: calc(100% - 12px);
+        border: 0;
+        background: transparent;
+        text-align: left;
+        min-height: 36px;
+      }
+      .nav-model-copy {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        gap: 1px;
+      }
+      .nav-model-name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .nav-model-meta,
+      .nav-model-empty {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: rgba(255,255,255,0.34);
+        font-family: 'SF Mono', 'Fira Code', monospace;
+        font-size: 8px;
+        line-height: 1.25;
+      }
+      .nav-model-empty {
+        padding: 6px 14px;
+      }
+      .nav-model-pagination {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 6px 10px 3px;
+      }
+      .nav-model-page-btn {
+        width: 24px;
+        height: 22px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid rgba(255,255,255,0.10);
+        border-radius: 5px;
+        background: rgba(255,255,255,0.055);
+        color: rgba(235,240,255,0.72);
+        cursor: pointer;
+        padding: 0;
+      }
+      .nav-model-page-btn:disabled {
+        color: rgba(255,255,255,0.20);
+        cursor: default;
+      }
+      .nav-model-page-label {
+        min-width: 38px;
+        color: rgba(255,255,255,0.36);
+        font-family: 'SF Mono', 'Fira Code', monospace;
+        font-size: 9px;
+        text-align: center;
+      }
+
       .nav-dot {
         width: 8px;
         height: 8px;
@@ -1462,6 +1530,13 @@
             <div class="nav-item nav-moon" data-travel="Miranda">  <span class="nav-dot" style="background:#adaaa0"></span>Miranda   <span class="nav-parent">Uranus</span></div>
             <!-- Neptune -->
             <div class="nav-item nav-moon" data-travel="Triton">   <span class="nav-dot" style="background:#b8c8e6"></span>Triton    <span class="nav-parent">Neptune</span></div>
+          </div>
+
+          <div class="nav-section-block">
+            <div class="nav-divider"></div>
+            <div class="nav-section-title">Milky Way 3D Models</div>
+            <div id="mw-model-list" class="nav-model-list"></div>
+            <div id="mw-model-pagination" class="nav-model-pagination"></div>
           </div>
 
           <div class="nav-bottom-pad"></div>
