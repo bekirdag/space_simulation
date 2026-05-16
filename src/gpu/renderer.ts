@@ -48,7 +48,7 @@ const DUST_VOLUME_UNIFORM_BYTES = 80;
 const DUST_COMPUTE_WORKGROUP_SIZE = 4;
 const DUST_RENDER_FADE_START_AU = 4_000;
 const DUST_RENDER_FADE_END_AU = 16_000;
-const DUST_MAX_OPACITY = 0.24;
+const DUST_DEFAULT_TRANSPARENCY = 0.76;
 const DUST_RAYMARCH_STEPS = 10;
 const MILKY_WAY_MODEL_RETRY_MS = 120_000;
 const MILKY_WAY_MODEL_BACKEND_RETRY_MS = 120_000;
@@ -284,6 +284,7 @@ export class Renderer {
   private _actualBrightness = true;
   private _cameraDistanceFromSun = 0;
   private _showDust = true;
+  private _dustTransparency = DUST_DEFAULT_TRANSPARENCY;
   private _showBlackHole = true;
   private _blackHoleUniform = new Float32Array([
     0, 0, 0, 0,
@@ -299,6 +300,7 @@ export class Renderer {
     showTrails?:  boolean;
     actualBodyBrightness?: boolean;
     showDust?: boolean;
+    dustTransparency?: number;
     showBlackHole?: boolean;
   }): void {
     if (s.starLimit   !== undefined) this._starLimit   = s.starLimit;
@@ -312,6 +314,7 @@ export class Renderer {
       this.syncBrightnessUniforms();
     }
     if (s.showDust !== undefined) this._showDust = s.showDust;
+    if (s.dustTransparency !== undefined) this._dustTransparency = clamp(s.dustTransparency, 0, 1);
     if (s.showBlackHole !== undefined) this._showBlackHole = s.showBlackHole;
   }
 
@@ -1221,7 +1224,7 @@ export class Renderer {
     data[8] = 5.4;   // absorption
     data[9] = 0.34;  // scattering strength
     data[10] = 0.62; // Henyey-Greenstein forward-scattering g
-    data[11] = DUST_MAX_OPACITY * dustVisibility;
+    data[11] = this.dustOpacity() * dustVisibility;
 
     data[12] = 1.0;
     data[13] = 0.82;
@@ -1436,6 +1439,10 @@ export class Renderer {
     );
   }
 
+  private dustOpacity(): number {
+    return clamp(1 - this._dustTransparency, 0, 1);
+  }
+
   private ensureSceneTexture(): void {
     const width = Math.max(1, Math.floor(this._blackHoleUniform[5] ?? 1));
     const height = Math.max(1, Math.floor(this._blackHoleUniform[6] ?? 1));
@@ -1647,7 +1654,8 @@ export class Renderer {
     if (
       this._showDust &&
       this.dustVolumeReady &&
-      this.dustVisibility() > 0.01
+      this.dustVisibility() > 0.01 &&
+      this.dustOpacity() > 0.001
     ) {
       pass.setPipeline(this.dustPipeline);
       pass.setBindGroup(0, this.dustBindGroup);

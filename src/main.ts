@@ -795,6 +795,11 @@ async function main(): Promise<void> {
     const showTrails = (document.getElementById("set-trails") as HTMLInputElement).checked;
     showConstellations = (document.getElementById("set-constellations") as HTMLInputElement).checked;
     const showDust = (document.getElementById("set-dust-clouds") as HTMLInputElement).checked;
+    const dustTransparencyInput = document.getElementById("set-dust-transparency") as HTMLInputElement;
+    const dustTransparencyValue = document.getElementById("set-dust-transparency-value")!;
+    const dustTransparency = Math.max(0, Math.min(1, Number(dustTransparencyInput.value) / 100));
+    dustTransparencyInput.disabled = !showDust;
+    dustTransparencyValue.textContent = `${Math.round(dustTransparency * 100)}%`;
     const showBlackHole = (document.getElementById("set-black-hole") as HTMLInputElement).checked;
     const actualBodyBrightness = (document.getElementById("set-body-brightness") as HTMLInputElement).checked;
     showGalaxies    = (document.getElementById("set-galaxies") as HTMLInputElement).checked;
@@ -817,6 +822,7 @@ async function main(): Promise<void> {
       showGalaxies,
       showConstellations,
       showDust,
+      dustTransparency,
       showBlackHole,
       showTrails,
       mwStarLimit:  mwVal,
@@ -828,6 +834,7 @@ async function main(): Promise<void> {
 
   // Apply on any change inside the modal
   settingsModal.addEventListener("change", applySettings);
+  settingsModal.addEventListener("input", applySettings);
 
   let gpu: Awaited<ReturnType<typeof initGPU>>;
   try {
@@ -849,6 +856,7 @@ async function main(): Promise<void> {
   const hud    = new HUD();
   const scaleBar = new ScaleBar();
   const labels = new LabelManager();
+  applySettings();
   // Start with empty buffers — real data loads from binary within milliseconds.
   // Avoid the 100k-star placeholder allocation that can fail on low-memory devices.
   let visibleStarBuffer: StarBuffer = new Float32Array(0);

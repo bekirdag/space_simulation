@@ -739,6 +739,37 @@
         font-size: 11px;
         color: rgba(255,255,255,0.62);
       }
+      .settings-row-range {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 7px;
+        padding: 7px 0 5px;
+      }
+      .settings-row-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .settings-value {
+        flex-shrink: 0;
+        min-width: 36px;
+        color: rgba(123,191,255,0.78);
+        font-size: 10px;
+        font-variant-numeric: tabular-nums;
+        text-align: right;
+      }
+      .s-range {
+        width: 100%;
+        height: 16px;
+        margin: 0;
+        accent-color: #7bbfff;
+        cursor: pointer;
+      }
+      .s-range:disabled {
+        opacity: 0.35;
+        cursor: default;
+      }
       /* Toggle switch */
       .s-toggle {
         position: relative;
@@ -1688,6 +1719,13 @@
               <input type="checkbox" id="set-dust-clouds" checked>
               <span class="s-track"></span>
             </label>
+          </div>
+          <div class="settings-row-range">
+            <div class="settings-row-top">
+              <span class="settings-row-label">Dust transparency</span>
+              <span id="set-dust-transparency-value" class="settings-value">76%</span>
+            </div>
+            <input class="s-range" type="range" id="set-dust-transparency" min="0" max="100" step="1" value="76" aria-label="Dust transparency">
           </div>
           <div class="settings-row">
             <span class="settings-row-label">Sgr A* lensing</span>
