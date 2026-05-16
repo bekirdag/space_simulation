@@ -341,8 +341,8 @@ export class NavPanel {
       } else {
         empty.innerHTML =
           `No match for "<b>${query}</b>".<br>` +
-          `Catalog: exoplanet host stars, 3D models, planets, and Sgr A*.<br>` +
-          `Try: <em>Sgr A*, Crab, Cas A, TRAPPIST-1, Proxima</em>`;
+          `Catalog: known galaxies, 3D models, exoplanet host stars, planets, and Sgr A*.<br>` +
+          `Try: <em>Andromeda, LMC, Sgr A*, Crab, TRAPPIST-1, Proxima</em>`;
       }
       this.catalogResults.appendChild(empty);
       return;

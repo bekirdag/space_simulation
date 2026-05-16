@@ -101,6 +101,22 @@ const SGR_A_SEARCH_RESULT: StarSearchResult = {
   focusDistance: SGR_A_BLACK_HOLE_FOCUS_AU,
   color: [1.0, 0.52, 0.18],
 };
+const KNOWN_GALAXY_ALIASES: Record<string, readonly string[]> = {
+  "milky-way": ["home galaxy", "galaxy"],
+  lmc: ["lmc"],
+  smc: ["smc"],
+  andromeda: ["m31"],
+  triangulum: ["m33"],
+  "ngc-205": ["m110"],
+  "m81": ["bodes galaxy", "bode galaxy"],
+  "m82": ["cigar galaxy"],
+  "cen-a": ["centaurus a", "ngc 5128"],
+  "m83": ["southern pinwheel"],
+  "m101": ["pinwheel galaxy"],
+  "m51": ["whirlpool galaxy"],
+  "m104": ["sombrero galaxy"],
+  "m87": ["virgo a"],
+};
 const LIGHT_YEARS_PER_PARSEC = 3.26156;
 const NEARBY_STAR_FOCUS_MIN_AU = 0.35;
 const NEARBY_STAR_FOCUS_MAX_AU = 24;
@@ -531,6 +547,117 @@ async function main(): Promise<void> {
       : `${distanceMpc.toFixed(distanceMpc < 10 ? 2 : 1)} Mpc`;
   }
 
+  function normalizeGalaxySearchText(value: string): string {
+    return value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function galaxySearchId(name: string): string {
+    return `galaxy:${name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
+  }
+
+  function knownGalaxySearchRank(
+    query: string,
+    id: string,
+    name: string,
+    distanceMpc: number,
+  ): number | null {
+    const aliases = KNOWN_GALAXY_ALIASES[id] ?? [];
+    const normalizedId = normalizeGalaxySearchText(id);
+    const normalizedName = normalizeGalaxySearchText(name);
+    const normalizedAliases = aliases.map(normalizeGalaxySearchText);
+    const haystack = [normalizedId, normalizedName, ...normalizedAliases].join(" ");
+    const index = haystack.indexOf(query);
+    if (index < 0) return null;
+
+    const exact =
+      normalizedId === query ||
+      normalizedName === query ||
+      normalizedAliases.some(alias => alias === query);
+    const starts =
+      normalizedId.startsWith(query) ||
+      normalizedName.startsWith(query) ||
+      normalizedAliases.some(alias => alias.startsWith(query));
+    return (exact ? -100 : starts ? 0 : 1000) + index + Math.max(0, distanceMpc) * 0.01;
+  }
+
+  function localGroupGalaxyResult(galaxy: (typeof LOCAL_GROUP_GALAXY_LABELS)[number]): StarSearchResult {
+    return {
+      id: `galaxy:${galaxy.id}`,
+      label: galaxy.name,
+      subtitle: galaxyFocusSubtitle(galaxy.dist),
+      x: galaxy.x,
+      y: galaxy.y,
+      z: galaxy.z,
+      focusDistance: galaxyModelFocusDistance(galaxy.id) ?? galaxy.focusDistance,
+      color: [galaxy.color[0], galaxy.color[1], galaxy.color[2]],
+    };
+  }
+
+  function milkyWayGalaxyResult(): StarSearchResult {
+    return {
+      id: "galaxy:milky-way",
+      label: "Milky Way",
+      subtitle: "home galaxy · center at Sagittarius A*",
+      x: SGR_A_STAR_POS[0],
+      y: SGR_A_STAR_POS[1],
+      z: SGR_A_STAR_POS[2],
+      focusDistance: camera.distanceForViewRadius(MILKY_WAY_RADIUS_AU * 1.18, 0.70),
+      color: [0.82, 0.88, 1.00],
+    };
+  }
+
+  function searchKnownGalaxies(query: string, limit = 6): StarSearchResult[] {
+    const q = normalizeGalaxySearchText(query);
+    if (q.length < 2) return [];
+
+    const hits: { rank: number; hit: StarSearchResult }[] = [];
+    const milkyWayRank = knownGalaxySearchRank(q, "milky-way", "Milky Way", 0);
+    if (milkyWayRank !== null) {
+      hits.push({ rank: milkyWayRank, hit: milkyWayGalaxyResult() });
+    }
+
+    for (const galaxy of LOCAL_GROUP_GALAXY_LABELS) {
+      const rank = knownGalaxySearchRank(q, galaxy.id, galaxy.name, galaxy.dist);
+      if (rank !== null) hits.push({ rank, hit: localGroupGalaxyResult(galaxy) });
+    }
+
+    return hits
+      .sort((a, b) => a.rank - b.rank || a.hit.label.localeCompare(b.hit.label))
+      .slice(0, limit)
+      .map(item => item.hit);
+  }
+
+  function catalogGalaxyResult(r: ReturnType<typeof searchGalaxies>[number]): StarSearchResult {
+    const label = LOCAL_GROUP_GALAXY_LABELS.find(g => g.name === r.name);
+    const focusDistance = label
+      ? galaxyModelFocusDistance(label.id) ?? label.focusDistance
+      : Math.min(10_000, Math.max(500, Math.hypot(r.x, r.y, r.z) * 0.02));
+    return {
+      id: label ? `galaxy:${label.id}` : galaxySearchId(r.name),
+      label: r.name,
+      subtitle: galaxyFocusSubtitle(r.dist),
+      x: r.x, y: r.y, z: r.z,
+      focusDistance,
+      color: [0.82, 0.88, 1.00],
+    };
+  }
+
+  function mergeGalaxySearchHits(knownHits: StarSearchResult[], catalogHits: StarSearchResult[]): StarSearchResult[] {
+    const seen = new Set<string>();
+    const merged: StarSearchResult[] = [];
+    for (const hit of [...knownHits, ...catalogHits]) {
+      if (seen.has(hit.id)) continue;
+      seen.add(hit.id);
+      merged.push(hit);
+      if (merged.length >= 8) break;
+    }
+    return merged;
+  }
+
   function resizeCanvas() {
     const dpr = window.devicePixelRatio || 1;
     canvas.width  = Math.floor(window.innerWidth  * dpr);
@@ -903,20 +1030,10 @@ async function main(): Promise<void> {
       ) ? [SGR_A_SEARCH_RESULT] : [];
       const starHits = searchCatalogStars(exoplanetHosts, query, 5);
       const modelHits = searchMilkyWayModels(query, 5);
-      const galaxyHits = searchGalaxies(galaxyNames, galaxyBuffer, query, 5).map(r => {
-        const label = LOCAL_GROUP_GALAXY_LABELS.find(g => g.name === r.name);
-        const focusDistance = label
-          ? galaxyModelFocusDistance(label.id) ?? label.focusDistance
-          : Math.min(10_000, Math.max(500, Math.hypot(r.x, r.y, r.z) * 0.02));
-        return {
-          id: `galaxy:${label?.id ?? r.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
-          label: r.name,
-          subtitle: galaxyFocusSubtitle(r.dist),
-          x: r.x, y: r.y, z: r.z,
-          focusDistance,
-          color: [0.82, 0.88, 1.00] as [number, number, number],
-        };
-      });
+      const galaxyHits = mergeGalaxySearchHits(
+        searchKnownGalaxies(query, 6),
+        searchGalaxies(galaxyNames, galaxyBuffer, query, 5).map(catalogGalaxyResult),
+      );
       const exoHits  = searchExoplanets(query, getStarWorldPos, simYears, 5);
       return [
         ...blackHoleHits,
