@@ -39,6 +39,10 @@ const MILKY_WAY_MODEL_UNIFORM_BYTES = 64;
 const TEXTURED_GALAXY_MODEL_CAPACITY = 32;
 const DUST_VOLUME_UNIFORM_BYTES = 80;
 const DUST_COMPUTE_WORKGROUP_SIZE = 4;
+const DUST_RENDER_FADE_START_AU = 4_000;
+const DUST_RENDER_FADE_END_AU = 16_000;
+const DUST_MAX_OPACITY = 0.24;
+const DUST_RAYMARCH_STEPS = 10;
 
 const KM_PER_AU = 149_597_870.7;
 const SUN_APPARENT_MAG = -26.74;
@@ -103,6 +107,11 @@ interface MilkyWayModelEntry {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
+}
+
+function smoother01(value: number): number {
+  const t = clamp(value, 0, 1);
+  return t * t * t * (t * (t * 6 - 15) + 10);
 }
 
 function bodyDistanceAU(a: Body, b: Body): number {
@@ -1075,6 +1084,7 @@ export class Renderer {
 
   private writeDustUniform(viewportWidth: number, viewportHeight: number): void {
     if (!this.dustUniformBuffer) return;
+    const dustVisibility = this.dustVisibility();
     const data = new Float32Array(DUST_VOLUME_UNIFORM_BYTES / 4);
     data[0] = DUST_VOLUME_CENTER_AU[0];
     data[1] = DUST_VOLUME_CENTER_AU[1];
@@ -1083,18 +1093,18 @@ export class Renderer {
 
     data[4] = DUST_VOLUME_HALF_HEIGHT_AU;
     data[5] = DUST_MILKY_WAY_KPC_TO_AU;
-    data[6] = 0.36; // galacticCoverage: higher values carve more empty lanes.
+    data[6] = 0.29; // galacticCoverage: higher values carve more empty lanes.
     data[7] = DUST_VOLUME_SIZE;
 
-    data[8] = 2.35;  // absorption
-    data[9] = 0.18;  // scattering strength
-    data[10] = 0.68; // Henyey-Greenstein forward-scattering g
-    data[11] = 0.10; // max opacity
+    data[8] = 5.4;   // absorption
+    data[9] = 0.34;  // scattering strength
+    data[10] = 0.62; // Henyey-Greenstein forward-scattering g
+    data[11] = DUST_MAX_OPACITY * dustVisibility;
 
     data[12] = 1.0;
     data[13] = 0.82;
     data[14] = 0.55;
-    data[15] = 48; // raymarch steps
+    data[15] = DUST_RAYMARCH_STEPS;
 
     data[16] = Math.max(1, viewportWidth);
     data[17] = Math.max(1, viewportHeight);
@@ -1297,6 +1307,13 @@ export class Renderer {
     this.ctx.device.queue.writeBuffer(entry.uniformBuffer, 0, data);
   }
 
+  private dustVisibility(): number {
+    return smoother01(
+      (this._cameraDistanceFromSun - DUST_RENDER_FADE_START_AU) /
+      (DUST_RENDER_FADE_END_AU - DUST_RENDER_FADE_START_AU),
+    );
+  }
+
   private ensureSceneTexture(): void {
     const width = Math.max(1, Math.floor(this._blackHoleUniform[5] ?? 1));
     const height = Math.max(1, Math.floor(this._blackHoleUniform[6] ?? 1));
@@ -1461,7 +1478,11 @@ export class Renderer {
 
     // ── Procedural galactic dust — drawn after MW stars, before nearby catalog stars.
     // Dust dims the galaxy background; nearby HYG stars render on top.
-    if (this._showDust && this.dustVolumeReady) {
+    if (
+      this._showDust &&
+      this.dustVolumeReady &&
+      this.dustVisibility() > 0.01
+    ) {
       pass.setPipeline(this.dustPipeline);
       pass.setBindGroup(0, this.dustBindGroup);
       pass.draw(3, 1, 0, 0);

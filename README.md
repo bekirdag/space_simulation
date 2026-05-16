@@ -27,8 +27,8 @@ help from Claude and Codex 5.5.
   These stars can be searched and focused without being listed in the right nav.
 - 200,000 Milky Way background stars and a 100,000-entry galaxy layer.
 - NASA SVS constellation lines and titles.
-- Procedural Galactic dust layer with tens of thousands of low-opacity 3D
-  cloud meshes distributed through the Milky Way disk and spiral arms.
+- Procedural Galactic dust layer using a cached 3D density texture and a
+  low-step WebGPU raymarch through the Milky Way disk and spiral arms.
 - Visual Sagittarius A* black-hole lensing approximation using the physical
   event-horizon radius derived from a 4.3-million-solar-mass black hole.
 - Camera-distance adjusted apparent brightness mode for bodies, Milky Way
@@ -140,8 +140,8 @@ astrophysical solver.
   derived from a 4.3-million-solar-mass black hole. The lensing/accretion
   visuals are still illustrative and are not a relativistic ray tracer.
 - Galactic dust currently affects visuals only; it does not change star
-  brightness or physics. The active dust layer is procedural and uses faceted
-  low-poly cloud meshes, not calibrated 3D extinction data.
+  brightness or physics. The active dust layer is procedural and uses a cached
+  low-resolution 3D density texture, not calibrated 3D extinction data.
 
 ## Culling And LOD
 

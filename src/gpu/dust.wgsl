@@ -240,18 +240,6 @@ fn hgPhase(cosTheta: f32, g: f32) -> f32 {
   return (1.0 - gg) / pow(max(0.05, 1.0 + gg - 2.0 * g * cosTheta), 1.5);
 }
 
-fn lightTransmittance(pos: vec3<f32>, lightDir: vec3<f32>) -> f32 {
-  var transmittance = 1.0;
-  var p = pos;
-  let lightStepAU = dustParams.params0.y * 0.35;
-  for (var i = 0; i < 8; i = i + 1) {
-    p += lightDir * lightStepAU;
-    let density = sampleDust(p).a;
-    transmittance *= exp(-density * dustParams.params1.x * 0.35);
-  }
-  return clamp(transmittance, 0.0, 1.0);
-}
-
 @fragment
 fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   let ro = camera.eyeAndFlags.xyz;
@@ -261,7 +249,11 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     return vec4<f32>(0.0);
   }
 
-  let steps = clamp(dustParams.coreColor_steps.w, 24.0, 64.0);
+  if (dustParams.params1.w <= 0.001) {
+    return vec4<f32>(0.0);
+  }
+
+  let steps = clamp(dustParams.coreColor_steps.w, 6.0, 18.0);
   let nearT = max(bounds.x, 0.0);
   let farT = bounds.y;
   let stepSizeAU = (farT - nearT) / steps;
@@ -272,9 +264,11 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   let pixel = in.uv * max(dustParams.viewport.xy, vec2<f32>(1.0, 1.0));
   var t = nearT + interleavedGradientNoise(pixel) * stepSizeAU;
   var transmittance = 1.0;
-  var color = vec3<f32>(0.0);
+  var glow = vec3<f32>(0.0);
+  var weightedLaneColor = vec3<f32>(0.0);
+  var laneWeight = 0.0;
 
-  for (var i = 0; i < 64; i = i + 1) {
+  for (var i = 0; i < 18; i = i + 1) {
     if (f32(i) >= steps || t > farT || transmittance < 0.012) {
       break;
     }
@@ -285,24 +279,33 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     if (density > 0.002) {
       let stepKpc = stepSizeAU / dustParams.params0.y;
       let toCore = normalize(dustParams.center_radius.xyz - pos);
-      let lightT = lightTransmittance(pos, toCore);
-      let phase = hgPhase(dot(rd, toCore), dustParams.params1.z);
+      let phase = clamp(hgPhase(dot(rd, toCore), dustParams.params1.z) * 0.045, 0.0, 1.35);
       let laneColor = max(dust.rgb, vec3<f32>(0.012, 0.010, 0.009));
-      let scatterColor = mix(laneColor, dustParams.coreColor_steps.rgb, 0.28);
-      let scatter = density * lightT * phase * dustParams.params1.y * stepKpc;
-      color += transmittance * scatter * scatterColor;
+      let sampleWeight = transmittance * density;
+      weightedLaneColor += laneColor * sampleWeight;
+      laneWeight += sampleWeight;
+
+      let scatterColor = mix(laneColor, dustParams.coreColor_steps.rgb, 0.34);
+      let scatter = density * dustParams.params1.y * (0.18 + phase) * stepKpc;
+      glow += transmittance * scatter * scatterColor;
       transmittance *= exp(-density * dustParams.params1.x * stepKpc);
     }
     t += stepSizeAU;
   }
 
   let extinction = clamp(1.0 - transmittance, 0.0, 1.0);
-  if (extinction <= 0.0005 && length(color) <= 0.0005) {
+  if (extinction <= 0.0005 && length(glow) <= 0.0005) {
     return vec4<f32>(0.0);
   }
 
-  let darkLaneColor = vec3<f32>(0.030, 0.023, 0.018) * extinction * 0.40;
-  let outColor = color + darkLaneColor;
-  let alpha = clamp(extinction * dustParams.params1.w * 3.2 + length(color) * 0.08, 0.0, dustParams.params1.w);
+  var avgLaneColor = vec3<f32>(0.055, 0.040, 0.030);
+  if (laneWeight > 0.0001) {
+    avgLaneColor = weightedLaneColor / laneWeight;
+  }
+  let darkLaneColor = mix(vec3<f32>(0.010, 0.009, 0.008), avgLaneColor, 0.48);
+  let glowColor = glow + avgLaneColor * 0.22;
+  let glowMix = clamp(length(glow) * 0.75, 0.0, 0.42);
+  let outColor = mix(darkLaneColor, glowColor, glowMix);
+  let alpha = clamp(extinction * dustParams.params1.w * 4.4 + length(glow) * 0.14, 0.0, dustParams.params1.w);
   return vec4<f32>(outColor, alpha);
 }
