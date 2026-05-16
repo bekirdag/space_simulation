@@ -5,6 +5,7 @@ import {
 } from "./galaxies";
 
 export const GALAXY_MODEL_FLOATS = 16;
+const GALAXY_MODEL_FOCUS_RADIUS_MULTIPLIER = 1.15;
 
 export interface GalaxyTextureModel {
   id: string;
@@ -193,7 +194,7 @@ export function galaxyTextureModels(): GalaxyTextureModel[] {
 
     const majorRadiusAU = Math.max(1, def.diameterKpc * GALAXY_KPC_TO_AU * 0.5);
     const radiusAU = majorRadiusAU / Math.max(0.2, def.aspect);
-    const focusDistance = Math.max(900, majorRadiusAU * 1.65);
+    const focusDistance = Math.max(900, majorRadiusAU * GALAXY_MODEL_FOCUS_RADIUS_MULTIPLIER);
     const { right, up } = basisForLabel(label, def.rotationDeg ?? 0);
 
     return [{
