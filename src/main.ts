@@ -57,6 +57,7 @@ import { galaxyModelFocusDistance, galaxyTextureModels } from "./catalog/galaxy-
 import {
   MILKY_WAY_MODEL_OBJECTS,
   milkyWayModelById,
+  milkyWayModelNebulaExclusionSlugs,
   milkyWayModelSearchResults,
   searchMilkyWayModels,
 } from "./catalog/milkyway-models";
@@ -67,10 +68,8 @@ import { sortIntoOctants } from "./gpu/sky-cull";
 import { loadConstellationLines, type ConstellationLabel } from "./catalog/constellations";
 import {
   buildNebulaBuffer,
-  buildHomunculusBuffer,
   nebulaPositions,
   NEB_COLOR,
-  HOMUNCULUS_NEBULA,
   type NebulaDet,
 } from "./catalog/nebulas";
 import { BackendUnavailableError, backendAssetUrl, backendFetch, readBackendJson } from "./services/backend";
@@ -892,17 +891,11 @@ async function main(): Promise<void> {
   console.info(`Loaded Milky Way dust from ${DUST_VOLUME_SOURCE}`);
 
   // ── Nebula catalog (Milky Way gas clouds) ─────────────────────────────────
-  const nebulaBuf = buildNebulaBuffer();
+  const modelNebulaExclusions = milkyWayModelNebulaExclusionSlugs();
+  const nebulaBuf = buildNebulaBuffer(modelNebulaExclusions);
   renderer.uploadNebulas(nebulaBuf);
-  const nebulaDets: NebulaDet[] = nebulaPositions();
+  const nebulaDets: NebulaDet[] = nebulaPositions(modelNebulaExclusions);
   console.info(`Loaded ${nebulaDets.length} Milky Way nebulas`);
-
-  // ── Eta Carinae Homunculus Nebula — real NASA/ESA Hubble image ────────────
-  const { buf: homunculusBuf, x: hx, y: hy, z: hz } = buildHomunculusBuffer();
-  renderer.uploadHomunculus(homunculusBuf);
-  // Also expose it in the context menu via nebulaDets
-  nebulaDets.push({ name: HOMUNCULUS_NEBULA.name, x: hx, y: hy, z: hz, type: HOMUNCULUS_NEBULA.type });
-  void renderer.loadEtaCarinaTexture("/textures/nebula-eta-carinae.jpg");
 
   // ── Constellation lines snapped to real visible-star positions ───────────
   let constellationLabels: ConstellationLabel[] = [];
@@ -1127,6 +1120,7 @@ async function main(): Promise<void> {
     // Called whenever a catalog search result is clicked.
     // If the id encodes an exoplanet, load that star's planet bodies.
     onCatalogItemClick: (id: string) => {
+      renderer.setActiveMilkyWayModel(id.startsWith("mwmodel:") ? id : null);
       if (id === "blackhole:sgr-a") {
         setExoplanetBodies(null);
       } else if (id.startsWith("galaxy:")) {
@@ -1163,6 +1157,7 @@ async function main(): Promise<void> {
 
   function focusNearbyStar(star: NearbyStarLabel): void {
     const distanceLy = star.distPc * LIGHT_YEARS_PER_PARSEC;
+    renderer.setActiveMilkyWayModel(null);
     setExoplanetBodies(star.name, [star.x, star.y, star.z]);
     nav.selectCatalogStar({
       id: nearbyStarId(star),
@@ -1179,6 +1174,7 @@ async function main(): Promise<void> {
   }
 
   function focusMilkyWay(): void {
+    renderer.setActiveMilkyWayModel(null);
     setExoplanetBodies(null);
     renderer.uploadSelectedStar(null);
     nav.selectCatalogStar({
@@ -1195,6 +1191,7 @@ async function main(): Promise<void> {
   }
 
   function focusGalaxyLabel(galaxy: GalaxyNameLabel): void {
+    renderer.setActiveMilkyWayModel(null);
     setExoplanetBodies(null);
     renderer.uploadSelectedStar(null);
     nav.selectCatalogStar({
@@ -1342,6 +1339,7 @@ async function main(): Promise<void> {
       (body) => nav.travelToSystem(body.name),
       nearbyStars,
       (star) => {
+        renderer.setActiveMilkyWayModel(null);
         const distAu    = Math.sqrt(star.x**2 + star.y**2 + star.z**2);
         const focusDist = Math.min(5, Math.max(0.5, distAu * 5e-4));
         const distLabel = star.distancePc != null
@@ -1357,6 +1355,7 @@ async function main(): Promise<void> {
       },
       nearbyGalaxies,
       (gal) => {
+        renderer.setActiveMilkyWayModel(null);
         const r = Math.sqrt(gal.x**2 + gal.y**2 + gal.z**2);
         const label = LOCAL_GROUP_GALAXY_LABELS.find(item => item.name === gal.name);
         nav.selectCatalogStar({
@@ -1372,6 +1371,7 @@ async function main(): Promise<void> {
       },
       nearbyNebulas,
       (neb) => {
+        renderer.setActiveMilkyWayModel(null);
         const r = Math.sqrt(neb.x**2 + neb.y**2 + neb.z**2);
         const color = NEB_COLOR[neb.type] ?? [0.88, 0.35, 0.55];
         nav.selectCatalogStar({
@@ -1742,6 +1742,7 @@ async function main(): Promise<void> {
     );
     const sgrASelected = nav.selectedCatalogStar?.id === "blackhole:sgr-a";
     labels.updateGalacticCenterLabel(SGR_A_STAR_POS, camUniforms.viewProj, () => {
+      renderer.setActiveMilkyWayModel(null);
       setExoplanetBodies(null);
       nav.selectCatalogStar(SGR_A_SEARCH_RESULT);
       renderer.uploadBodies(bodies);

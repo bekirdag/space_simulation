@@ -52,9 +52,12 @@ fn vs_main(
 
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
-  let rim = pow(1.0 - abs(dot(normalize(in.normal), normalize(in.viewDir))), 1.7);
-  let facing = 0.35 + 0.65 * abs(dot(normalize(in.normal), normalize(in.viewDir)));
-  let glow = 0.35 + rim * 0.75 + facing * 0.55;
-  let color = model.colorPad.rgb * glow;
+  let n = normalize(in.normal);
+  let v = normalize(in.viewDir);
+  let rim = pow(1.0 - abs(dot(n, v)), 2.1);
+  let lightDir = normalize(v * 0.55 + camera.upAndFocal.xyz * 0.35 + camera.rightAndMinRadius.xyz * 0.25);
+  let lambert = 0.22 + 0.78 * max(dot(n, lightDir), 0.0);
+  let backScatter = 0.12 + 0.38 * max(dot(-n, v), 0.0);
+  let color = model.colorPad.rgb * (lambert + rim * 0.42 + backScatter);
   return vec4<f32>(color * in.alpha, in.alpha);
 }

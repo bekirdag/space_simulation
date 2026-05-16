@@ -988,6 +988,24 @@ function nebulaWorldPos(ra: number, dec: number, distPc: number): [number,number
   ];
 }
 
+function nebulaSlug(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function nebulaExcluded(def: NebulaDef, exclusions?: ReadonlySet<string>): boolean {
+  if (!exclusions || exclusions.size === 0) return false;
+  const slug = nebulaSlug(def.name);
+  for (const excluded of exclusions) {
+    if (!excluded) continue;
+    if (
+      slug === excluded ||
+      slug.startsWith(`${excluded} `) ||
+      slug.includes(` ${excluded} `)
+    ) return true;
+  }
+  return false;
+}
+
 /**
  * Build the GPU buffer: NEBULA_CATALOG.length × NEBULA_FLOATS × 4 bytes.
  * Layout per nebula (4 × vec4 = 64 bytes):
@@ -996,12 +1014,15 @@ function nebulaWorldPos(ra: number, dec: number, distPc: number): [number,number
  *   vec4 params:      type (0-4), seed (unique per nebula), brightness, _pad
  *   vec4 _pad
  */
-export function buildNebulaBuffer(): Float32Array {
-  const n   = NEBULA_CATALOG.length;
+export function buildNebulaBuffer(exclusions?: ReadonlySet<string>): Float32Array {
+  const catalog = exclusions && exclusions.size > 0
+    ? NEBULA_CATALOG.filter(def => !nebulaExcluded(def, exclusions))
+    : NEBULA_CATALOG;
+  const n   = catalog.length;
   const buf = new Float32Array(n * NEBULA_FLOATS);
 
   for (let i = 0; i < n; i++) {
-    const def     = NEBULA_CATALOG[i]!;
+    const def     = catalog[i]!;
     const [x,y,z] = nebulaWorldPos(def.ra, def.dec, def.dist);
 
     const dist_au       = def.dist * AU_PER_PARSEC;
@@ -1024,8 +1045,11 @@ export function buildNebulaBuffer(): Float32Array {
 /** For right-click context menu: project nebulas to screen space. */
 export interface NebulaDet { name: string; x: number; y: number; z: number; type: NebType }
 
-export function nebulaPositions(): NebulaDet[] {
-  return NEBULA_CATALOG.map((def, _i) => {
+export function nebulaPositions(exclusions?: ReadonlySet<string>): NebulaDet[] {
+  const catalog = exclusions && exclusions.size > 0
+    ? NEBULA_CATALOG.filter(def => !nebulaExcluded(def, exclusions))
+    : NEBULA_CATALOG;
+  return catalog.map((def, _i) => {
     const [x,y,z] = nebulaWorldPos(def.ra, def.dec, def.dist);
     return { name: def.name, x, y, z, type: def.type };
   });

@@ -36,6 +36,7 @@ import { parseMilkyWayModel } from "./model-loader";
 const CAMERA_BYTES = 112;
 const BLACK_HOLE_BYTES = 32;
 const MILKY_WAY_MODEL_UNIFORM_BYTES = 64;
+const MODEL_DEPTH_FORMAT: GPUTextureFormat = "depth24plus";
 const TEXTURED_GALAXY_MODEL_CAPACITY = 32;
 const DUST_VOLUME_UNIFORM_BYTES = 80;
 const DUST_COMPUTE_WORKGROUP_SIZE = 4;
@@ -99,6 +100,7 @@ interface BodyBrightnessSample {
 
 interface MilkyWayModelEntry {
   id: string;
+  modelGroup: string;
   vertexBuffer: GPUBuffer;
   uniformBuffer: GPUBuffer;
   bindGroup: GPUBindGroup;
@@ -162,6 +164,7 @@ export class Renderer {
   private milkyWayModelBGL!:         GPUBindGroupLayout;
   private milkyWayModelEntries = new Map<string, MilkyWayModelEntry>();
   private milkyWayModelLoading = new Set<string>();
+  private activeMilkyWayModelId: string | null = null;
   private dustComputeBindGroup!: GPUBindGroup;
   private dustBindGroup!:   GPUBindGroup;
   private dustTexture!:     GPUTexture;
@@ -182,6 +185,12 @@ export class Renderer {
   private sceneTextureView: GPUTextureView | null = null;
   private sceneTextureWidth = 0;
   private sceneTextureHeight = 0;
+  private depthTexture:     GPUTexture | null = null;
+  private depthTextureView: GPUTextureView | null = null;
+  private depthTextureWidth = 0;
+  private depthTextureHeight = 0;
+  private viewportWidth = 1;
+  private viewportHeight = 1;
   private selectedStarBuffer!: GPUBuffer;
   private starLodBuffer!:   GPUBuffer;  // x=legacy fade, y=camera radius
   private mwLodBuffer!:     GPUBuffer;  // x=fade, y=actual brightness
@@ -258,6 +267,12 @@ export class Renderer {
     }
     if (s.showDust !== undefined) this._showDust = s.showDust;
     if (s.showBlackHole !== undefined) this._showBlackHole = s.showBlackHole;
+  }
+
+  setActiveMilkyWayModel(id: string | null): void {
+    this.activeMilkyWayModelId = id?.startsWith("mwmodel:")
+      ? id.slice("mwmodel:".length)
+      : id;
   }
 
   constructor(
@@ -694,6 +709,11 @@ export class Renderer {
         }],
       },
       primitive: { topology: "triangle-list" },
+      depthStencil: {
+        format: MODEL_DEPTH_FORMAT,
+        depthWriteEnabled: true,
+        depthCompare: "less",
+      },
     });
 
     // ── Procedural galactic dust volume pipeline ───────────────────────────
@@ -1022,8 +1042,27 @@ export class Renderer {
   }
 
   ensureVisibleMilkyWayModels(models: readonly MilkyWayModelObject[], eye: readonly [number, number, number]): void {
+    if (this.activeMilkyWayModelId) {
+      const activeModel = models.find(model => model.id === this.activeMilkyWayModelId);
+      if (activeModel) {
+        const activeDist = Math.hypot(eye[0] - activeModel.x, eye[1] - activeModel.y, eye[2] - activeModel.z);
+        if (activeDist <= activeModel.loadDistanceAU * 1.25) {
+          void this.ensureMilkyWayModelLoaded(activeModel);
+          return;
+        }
+      }
+    }
+
+    const unavailableGroups = new Set<string>();
+    for (const entry of this.milkyWayModelEntries.values()) unavailableGroups.add(entry.modelGroup);
+    for (const loadingId of this.milkyWayModelLoading) {
+      const loadingModel = models.find(model => model.id === loadingId);
+      if (loadingModel) unavailableGroups.add(loadingModel.modelGroup);
+    }
+
     let started = 0;
     for (const model of models) {
+      if (unavailableGroups.has(model.modelGroup)) continue;
       if (this.milkyWayModelEntries.has(model.id) || this.milkyWayModelLoading.has(model.id)) continue;
       const dist = Math.hypot(eye[0] - model.x, eye[1] - model.y, eye[2] - model.z);
       if (dist <= model.loadDistanceAU) {
@@ -1058,6 +1097,7 @@ export class Renderer {
       });
       const entry: MilkyWayModelEntry = {
         id: model.id,
+        modelGroup: model.modelGroup,
         vertexBuffer,
         uniformBuffer,
         bindGroup: device.createBindGroup({
@@ -1347,6 +1387,30 @@ export class Renderer {
     });
   }
 
+  private ensureDepthTexture(): GPUTextureView {
+    const width = Math.max(1, Math.floor(this.viewportWidth));
+    const height = Math.max(1, Math.floor(this.viewportHeight));
+    if (
+      this.depthTexture &&
+      this.depthTextureView &&
+      this.depthTextureWidth === width &&
+      this.depthTextureHeight === height
+    ) return this.depthTextureView;
+
+    this.depthTexture?.destroy();
+    const { device } = this.ctx;
+    this.depthTextureWidth = width;
+    this.depthTextureHeight = height;
+    this.depthTexture = device.createTexture({
+      label: "milky-way-model-depth",
+      size: { width, height },
+      format: MODEL_DEPTH_FORMAT,
+      usage: GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+    this.depthTextureView = this.depthTexture.createView();
+    return this.depthTextureView;
+  }
+
   private ensureConstellationCapacity(count: number): void {
     if (count <= this.constellationCapacity) return;
 
@@ -1363,6 +1427,8 @@ export class Renderer {
   updateCamera(uniforms: CameraUniforms, canvasWidth: number, canvasHeight: number): void {
     const MIN_PX = 2.5;
     const minNDCRadius = (MIN_PX * 2) / canvasHeight;
+    this.viewportWidth = Math.max(1, canvasWidth);
+    this.viewportHeight = Math.max(1, canvasHeight);
 
     // 112-byte layout:
     //   [0–63]  viewProj (mat4x4, 16 floats)
@@ -1387,12 +1453,19 @@ export class Renderer {
 
     const encoder = device.createCommandEncoder({ label: "frame" });
     const drawScene = (view: GPUTextureView): void => {
+      const depthView = this.ensureDepthTexture();
       const pass = encoder.beginRenderPass({
         colorAttachments: [{
           view,
           clearValue: { r: 0.01, g: 0.01, b: 0.05, a: 1 },
           loadOp: "clear", storeOp: "store",
         }],
+        depthStencilAttachment: {
+          view: depthView,
+          depthClearValue: 1,
+          depthLoadOp: "clear",
+          depthStoreOp: "store",
+        },
       });
 
       // Helper: draw all octants of a catalog, or fall back to full draw.
@@ -1461,10 +1534,21 @@ export class Renderer {
     // ── NASA/Chandra object meshes — close LOD only, shader fades by camera distance.
     if (this.milkyWayModelEntries.size > 0) {
       pass.setPipeline(this.milkyWayModelPipeline);
-      for (const entry of this.milkyWayModelEntries.values()) {
+      const drawModelEntry = (entry: MilkyWayModelEntry): void => {
         pass.setBindGroup(0, entry.bindGroup);
         pass.setVertexBuffer(0, entry.vertexBuffer);
         pass.draw(entry.vertexCount);
+      };
+      if (this.activeMilkyWayModelId) {
+        const activeEntry = this.milkyWayModelEntries.get(this.activeMilkyWayModelId);
+        if (activeEntry) drawModelEntry(activeEntry);
+      } else {
+        const drawnGroups = new Set<string>();
+        for (const entry of this.milkyWayModelEntries.values()) {
+          if (drawnGroups.has(entry.modelGroup)) continue;
+          drawnGroups.add(entry.modelGroup);
+          drawModelEntry(entry);
+        }
       }
     }
 

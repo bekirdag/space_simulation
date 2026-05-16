@@ -9,68 +9,51 @@ const CACHE_ROOT = process.env.COSMOSMAP_MODEL_CACHE_DIR
   : path.join(REPO_ROOT, "cache", "nasa", "models");
 const MAX_MODEL_BYTES = 64 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 45_000;
+const NASA_3D_RAW_BASE = "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/master";
+const GLB_CONTENT_TYPE = "model/gltf-binary";
+const STL_CONTENT_TYPE = "application/vnd.ms-pki.stl";
+
+function nasa3d(pathname) {
+  return `${NASA_3D_RAW_BASE}/${pathname.split("/").map(encodeURIComponent).join("/")}`;
+}
+
+function glb(filename, pathname) {
+  return { filename, contentType: GLB_CONTENT_TYPE, upstream: nasa3d(pathname) };
+}
+
+function stl(filename, pathname) {
+  return { filename, contentType: STL_CONTENT_TYPE, upstream: nasa3d(pathname) };
+}
 
 const MODEL_ASSETS = new Map([
-  ["crab-nebula", {
-    filename: "crab-nebula.glb",
-    contentType: "model/gltf-binary",
-    upstream: "https://assets.science.nasa.gov/content/dam/science/cds/3d/resources/printable/crab-nebula/Crab%20Nebula.glb",
-  }],
-  ["cassiopeia-a", {
-    filename: "cassiopeia-a.glb",
-    contentType: "model/gltf-binary",
-    upstream: "https://assets.science.nasa.gov/content/dam/science/cds/3d/resources/model/cassiopeia-a-supernova/Cassiopeia%20A%20Supernova.glb",
-  }],
-  ["cassiopeia-a-green-monster-2023", {
-    filename: "cassiopeia-a-green-monster-2023.glb",
-    contentType: "model/gltf-binary",
-    upstream: "https://assets.science.nasa.gov/content/dam/science/cds/3d/resources/model/cassiopeia-a-supernova-(b)-(2023)/Cassiopeia%20A%20Supernova%20(B)%20(2023).glb",
-  }],
-  ["cassiopeia-a-iron-2025", {
-    filename: "cassiopeia-a-iron-2025.glb",
-    contentType: "model/gltf-binary",
-    upstream: "https://assets.science.nasa.gov/content/dam/science/cds/3d/resources/model/cassiopeia-a-supernova-(c)-(2025)/Cassiopeia%20A%20Supernova%20(C)%20(2025).glb",
-  }],
-  ["g292-supernova-remnant", {
-    filename: "g292-supernova-remnant.glb",
-    contentType: "model/gltf-binary",
-    upstream: "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/master/3D%20Models/G292.0+1.8%20Supernova%20Remnant/G292.0+1.8%20Supernova%20Remnant.glb",
-  }],
-  ["cygnus-loop-supernova", {
-    filename: "cygnus-loop-supernova.glb",
-    contentType: "model/gltf-binary",
-    upstream: "https://assets.science.nasa.gov/content/dam/science/cds/3d/resources/model/cygnus-loop-supernova/Cygnus%20Loop%20Supernova.glb",
-  }],
-  ["bp-tauri", {
-    filename: "bp-tauri.glb",
-    contentType: "model/gltf-binary",
-    upstream: "https://assets.science.nasa.gov/content/dam/science/cds/3d/resources/model/bp-tauri/BP%20Tauri.glb",
-  }],
-  ["dg-tau", {
-    filename: "dg-tau.stl",
-    contentType: "application/vnd.ms-pki.stl",
-    upstream: "https://assets.science.nasa.gov/content/dam/science/cds/3d/resources/printable/dg-tau/DG%20Tau.stl",
-  }],
-  ["u-scorpii", {
-    filename: "u-scorpii.stl",
-    contentType: "application/vnd.ms-pki.stl",
-    upstream: "https://assets.science.nasa.gov/content/dam/science/cds/3d/resources/printable/u-scorpii/U%20Scorpii.stl",
-  }],
-  ["sn-1006-ejecta", {
-    filename: "sn-1006-ejecta.stl",
-    contentType: "application/vnd.ms-pki.stl",
-    upstream: "https://assets.science.nasa.gov/content/dam/science/cds/3d/resources/printable/sn-1006/Ejecta%20full%20globe.stl",
-  }],
-  ["tycho-supernova-inner", {
-    filename: "tycho-supernova-inner.stl",
-    contentType: "application/vnd.ms-pki.stl",
-    upstream: "https://assets.science.nasa.gov/content/dam/science/cds/3d/resources/printable/tycho-supernova-remnant/Tycho%20Supernova%20Remnant%20(left%20inner).stl",
-  }],
-  ["pillars-of-creation-pillar", {
-    filename: "pillars-of-creation-pillar.stl",
-    contentType: "application/vnd.ms-pki.stl",
-    upstream: "https://assets.science.nasa.gov/content/dam/science/cds/3d/resources/printable/pillars-of-creation/Pillars%20of%20Creation%20(pillar%201B).stl",
-  }],
+  ["crab-nebula", glb("crab-nebula.glb", "3D Printing/Crab Nebula/Crab Nebula.glb")],
+  ["crab-nebula-disc", stl("crab-nebula-disc.stl", "3D Printing/Crab Nebula/Crab Nebula (disc).stl")],
+  ["crab-nebula-jet-1", stl("crab-nebula-jet-1.stl", "3D Printing/Crab Nebula/Crab Nebula (jet 1).stl")],
+  ["crab-nebula-jet-2", stl("crab-nebula-jet-2.stl", "3D Printing/Crab Nebula/Crab Nebula (jet 2).stl")],
+  ["cassiopeia-a", glb("cassiopeia-a.glb", "3D Models/Cassiopeia A Supernova/Cassiopeia A Supernova.glb")],
+  ["cassiopeia-a-green-monster-2023", glb("cassiopeia-a-green-monster-2023.glb", "3D Models/Cassiopeia A Supernova (B) (2023)/Cassiopeia A Supernova (B) (2023).glb")],
+  ["cassiopeia-a-iron-2025", glb("cassiopeia-a-iron-2025.glb", "3D Models/Cassiopeia A Supernova (C) (2025)/Cassiopeia A Supernova (C) (2025).glb")],
+  ["g292-supernova-remnant", glb("g292-supernova-remnant.glb", "3D Models/G292.0+1.8 Supernova Remnant/G292.0+1.8 Supernova Remnant.glb")],
+  ["cygnus-loop-supernova", glb("cygnus-loop-supernova.glb", "3D Models/Cygnus Loop Supernova/Cygnus Loop Supernova.glb")],
+  ["bp-tauri", glb("bp-tauri.glb", "3D Models/BP Tauri/BP Tauri.glb")],
+  ["dg-tau", stl("dg-tau.stl", "3D Printing/DG Tau/DG Tau.stl")],
+  ["u-scorpii", stl("u-scorpii.stl", "3D Printing/U Scorpii/U Scorpii.stl")],
+  ["sn-1006-ejecta", stl("sn-1006-ejecta.stl", "3D Printing/SN 1006/Ejecta full globe.stl")],
+  ["sn-1006-blast-quarter", stl("sn-1006-blast-quarter.stl", "3D Printing/SN 1006/Blast quarter globe.stl")],
+  ["sn-1006-ejecta-quarter", stl("sn-1006-ejecta-quarter.stl", "3D Printing/SN 1006/Ejecta quarter globe.stl")],
+  ["tycho-supernova-inner", stl("tycho-supernova-inner.stl", "3D Printing/Tycho Supernova Remnant/Tycho Supernova Remnant (left inner).stl")],
+  ["tycho-supernova-left-outer", stl("tycho-supernova-left-outer.stl", "3D Printing/Tycho Supernova Remnant/Tycho Supernova Remnant (left outer).stl")],
+  ["tycho-supernova-right-inner", stl("tycho-supernova-right-inner.stl", "3D Printing/Tycho Supernova Remnant/Tycho Supernova Remnant (right inner).stl")],
+  ["tycho-supernova-right-outer", stl("tycho-supernova-right-outer.stl", "3D Printing/Tycho Supernova Remnant/Tycho Supernova Remnant (right outer).stl")],
+  ["eta-carinae-homunculus", stl("eta-carinae-homunculus.stl", "3D Printing/Eta Carinae Homunculus Nebula/Eta Carinae Homunculus Nebula.stl")],
+  ["eta-carinae-high-mdot-apastron-wind", stl("eta-carinae-high-mdot-apastron-wind.stl", "3D Printing/Eta Carinae Homunculus Nebula (High Mass-Loss Rate)/ApastronHighMdotPrimaryWind.stl")],
+  ["eta-carinae-high-mdot-periastron-shock", stl("eta-carinae-high-mdot-periastron-shock.stl", "3D Printing/Eta Carinae Homunculus Nebula (High Mass-Loss Rate)/PeriastronHighMdotWWCR.stl")],
+  ["eta-carinae-low-mdot-periastron-shock", stl("eta-carinae-low-mdot-periastron-shock.stl", "3D Printing/Eta Carinae Homunculus Nebula (Low Mass-Loss Rate)/PeriastronLowMdotWWCR.stl")],
+  ["pillars-of-creation-pillar", stl("pillars-of-creation-pillar.stl", "3D Printing/Pillars of Creation/Pillars of Creation (pillar 1B).stl")],
+  ["pillars-of-creation-full", stl("pillars-of-creation-full.stl", "3D Printing/Pillars of Creation/Pillars of Creation (full).stl")],
+  ["pillars-of-creation-pillar-1a", stl("pillars-of-creation-pillar-1a.stl", "3D Printing/Pillars of Creation/Pillars of Creation (pillar 1A).stl")],
+  ["pillars-of-creation-pillar-2", stl("pillars-of-creation-pillar-2.stl", "3D Printing/Pillars of Creation/Pillars of Creation (pillar 2).stl")],
+  ["pillars-of-creation-pillar-3", stl("pillars-of-creation-pillar-3.stl", "3D Printing/Pillars of Creation/Pillars of Creation (pillar 3).stl")],
 ]);
 
 function sendJson(res, statusCode, payload) {

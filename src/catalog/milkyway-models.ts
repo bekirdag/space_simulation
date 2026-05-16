@@ -5,6 +5,7 @@ export type MilkyWayModelFormat = "glb" | "stl";
 export interface MilkyWayModelObject {
   id: string;
   name: string;
+  modelGroup: string;
   objectType: string;
   format: MilkyWayModelFormat;
   source: string;
@@ -26,6 +27,7 @@ export interface MilkyWayModelObject {
 interface ModelDef {
   id: string;
   name: string;
+  modelGroup?: string;
   objectType: string;
   format: MilkyWayModelFormat;
   source: string;
@@ -42,6 +44,8 @@ interface ModelDef {
 
 const AU_PER_PARSEC = 8;
 const EPS = 23.4393 * Math.PI / 180;
+const MODEL_FOCUS_NDC_RADIUS = 0.5; // diameter fills roughly half the viewport height
+const CAMERA_FOCAL_Y = 1 / Math.tan(Math.PI / 8);
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
@@ -71,16 +75,21 @@ function slugSearch(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
+function focusDistanceForRadius(radiusAU: number): number {
+  return clamp((radiusAU * CAMERA_FOCAL_Y) / MODEL_FOCUS_NDC_RADIUS, 16, 12_000);
+}
+
 function toModel(def: ModelDef): MilkyWayModelObject {
   const [x, y, z] = worldPos(def.ra, def.dec, def.distancePc);
   const radiusAU = def.radiusAU ?? radiusFromAngularSize(def.distancePc, def.diameterArcmin ?? 12);
-  const focusDistance = clamp(radiusAU * 4.2, 36, 900);
+  const focusDistance = focusDistanceForRadius(radiusAU);
   const fadeNearAU = clamp(radiusAU * 12, 120, 12_000);
   const fadeFarAU = clamp(radiusAU * 48, fadeNearAU + 80, 42_000);
 
   return {
     id: def.id,
     name: def.name,
+    modelGroup: def.modelGroup ?? def.id,
     objectType: def.objectType,
     format: def.format,
     source: def.source,
@@ -102,6 +111,7 @@ const DEFINITIONS: ModelDef[] = [
   {
     id: "crab-nebula",
     name: "Crab Nebula",
+    modelGroup: "crab-nebula",
     objectType: "supernova remnant",
     format: "glb",
     source: "NASA Science / Chandra",
@@ -114,8 +124,54 @@ const DEFINITIONS: ModelDef[] = [
     aliases: ["M1", "Taurus A"],
   },
   {
+    id: "crab-nebula-disc",
+    name: "Crab Nebula Disc",
+    modelGroup: "crab-nebula",
+    objectType: "pulsar wind nebula model",
+    format: "stl",
+    source: "NASA 3D Resources / Chandra",
+    sourceUrl: "https://science.nasa.gov/3d-resources/crab-nebula/",
+    ra: 83.63,
+    dec: 22.01,
+    distancePc: 2000,
+    diameterArcmin: 6,
+    color: [0.58, 0.76, 1.0],
+    aliases: ["M1", "Taurus A", "Crab disc"],
+  },
+  {
+    id: "crab-nebula-jet-1",
+    name: "Crab Nebula Jet 1",
+    modelGroup: "crab-nebula",
+    objectType: "pulsar wind nebula jet model",
+    format: "stl",
+    source: "NASA 3D Resources / Chandra",
+    sourceUrl: "https://science.nasa.gov/3d-resources/crab-nebula/",
+    ra: 83.63,
+    dec: 22.01,
+    distancePc: 2000,
+    diameterArcmin: 6,
+    color: [0.62, 0.86, 1.0],
+    aliases: ["M1", "Taurus A", "Crab jet"],
+  },
+  {
+    id: "crab-nebula-jet-2",
+    name: "Crab Nebula Jet 2",
+    modelGroup: "crab-nebula",
+    objectType: "pulsar wind nebula jet model",
+    format: "stl",
+    source: "NASA 3D Resources / Chandra",
+    sourceUrl: "https://science.nasa.gov/3d-resources/crab-nebula/",
+    ra: 83.63,
+    dec: 22.01,
+    distancePc: 2000,
+    diameterArcmin: 6,
+    color: [0.50, 0.68, 1.0],
+    aliases: ["M1", "Taurus A", "Crab jet"],
+  },
+  {
     id: "cassiopeia-a",
     name: "Cassiopeia A",
+    modelGroup: "cassiopeia-a",
     objectType: "supernova remnant",
     format: "glb",
     source: "NASA Science / Chandra",
@@ -130,6 +186,7 @@ const DEFINITIONS: ModelDef[] = [
   {
     id: "cassiopeia-a-green-monster-2023",
     name: "Cassiopeia A Green Monster",
+    modelGroup: "cassiopeia-a",
     objectType: "supernova remnant model",
     format: "glb",
     source: "NASA Science / Chandra / Webb",
@@ -145,6 +202,7 @@ const DEFINITIONS: ModelDef[] = [
   {
     id: "cassiopeia-a-iron-2025",
     name: "Cassiopeia A Iron",
+    modelGroup: "cassiopeia-a",
     objectType: "supernova remnant model",
     format: "glb",
     source: "NASA Science / Chandra",
@@ -160,6 +218,7 @@ const DEFINITIONS: ModelDef[] = [
   {
     id: "g292-supernova-remnant",
     name: "G292.0+1.8",
+    modelGroup: "g292-supernova-remnant",
     objectType: "supernova remnant",
     format: "glb",
     source: "NASA 3D Resources / Chandra",
@@ -174,6 +233,7 @@ const DEFINITIONS: ModelDef[] = [
   {
     id: "cygnus-loop-supernova",
     name: "Cygnus Loop",
+    modelGroup: "cygnus-loop-supernova",
     objectType: "supernova remnant",
     format: "glb",
     source: "NASA Science / Chandra",
@@ -189,6 +249,7 @@ const DEFINITIONS: ModelDef[] = [
   {
     id: "bp-tauri",
     name: "BP Tauri",
+    modelGroup: "bp-tauri",
     objectType: "T Tauri star",
     format: "glb",
     source: "NASA Science / Chandra",
@@ -203,6 +264,7 @@ const DEFINITIONS: ModelDef[] = [
   {
     id: "dg-tau",
     name: "DG Tau",
+    modelGroup: "dg-tau",
     objectType: "protostar",
     format: "stl",
     source: "NASA Science / Chandra",
@@ -217,6 +279,7 @@ const DEFINITIONS: ModelDef[] = [
   {
     id: "u-scorpii",
     name: "U Scorpii",
+    modelGroup: "u-scorpii",
     objectType: "recurrent nova",
     format: "stl",
     source: "NASA Science / Chandra",
@@ -231,6 +294,7 @@ const DEFINITIONS: ModelDef[] = [
   {
     id: "sn-1006-ejecta",
     name: "SN 1006 Ejecta",
+    modelGroup: "sn-1006",
     objectType: "supernova remnant model",
     format: "stl",
     source: "NASA Science / Chandra",
@@ -243,8 +307,39 @@ const DEFINITIONS: ModelDef[] = [
     aliases: ["SN 1006", "G327.6+14.6"],
   },
   {
+    id: "sn-1006-blast-quarter",
+    name: "SN 1006 Blast Wave",
+    modelGroup: "sn-1006",
+    objectType: "supernova remnant shell model",
+    format: "stl",
+    source: "NASA 3D Resources / Chandra",
+    sourceUrl: "https://science.nasa.gov/3d-resources/sn-1006/",
+    ra: 225.88,
+    dec: -41.98,
+    distancePc: 2180,
+    diameterArcmin: 30,
+    color: [1.0, 0.74, 0.32],
+    aliases: ["SN 1006", "G327.6+14.6", "blast wave"],
+  },
+  {
+    id: "sn-1006-ejecta-quarter",
+    name: "SN 1006 Ejecta Quarter",
+    modelGroup: "sn-1006",
+    objectType: "supernova remnant ejecta model",
+    format: "stl",
+    source: "NASA 3D Resources / Chandra",
+    sourceUrl: "https://science.nasa.gov/3d-resources/sn-1006/",
+    ra: 225.88,
+    dec: -41.98,
+    distancePc: 2180,
+    diameterArcmin: 30,
+    color: [0.92, 0.62, 0.26],
+    aliases: ["SN 1006", "G327.6+14.6", "ejecta"],
+  },
+  {
     id: "tycho-supernova-inner",
     name: "Tycho Inner Remnant",
+    modelGroup: "tycho-supernova",
     objectType: "supernova remnant model",
     format: "stl",
     source: "NASA Science / Chandra",
@@ -254,11 +349,117 @@ const DEFINITIONS: ModelDef[] = [
     distancePc: 3000,
     diameterArcmin: 8,
     color: [0.52, 1.0, 0.72],
-    aliases: ["Tycho", "SN 1572"],
+    aliases: ["Tycho", "SN 1572", "Tycho's SNR"],
+  },
+  {
+    id: "tycho-supernova-left-outer",
+    name: "Tycho Outer Remnant Left",
+    modelGroup: "tycho-supernova",
+    objectType: "supernova remnant shell model",
+    format: "stl",
+    source: "NASA 3D Resources / Chandra",
+    sourceUrl: "https://science.nasa.gov/3d-resources/tycho-supernova-remnant/",
+    ra: 6.31,
+    dec: 64.14,
+    distancePc: 3000,
+    diameterArcmin: 8,
+    color: [0.44, 0.86, 0.70],
+    aliases: ["Tycho", "SN 1572", "Tycho's SNR"],
+  },
+  {
+    id: "tycho-supernova-right-inner",
+    name: "Tycho Inner Remnant Right",
+    modelGroup: "tycho-supernova",
+    objectType: "supernova remnant shell model",
+    format: "stl",
+    source: "NASA 3D Resources / Chandra",
+    sourceUrl: "https://science.nasa.gov/3d-resources/tycho-supernova-remnant/",
+    ra: 6.31,
+    dec: 64.14,
+    distancePc: 3000,
+    diameterArcmin: 8,
+    color: [0.58, 1.0, 0.78],
+    aliases: ["Tycho", "SN 1572", "Tycho's SNR"],
+  },
+  {
+    id: "tycho-supernova-right-outer",
+    name: "Tycho Outer Remnant Right",
+    modelGroup: "tycho-supernova",
+    objectType: "supernova remnant shell model",
+    format: "stl",
+    source: "NASA 3D Resources / Chandra",
+    sourceUrl: "https://science.nasa.gov/3d-resources/tycho-supernova-remnant/",
+    ra: 6.31,
+    dec: 64.14,
+    distancePc: 3000,
+    diameterArcmin: 8,
+    color: [0.42, 0.92, 0.62],
+    aliases: ["Tycho", "SN 1572", "Tycho's SNR"],
+  },
+  {
+    id: "eta-carinae-homunculus",
+    name: "Eta Carinae Homunculus",
+    modelGroup: "eta-carinae",
+    objectType: "stellar eruption nebula model",
+    format: "stl",
+    source: "NASA 3D Resources / Goddard",
+    sourceUrl: "https://science.nasa.gov/3d-resources/eta-carinae-homunculus-nebula/",
+    ra: 161.265,
+    dec: -59.685,
+    distancePc: 2350,
+    radiusAU: 42,
+    color: [1.0, 0.62, 0.36],
+    aliases: ["Eta Carinae", "Homunculus Nebula", "Eta Carinae Nebula"],
+  },
+  {
+    id: "eta-carinae-high-mdot-apastron-wind",
+    name: "Eta Carinae High-Mdot Apastron Wind",
+    modelGroup: "eta-carinae",
+    objectType: "stellar wind interaction model",
+    format: "stl",
+    source: "NASA 3D Resources / Goddard",
+    sourceUrl: "https://science.nasa.gov/3d-resources/eta-carinae-homunculus-nebula/",
+    ra: 161.265,
+    dec: -59.685,
+    distancePc: 2350,
+    radiusAU: 36,
+    color: [0.82, 0.78, 0.70],
+    aliases: ["Eta Carinae", "Homunculus Nebula", "Eta Carinae Nebula"],
+  },
+  {
+    id: "eta-carinae-high-mdot-periastron-shock",
+    name: "Eta Carinae High-Mdot Periastron Shock",
+    modelGroup: "eta-carinae",
+    objectType: "stellar wind interaction model",
+    format: "stl",
+    source: "NASA 3D Resources / Goddard",
+    sourceUrl: "https://science.nasa.gov/3d-resources/eta-carinae-homunculus-nebula/",
+    ra: 161.265,
+    dec: -59.685,
+    distancePc: 2350,
+    radiusAU: 36,
+    color: [0.62, 0.78, 1.0],
+    aliases: ["Eta Carinae", "Homunculus Nebula", "Eta Carinae Nebula"],
+  },
+  {
+    id: "eta-carinae-low-mdot-periastron-shock",
+    name: "Eta Carinae Low-Mdot Periastron Shock",
+    modelGroup: "eta-carinae",
+    objectType: "stellar wind interaction model",
+    format: "stl",
+    source: "NASA 3D Resources / Goddard",
+    sourceUrl: "https://science.nasa.gov/3d-resources/eta-carinae-homunculus-nebula/",
+    ra: 161.265,
+    dec: -59.685,
+    distancePc: 2350,
+    radiusAU: 36,
+    color: [0.74, 0.88, 1.0],
+    aliases: ["Eta Carinae", "Homunculus Nebula", "Eta Carinae Nebula"],
   },
   {
     id: "pillars-of-creation-pillar",
-    name: "Pillars of Creation",
+    name: "Pillars of Creation Pillar 1B",
+    modelGroup: "pillars-of-creation",
     objectType: "star-forming nebula model",
     format: "stl",
     source: "NASA Science / STScI",
@@ -269,7 +470,71 @@ const DEFINITIONS: ModelDef[] = [
     radiusAU: 22,
     color: [0.82, 0.58, 0.38],
     opacity: 0.7,
-    aliases: ["Eagle Nebula", "M16", "NGC 6611"],
+    aliases: ["Pillars of Creation", "Eagle Nebula", "M16", "NGC 6611"],
+  },
+  {
+    id: "pillars-of-creation-full",
+    name: "Pillars of Creation Full",
+    modelGroup: "pillars-of-creation",
+    objectType: "star-forming nebula model",
+    format: "stl",
+    source: "NASA Science / STScI",
+    sourceUrl: "https://science.nasa.gov/3d-resources/pillars-of-creation/",
+    ra: 274.7,
+    dec: -13.79,
+    distancePc: 2000,
+    radiusAU: 58,
+    color: [0.86, 0.62, 0.42],
+    opacity: 0.74,
+    aliases: ["Pillars of Creation", "Eagle Nebula", "M16", "NGC 6611"],
+  },
+  {
+    id: "pillars-of-creation-pillar-1a",
+    name: "Pillars of Creation Pillar 1A",
+    modelGroup: "pillars-of-creation",
+    objectType: "star-forming nebula model",
+    format: "stl",
+    source: "NASA Science / STScI",
+    sourceUrl: "https://science.nasa.gov/3d-resources/pillars-of-creation/",
+    ra: 274.7,
+    dec: -13.79,
+    distancePc: 2000,
+    radiusAU: 28,
+    color: [0.78, 0.52, 0.34],
+    opacity: 0.72,
+    aliases: ["Pillars of Creation", "Eagle Nebula", "M16", "NGC 6611"],
+  },
+  {
+    id: "pillars-of-creation-pillar-2",
+    name: "Pillars of Creation Pillar 2",
+    modelGroup: "pillars-of-creation",
+    objectType: "star-forming nebula model",
+    format: "stl",
+    source: "NASA Science / STScI",
+    sourceUrl: "https://science.nasa.gov/3d-resources/pillars-of-creation/",
+    ra: 274.7,
+    dec: -13.79,
+    distancePc: 2000,
+    radiusAU: 24,
+    color: [0.70, 0.48, 0.32],
+    opacity: 0.72,
+    aliases: ["Pillars of Creation", "Eagle Nebula", "M16", "NGC 6611"],
+  },
+  {
+    id: "pillars-of-creation-pillar-3",
+    name: "Pillars of Creation Pillar 3",
+    modelGroup: "pillars-of-creation",
+    objectType: "star-forming nebula model",
+    format: "stl",
+    source: "NASA Science / STScI",
+    sourceUrl: "https://science.nasa.gov/3d-resources/pillars-of-creation/",
+    ra: 274.7,
+    dec: -13.79,
+    distancePc: 2000,
+    radiusAU: 22,
+    color: [0.90, 0.66, 0.42],
+    opacity: 0.72,
+    aliases: ["Pillars of Creation", "Eagle Nebula", "M16", "NGC 6611"],
   },
 ];
 
@@ -295,6 +560,28 @@ export function milkyWayModelToSearchResult(model: MilkyWayModelObject): StarSea
 
 export function milkyWayModelSearchResults(): StarSearchResult[] {
   return MILKY_WAY_MODEL_OBJECTS.map(milkyWayModelToSearchResult);
+}
+
+const MODEL_BACKED_NEBULA_NAMES = [
+  "Crab Nebula (M1)",
+  "G184.6-5.8 (Crab surroundings)",
+  "Cassiopeia A",
+  "G292.0+1.8",
+  "Cygnus Loop (G74.0-8.5)",
+  "Tycho's SNR (G120.1+1.4)",
+  "SN 1006 (G327.6+14.6)",
+  "Eagle Nebula (M16)",
+  "Eta Carinae Nebula",
+  "Eta Carinae (Homunculus Nebula)",
+];
+
+export function milkyWayModelNebulaExclusionSlugs(): Set<string> {
+  const slugs = new Set(MODEL_BACKED_NEBULA_NAMES.map(slugSearch));
+  for (const model of MILKY_WAY_MODEL_OBJECTS) {
+    slugs.add(slugSearch(model.name));
+    for (const alias of model.aliases) slugs.add(slugSearch(alias));
+  }
+  return slugs;
 }
 
 export function searchMilkyWayModels(query: string, limit = 5): StarSearchResult[] {
