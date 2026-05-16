@@ -118,9 +118,9 @@ const KNOWN_GALAXY_ALIASES: Record<string, readonly string[]> = {
   "m87": ["virgo a"],
 };
 const LIGHT_YEARS_PER_PARSEC = 3.26156;
-const NEARBY_STAR_FOCUS_MIN_AU = 0.35;
-const NEARBY_STAR_FOCUS_MAX_AU = 24;
-const NEARBY_STAR_FOCUS_DISTANCE_RATIO = 0.004;
+const SELECTED_NEARBY_STAR_RENDER_RADIUS_AU = 0.005; // keep in sync with src/gpu/star.wgsl
+const SELECTED_NEARBY_STAR_SCREEN_WIDTH_FRACTION = 0.50;
+const CAMERA_FOV_Y = Math.PI / 4; // keep in sync with src/scene/camera.ts
 // Active substep size (yr) — changed via Settings panel.
 // Larger steps = faster simulation but reduced moon accuracy.
 let simSubstepYr = MAX_SUBSTEP_YR; // default: 15 min (precise)
@@ -168,6 +168,27 @@ interface NasaObjectInfo {
   stale?: boolean;
   warning?: string;
   error?: string;
+}
+
+function nearbyStarLabelsToRenderBuffer(stars: readonly NearbyStarLabel[]): StarBuffer {
+  const data = new Float32Array(stars.length * STAR_FLOATS);
+
+  for (let i = 0; i < stars.length; i++) {
+    const star = stars[i]!;
+    const tierFade = Math.max(0, Math.min(1, 1 - star.tier * 0.08));
+    const o = i * STAR_FLOATS;
+
+    data[o + 0] = star.x;
+    data[o + 1] = star.y;
+    data[o + 2] = star.z;
+    data[o + 3] = 1.05 * tierFade;
+    data[o + 4] = 0.70;
+    data[o + 5] = 0.84;
+    data[o + 6] = 1.00;
+    data[o + 7] = 0.82 * tierFade;
+  }
+
+  return data;
 }
 
 function isMajorRenderBody(body: Body): boolean {
@@ -786,6 +807,7 @@ async function main(): Promise<void> {
   // Avoid the 100k-star placeholder allocation that can fail on low-memory devices.
   let visibleStarBuffer: StarBuffer = new Float32Array(0);
   let exoplanetHostBuffer: StarBuffer = new Float32Array(0);
+  const nearbyStarLabelBuffer = nearbyStarLabelsToRenderBuffer(NEARBY_STAR_LABELS);
   let exoplanetHosts: CatalogStar[] = [];
   let catalogStatus = "Loading exoplanet host catalog...";
 
@@ -793,7 +815,7 @@ async function main(): Promise<void> {
   // uploads + sorts in one pass.  Avoids creating multiple large allocations.
   function refreshStarCatalog(): void {
     try {
-      const combined = combineStarBuffers(visibleStarBuffer, exoplanetHostBuffer);
+      const combined = combineStarBuffers(nearbyStarLabelBuffer, visibleStarBuffer, exoplanetHostBuffer);
       renderer.setStarOctants(sortIntoOctants(combined));
       renderer.uploadStars(combined);
     } catch (e) {
@@ -801,8 +823,9 @@ async function main(): Promise<void> {
     }
   }
 
-  // No initial upload — both buffers are empty and the GPU already has a zeroed
-  // star buffer from init().  Stars appear as soon as the binary is fetched.
+  // Upload the tiny named-star anchor buffer immediately. The larger catalogs
+  // stream in shortly after without allocating a synthetic 100k-star fallback.
+  refreshStarCatalog();
 
   void loadVisibleStarField().then(({ data, source }) => {
     visibleStarBuffer = data;
@@ -1083,12 +1106,12 @@ async function main(): Promise<void> {
     return `nearby:${star.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
   }
 
-  function nearbyStarFocusDistance(star: NearbyStarLabel): number {
-    const distanceAu = Math.hypot(star.x, star.y, star.z);
-    return Math.min(
-      NEARBY_STAR_FOCUS_MAX_AU,
-      Math.max(NEARBY_STAR_FOCUS_MIN_AU, distanceAu * NEARBY_STAR_FOCUS_DISTANCE_RATIO),
-    );
+  function nearbyStarFocusDistance(): number {
+    const aspect = Math.max(0.2, window.innerWidth / Math.max(1, window.innerHeight));
+    const focalY = 1 / Math.tan(CAMERA_FOV_Y / 2);
+    const distance = SELECTED_NEARBY_STAR_RENDER_RADIUS_AU * focalY /
+      (aspect * SELECTED_NEARBY_STAR_SCREEN_WIDTH_FRACTION);
+    return Math.max(SELECTED_NEARBY_STAR_RENDER_RADIUS_AU * 1.6, distance);
   }
 
   function focusNearbyStar(star: NearbyStarLabel): void {
@@ -1101,7 +1124,7 @@ async function main(): Promise<void> {
       x: star.x,
       y: star.y,
       z: star.z,
-      focusDistance: nearbyStarFocusDistance(star),
+      focusDistance: nearbyStarFocusDistance(),
       color: [0.70, 0.84, 1.00],
     });
     renderer.uploadBodies(bodies);
