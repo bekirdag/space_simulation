@@ -61,7 +61,7 @@ import {
   searchMilkyWayModels,
 } from "./catalog/milkyway-models";
 import { loadMilkywayStars } from "./catalog/milkyway";
-import { buildProceduralDustClouds, DUST_FLOATS } from "./catalog/dust";
+import { DUST_VOLUME_SOURCE } from "./catalog/dust";
 import { NEARBY_STAR_LABELS, SGR_A_STAR_POS, type NearbyStarLabel } from "./catalog/nearby-stars";
 import { sortIntoOctants } from "./gpu/sky-cull";
 import { loadConstellationLines, type ConstellationLabel } from "./catalog/constellations";
@@ -847,10 +847,8 @@ async function main(): Promise<void> {
     console.warn("Milky Way star catalog failed:", err);
   });
 
-  // ── Procedural Milky Way dust clouds (render-only galaxy layer) ──────────
-  const dustClouds = buildProceduralDustClouds();
-  renderer.uploadDust(dustClouds.data);
-  console.info(`Loaded ${dustClouds.data.length / DUST_FLOATS} dust clouds from ${dustClouds.source}`);
+  // ── Procedural Milky Way dust volume (render-only galaxy layer) ──────────
+  console.info(`Loaded Milky Way dust from ${DUST_VOLUME_SOURCE}`);
 
   // ── Nebula catalog (Milky Way gas clouds) ─────────────────────────────────
   const nebulaBuf = buildNebulaBuffer();
@@ -1590,7 +1588,7 @@ async function main(): Promise<void> {
 
     const camUniforms = camera.update(aspect);
     lastViewProj = camUniforms.viewProj;
-    renderer.updateCamera(camUniforms, canvas.height);
+    renderer.updateCamera(camUniforms, canvas.width, canvas.height);
     renderer.updateBlackHoleVisual(
       SGR_A_STAR_POS,
       SGR_A_EVENT_HORIZON_RADIUS_AU,
