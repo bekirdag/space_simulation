@@ -795,6 +795,13 @@ async function main(): Promise<void> {
   let showGalaxies = true;
   let showConstellations = false;
 
+  // Accumulates "owed" simulation time when at fast timewarp and using fixed
+  // substeps. Apply settings runs during startup, so this must be initialized
+  // before that first settings pass can reset the accumulator.
+  let physicsAccumYr = 0;
+  let lastTwSign     = 1;
+  let actualSimRate  = 0; // smoothed actual simulation rate in yr/s
+
   function applySettings(): void {
     const showLabels = (document.getElementById("set-labels") as HTMLInputElement).checked;
     const showTrails = (document.getElementById("set-trails") as HTMLInputElement).checked;
@@ -1027,13 +1034,6 @@ async function main(): Promise<void> {
   let paused   = false;
   let pausedTW = timewarp;
   let galacticOrigin = createGalacticOriginState();
-
-  // Accumulates "owed" simulation time when at fast timewarp and using fixed
-  // 15-min steps (so the average rate matches the slider even though we advance
-  // in discrete chunks).  Reset on direction change or pause.
-  let physicsAccumYr = 0;
-  let lastTwSign     = 1;
-  let actualSimRate  = 0; // smoothed actual simulation rate in yr/s
 
   // ── Load ephemeris from Horizons (or fall back to J2000.0) ────────────────
   async function loadEphemeris(dateStr: string, msg: string): Promise<boolean> {
