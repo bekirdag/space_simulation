@@ -1,9 +1,10 @@
 import { mkdir, writeFile } from "node:fs/promises";
 
-const OUT_PATH = new URL("../public/data/exoplanet-hosts.json", import.meta.url);
+const HOST_OUT_PATH = new URL("../public/data/exoplanet-hosts.json", import.meta.url);
+const PLANET_OUT_PATH = new URL("../public/data/exoplanets.json", import.meta.url);
 const ARCHIVE_URL = "https://exoplanetarchive.ipac.caltech.edu/TAP/sync";
 
-const query = `
+const hostQuery = `
 select
   hostname,
   min(ra) as ra,
@@ -15,6 +16,19 @@ from pscomppars
 where ra is not null and dec is not null
 group by hostname
 order by hostname
+`.trim().replace(/\s+/g, " ");
+
+const planetQuery = `
+select
+  hostname,
+  pl_name,
+  pl_orbsmax,
+  pl_orbper,
+  pl_rade,
+  pl_bmasse
+from pscomppars
+where hostname is not null and pl_name is not null
+order by hostname, pl_orbsmax, pl_orbper, pl_name
 `.trim().replace(/\s+/g, " ");
 
 function parseCsv(text) {
@@ -62,25 +76,42 @@ function numberOrNull(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-const params = new URLSearchParams({ query, format: "csv" });
-const response = await fetch(`${ARCHIVE_URL}?${params.toString()}`);
-if (!response.ok) throw new Error(`NASA Exoplanet Archive returned HTTP ${response.status}`);
+async function archiveCsv(query) {
+  const params = new URLSearchParams({ query, format: "csv" });
+  const response = await fetch(`${ARCHIVE_URL}?${params.toString()}`);
+  if (!response.ok) throw new Error(`NASA Exoplanet Archive returned HTTP ${response.status}`);
 
-const csv = await response.text();
-const rows = parseCsv(csv);
-const header = rows.shift();
-if (!header) throw new Error("Exoplanet Archive returned an empty CSV.");
+  const rows = parseCsv(await response.text());
+  const header = rows.shift();
+  if (!header) throw new Error("Exoplanet Archive returned an empty CSV.");
+  return {
+    col: Object.fromEntries(header.map((name, index) => [name, index])),
+    rows,
+  };
+}
 
-const col = Object.fromEntries(header.map((name, index) => [name, index]));
-const records = rows.map(row => ({
-  name: row[col.hostname] ?? "",
-  ra: numberOrNull(row[col.ra]),
-  dec: numberOrNull(row[col.dec]),
-  distancePc: numberOrNull(row[col.sy_dist]),
-  magnitude: numberOrNull(row[col.sy_vmag]),
-  planetCount: numberOrNull(row[col.planet_count]),
+const hostCsv = await archiveCsv(hostQuery);
+const hostRecords = hostCsv.rows.map(row => ({
+  name: row[hostCsv.col.hostname] ?? "",
+  ra: numberOrNull(row[hostCsv.col.ra]),
+  dec: numberOrNull(row[hostCsv.col.dec]),
+  distancePc: numberOrNull(row[hostCsv.col.sy_dist]),
+  magnitude: numberOrNull(row[hostCsv.col.sy_vmag]),
+  planetCount: numberOrNull(row[hostCsv.col.planet_count]),
 })).filter(record => record.name && record.ra !== null && record.dec !== null);
 
+const planetCsv = await archiveCsv(planetQuery);
+const planetRecords = planetCsv.rows.map(row => ({
+  name: row[planetCsv.col.pl_name] ?? "",
+  hostName: row[planetCsv.col.hostname] ?? "",
+  semiMajorAU: numberOrNull(row[planetCsv.col.pl_orbsmax]),
+  periodDays: numberOrNull(row[planetCsv.col.pl_orbper]),
+  radiusEarth: numberOrNull(row[planetCsv.col.pl_rade]),
+  massEarth: numberOrNull(row[planetCsv.col.pl_bmasse]),
+})).filter(record => record.name && record.hostName);
+
 await mkdir(new URL("../public/data/", import.meta.url), { recursive: true });
-await writeFile(OUT_PATH, `${JSON.stringify(records, null, 2)}\n`, "utf8");
-console.log(`Wrote ${records.length} exoplanet host stars to ${OUT_PATH.pathname}`);
+await writeFile(HOST_OUT_PATH, `${JSON.stringify(hostRecords, null, 2)}\n`, "utf8");
+await writeFile(PLANET_OUT_PATH, `${JSON.stringify(planetRecords, null, 2)}\n`, "utf8");
+console.log(`Wrote ${hostRecords.length} exoplanet host stars to ${HOST_OUT_PATH.pathname}`);
+console.log(`Wrote ${planetRecords.length} exoplanets to ${PLANET_OUT_PATH.pathname}`);

@@ -16,6 +16,87 @@ export interface ExoplanetData {
   massEarth:   number | null;   // planet mass (Earth masses), null if unknown
 }
 
+interface ExoplanetCatalogRecord {
+  name: string;
+  hostName: string;
+  semiMajorAU: number | null;
+  periodDays: number | null;
+  radiusEarth: number | null;
+  massEarth: number | null;
+}
+
+export interface ExoplanetCatalogLoad {
+  planets: ExoplanetData[];
+  source: string;
+}
+
+const EXOPLANET_DATA_URL = "/data/exoplanets.json";
+
+const HOST_KEY_ALIASES: Record<string, string> = {
+  "proxima centauri": "proxima cen",
+  "tau ceti": "tau cet",
+  "epsilon eridani": "eps eri",
+  "epsilon indi": "eps ind a",
+  "yz ceti": "yz cet",
+  "luyten's star": "gj 273",
+  "lalande 21185": "gj 411",
+  "gliese 229": "gj 229",
+  "gliese 667": "gj 667 c",
+};
+
+function hostKey(value: string): string {
+  const normalized = value.trim().toLowerCase().replace(/[’`]/g, "'").replace(/\s+/g, " ");
+  return HOST_KEY_ALIASES[normalized] ?? normalized;
+}
+
+export function canonicalHostKey(value: string): string {
+  return hostKey(value);
+}
+
+function positiveNumberOrNull(value: number | null | undefined): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
+}
+
+function fallbackSemiMajorAU(periodDays: number | null, hostOrbitIndex: number): number {
+  if (periodDays !== null) {
+    const periodYears = periodDays / 365.25;
+    return Math.max(0.005, Math.pow(periodYears * periodYears, 1 / 3));
+  }
+  return 0.025 * Math.pow(hostOrbitIndex + 1, 1.55);
+}
+
+function fallbackPeriodDays(semiMajorAU: number): number {
+  return Math.max(0.2, Math.sqrt(semiMajorAU * semiMajorAU * semiMajorAU) * 365.25);
+}
+
+function prepareExoplanetCatalog(planets: readonly ExoplanetCatalogRecord[]): ExoplanetData[] {
+  const hostOrbitCounts = new Map<string, number>();
+
+  return planets.flatMap((planet) => {
+    const name = planet.name.trim();
+    const hostName = planet.hostName.trim();
+    if (!name || !hostName) return [];
+
+    const key = hostKey(hostName);
+    const hostOrbitIndex = hostOrbitCounts.get(key) ?? 0;
+    hostOrbitCounts.set(key, hostOrbitIndex + 1);
+
+    const catalogSemiMajor = positiveNumberOrNull(planet.semiMajorAU);
+    const catalogPeriod = positiveNumberOrNull(planet.periodDays);
+    const semiMajorAU = catalogSemiMajor ?? fallbackSemiMajorAU(catalogPeriod, hostOrbitIndex);
+    const periodDays = catalogPeriod ?? fallbackPeriodDays(semiMajorAU);
+
+    return [{
+      name,
+      hostName,
+      semiMajorAU,
+      periodDays,
+      radiusEarth: positiveNumberOrNull(planet.radiusEarth),
+      massEarth: positiveNumberOrNull(planet.massEarth),
+    }];
+  });
+}
+
 // Colour based on radius:  > 8 Re = hot Jupiter (blue-grey), 4-8 = gas giant, 2-4 = sub-Neptune, 1-2 = super-Earth, ≤1 = rocky
 export function exoplanetColor(radiusEarth: number | null): [number, number, number] {
   if (radiusEarth === null) return [0.75, 0.75, 0.75];
@@ -150,20 +231,47 @@ export const EXOPLANET_CATALOG: ExoplanetData[] = [
 
 // ── Index structures ──────────────────────────────────────────────────────────
 
-/** Map from host star name → its planets. */
-const BY_HOST = new Map<string, ExoplanetData[]>();
+/** Active catalog starts with the curated fallback and is replaced by the local NASA snapshot when loaded. */
+let activeExoplanetCatalog: ExoplanetData[] = prepareExoplanetCatalog(EXOPLANET_CATALOG);
+/** Map from canonical host star name → its planets. */
+let BY_HOST = new Map<string, ExoplanetData[]>();
 /** Map from planet name (lower-case) → planet. */
-const BY_NAME = new Map<string, ExoplanetData>();
+let BY_NAME = new Map<string, ExoplanetData>();
 
-for (const p of EXOPLANET_CATALOG) {
-  const list = BY_HOST.get(p.hostName) ?? [];
-  list.push(p);
-  BY_HOST.set(p.hostName, list);
-  BY_NAME.set(p.name.toLowerCase(), p);
+function rebuildIndexes(planets: ExoplanetData[]): void {
+  activeExoplanetCatalog = planets;
+  BY_HOST = new Map<string, ExoplanetData[]>();
+  BY_NAME = new Map<string, ExoplanetData>();
+
+  for (const p of activeExoplanetCatalog) {
+    const key = hostKey(p.hostName);
+    const list = BY_HOST.get(key) ?? [];
+    list.push(p);
+    BY_HOST.set(key, list);
+    BY_NAME.set(p.name.toLowerCase(), p);
+  }
+}
+
+rebuildIndexes(activeExoplanetCatalog);
+
+export async function loadExoplanetCatalog(): Promise<ExoplanetCatalogLoad> {
+  try {
+    const response = await fetch(EXOPLANET_DATA_URL);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const records = await response.json() as ExoplanetCatalogRecord[];
+    const planets = prepareExoplanetCatalog(records);
+    if (planets.length === 0) throw new Error("empty exoplanet catalog");
+    rebuildIndexes(planets);
+    return { planets: activeExoplanetCatalog, source: "NASA Exoplanet Archive local snapshot" };
+  } catch (error) {
+    console.warn("Using curated exoplanet fallback catalog:", error);
+    rebuildIndexes(prepareExoplanetCatalog(EXOPLANET_CATALOG));
+    return { planets: activeExoplanetCatalog, source: "curated exoplanet fallback" };
+  }
 }
 
 export function planetsForHost(hostName: string): ExoplanetData[] {
-  return BY_HOST.get(hostName) ?? [];
+  return BY_HOST.get(hostKey(hostName)) ?? [];
 }
 
 export function planetByName(name: string): ExoplanetData | undefined {
@@ -187,17 +295,19 @@ export function searchExoplanets(
 ): ExoplanetSearchResult[] {
   const q = query.trim().toLowerCase();
   if (q.length < 2) return [];
+  const qHost = hostKey(query);
 
   const results: Array<{ planet: ExoplanetData; score: number }> = [];
 
-  for (const planet of EXOPLANET_CATALOG) {
+  for (const planet of activeExoplanetCatalog) {
     const n = planet.name.toLowerCase();
     const h = planet.hostName.toLowerCase();
+    const hk = hostKey(planet.hostName);
     let score = 0;
     if (n === q)                  score += 100;
     if (n.startsWith(q))          score += 65;
     if (n.includes(q))            score += 35;
-    if (h.includes(q))            score += 15;
+    if (h.includes(q) || hk.includes(qHost)) score += 15;
     if (score === 0) continue;
     results.push({ planet, score });
   }

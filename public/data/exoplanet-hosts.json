@@ -31456,6 +31456,14 @@
     "planetCount": 1
   },
   {
+    "name": "TOI-159",
+    "ra": 51.7822676,
+    "dec": -78.5498308,
+    "distancePc": 347.593,
+    "magnitude": 11.021,
+    "planetCount": 1
+  },
+  {
     "name": "TOI-1601",
     "ra": 38.361569,
     "dec": 41.0134321,

@@ -35,14 +35,14 @@ import {
   type StarSearchResult,
 } from "./catalog/stars";
 import {
-  EXOPLANET_CATALOG,
+  canonicalHostKey,
   exoplanetColor,
   exoplanetRadiusAU,
-  initialPhase,
+  loadExoplanetCatalog,
+  planetByName,
   planetWorldPos,
   planetsForHost,
   searchExoplanets,
-  type ExoplanetData,
 } from "./catalog/exoplanets";
 import {
   GALAXY_FLOATS,
@@ -194,7 +194,8 @@ function nearbyStarLabelsToRenderBuffer(stars: readonly NearbyStarLabel[]): Star
 function isMajorRenderBody(body: Body): boolean {
   return body.type === BodyType.Star ||
     body.type === BodyType.Planet ||
-    body.type === BodyType.DwarfPlanet;
+    body.type === BodyType.DwarfPlanet ||
+    body.type === BodyType.Exoplanet;
 }
 
 function buildBodyRenderVisibility(
@@ -904,22 +905,40 @@ async function main(): Promise<void> {
   // rendering + label display only, and are excluded by the integrator.
   let exoplanetBodyIds = new Set<number>(); // ids of current exoplanet entries in bodies
   let exoBodyIdCounter = 90_000;            // unique ids above physics bodies
+  let activeExoplanetHostName: string | null = null;
+  let activeExoplanetHostPos: [number, number, number] | null = null;
 
   function getStarWorldPos(hostName: string): [number, number, number] | null {
-    const star = exoplanetHosts.find(s => s.name === hostName);
-    return star ? [star.x, star.y, star.z] : null;
+    const key = canonicalHostKey(hostName);
+    const star = exoplanetHosts.find(s => canonicalHostKey(s.name) === key);
+    if (star) return [star.x, star.y, star.z];
+    const nearbyStar = NEARBY_STAR_LABELS.find(s => canonicalHostKey(s.name) === key);
+    return nearbyStar ? [nearbyStar.x, nearbyStar.y, nearbyStar.z] : null;
   }
 
-  function setExoplanetBodies(hostName: string | null): void {
+  function activeHostWorldPos(hostName: string): [number, number, number] | null {
+    if (
+      activeExoplanetHostName &&
+      activeExoplanetHostPos &&
+      canonicalHostKey(activeExoplanetHostName) === canonicalHostKey(hostName)
+    ) {
+      return activeExoplanetHostPos;
+    }
+    return getStarWorldPos(hostName);
+  }
+
+  function setExoplanetBodies(hostName: string | null, hostWorldPos?: [number, number, number]): void {
     // Remove old exoplanet bodies
     for (const id of exoplanetBodyIds) {
       const idx = bodies.findIndex(b => b.id === id);
       if (idx !== -1) bodies.splice(idx, 1);
     }
     exoplanetBodyIds.clear();
+    activeExoplanetHostName = hostName;
+    activeExoplanetHostPos = hostWorldPos ? [...hostWorldPos] : null;
 
     if (!hostName) return;
-    const sp = getStarWorldPos(hostName);
+    const sp = activeHostWorldPos(hostName);
     if (!sp) return;
 
     const planets = planetsForHost(hostName);
@@ -938,6 +957,16 @@ async function main(): Promise<void> {
       exoplanetBodyIds.add(body.id);
     }
   }
+
+  void loadExoplanetCatalog().then(({ planets, source }) => {
+    console.info(`Loaded ${planets.length} exoplanets from ${source}.`);
+    if (activeExoplanetHostName) {
+      setExoplanetBodies(activeExoplanetHostName, activeExoplanetHostPos ?? undefined);
+      renderer.uploadBodies(bodies);
+    }
+  }).catch(err => {
+    console.warn("Exoplanet planet catalog failed:", err);
+  });
 
   // ── Simulation state ──────────────────────────────────────────────────────
   let bodies: Body[] = solarSystem();
@@ -1091,11 +1120,12 @@ async function main(): Promise<void> {
         if (model) void renderer.ensureMilkyWayModelLoaded(model);
       } else if (id.startsWith("exo:")) {
         const hostName = id.split(":")[1] ?? null;
-        setExoplanetBodies(hostName);
+        const hostPos = hostName ? getStarWorldPos(hostName) : null;
+        setExoplanetBodies(hostName, hostPos ?? undefined);
       } else {
         // Clicked a host star → load its exoplanets too
         const star = exoplanetHosts.find(s => s.id === id);
-        setExoplanetBodies(star?.name ?? null);
+        setExoplanetBodies(star?.name ?? null, star ? [star.x, star.y, star.z] : undefined);
       }
       renderer.uploadBodies(bodies);
     },
@@ -1116,7 +1146,7 @@ async function main(): Promise<void> {
 
   function focusNearbyStar(star: NearbyStarLabel): void {
     const distanceLy = star.distPc * LIGHT_YEARS_PER_PARSEC;
-    setExoplanetBodies(null);
+    setExoplanetBodies(star.name, [star.x, star.y, star.z]);
     nav.selectCatalogStar({
       id: nearbyStarId(star),
       label: star.name,
@@ -1548,9 +1578,9 @@ async function main(): Promise<void> {
       for (const id of exoplanetBodyIds) {
         const b = bodies.find(b2 => b2.id === id);
         if (!b) continue;
-        const pData = EXOPLANET_CATALOG.find(p => p.name === b.name);
+        const pData = planetByName(b.name);
         if (!pData) continue;
-        const sp = getStarWorldPos(pData.hostName);
+        const sp = activeHostWorldPos(pData.hostName);
         if (!sp) continue;
         const [nx, ny, nz] = planetWorldPos(sp[0], sp[1], sp[2], pData, simYears);
         b.x = nx; b.y = ny; b.z = nz;
@@ -1648,7 +1678,10 @@ async function main(): Promise<void> {
     renderer.uploadBodies(bodies, bodyVisibility);
     renderer.draw(trails);
 
-    labels.update(bodies, camUniforms.viewProj, focusedMembers, camUniforms.eye, bodyVisibility);
+    labels.update(bodies, camUniforms.viewProj, focusedMembers, camUniforms.eye, bodyVisibility, (body) => {
+      if (body.type === BodyType.Exoplanet) nav.travelToClose(body.name);
+      else nav.travelToSystem(body.name);
+    });
     const selectedNearbyStarName = nav.selectedCatalogStar?.id.startsWith("nearby:")
       ? nav.selectedCatalogStar.label
       : null;

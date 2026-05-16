@@ -66,6 +66,18 @@ const FALLBACK_EXOPLANET_HOSTS: ExoplanetHostRecord[] = [
   { name: "LHS 1140", ra: 4.7359, dec: -15.2711, distancePc: 14.99, magnitude: 14.15, planetCount: 2 },
 ];
 
+const HOST_ALIASES_BY_KEY: Record<string, string[]> = {
+  "proxima cen": ["Proxima Centauri"],
+  "tau cet": ["Tau Ceti"],
+  "eps eri": ["Epsilon Eridani"],
+  "eps ind a": ["Epsilon Indi"],
+  "yz cet": ["YZ Ceti"],
+  "gj 273": ["Luyten's Star"],
+  "gj 411": ["Lalande 21185"],
+  "gj 229": ["Gliese 229"],
+  "gj 667 c": ["Gliese 667"],
+};
+
 function mulberry32(seed: number): () => number {
   let t = seed >>> 0;
   return () => {
@@ -78,6 +90,10 @@ function mulberry32(seed: number): () => number {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
+}
+
+function hostAliasKey(value: string): string {
+  return value.trim().toLowerCase().replace(/[’`]/g, "'").replace(/\s+/g, " ");
 }
 
 /**
@@ -137,7 +153,7 @@ function hostToCatalogStar(record: ExoplanetHostRecord, index: number): CatalogS
     : clamp((magnitude - 3.0) / 9.0 * 1.4 + 0.20, -0.10, 1.55);
   const color = starColor(bvProxy);
 
-  return {
+  const star: CatalogStar = {
     id: `exo-${index}-${record.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
     name: record.name,
     catalog: "NASA Exoplanet Archive",
@@ -149,6 +165,9 @@ function hostToCatalogStar(record: ExoplanetHostRecord, index: number): CatalogS
     size: 0.28 + magFactor * 0.75,
     alpha: 0.35 + magFactor * 0.5,
   };
+  const aliases = HOST_ALIASES_BY_KEY[hostAliasKey(record.name)];
+  if (aliases) star.aliases = aliases;
+  return star;
 }
 
 export function createVisibleStarField(count = DEFAULT_VISIBLE_STAR_COUNT): StarBuffer {

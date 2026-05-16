@@ -134,12 +134,20 @@ function project(
 
 interface Projected { x: number; y: number; body: Body }
 
+function bodyLabelClassName(body: Body): string {
+  const classes = ['body-label'];
+  if (body.name === "Sun") classes.push('sun');
+  if (body.type === BodyType.Exoplanet) classes.push('exoplanet');
+  return classes.join(' ');
+}
+
 export interface CatalogStarInfo {
   label:    string;
   subtitle: string;
   x: number; y: number; z: number;
 }
 
+export type BodyLabelClickHandler = (body: Body) => void;
 export type NearbyStarClickHandler = (star: NearbyStarLabel) => void;
 
 export interface GalaxyNameLabel {
@@ -158,6 +166,7 @@ export class LabelManager {
   private positions = new Map<number, Projected>(); // updated each frame
   private mouseX    = 0;
   private mouseY    = 0;
+  private bodyLabelClickHandler: BodyLabelClickHandler | null = null;
   private starLabelEl: HTMLDivElement;
 
   // Nearby-star label spans keyed by star name
@@ -206,14 +215,24 @@ export class LabelManager {
     document.body.appendChild(this.starLabelEl);
   }
 
+  private activateBodyLabel(sp: HTMLElement): void {
+    const id = Number(sp.dataset["bodyId"]);
+    if (!Number.isFinite(id)) return;
+    const projected = this.positions.get(id);
+    if (!projected) return;
+    this.bodyLabelClickHandler?.(projected.body);
+  }
+
   update(
     bodies: Body[],
     viewProj: Mat4,
     focusedSystemMembers: ReadonlySet<string> = new Set(),
     cameraEye: Vec3 = [0, 0, 0],
     bodyVisibility: ReadonlyMap<number, number> = new Map(),
+    onBodyLabelClick: BodyLabelClickHandler | null = null,
   ): boolean /* solarSystemClustered */ {
     if (!this._visible) return false;
+    this.bodyLabelClickHandler = onBodyLabelClick;
     const cssW = window.innerWidth;
     const cssH = window.innerHeight;
 
@@ -258,13 +277,38 @@ export class LabelManager {
     for (const b of bodies) {
       if (!this.spans.has(b.id)) {
         const sp = document.createElement('span');
-        sp.className = b.name === "Sun" ? 'body-label sun' : 'body-label';
+        sp.className = bodyLabelClassName(b);
         sp.textContent = b.name;
+        sp.dataset["bodyId"] = String(b.id);
+        sp.addEventListener('mousedown', event => event.stopPropagation());
+        sp.addEventListener('mouseup', event => event.stopPropagation());
+        sp.addEventListener('click', event => {
+          event.preventDefault();
+          event.stopPropagation();
+          this.activateBodyLabel(sp);
+        });
+        sp.addEventListener('dblclick', event => {
+          event.preventDefault();
+          event.stopPropagation();
+          this.activateBodyLabel(sp);
+        });
+        sp.addEventListener('keydown', event => {
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          event.preventDefault();
+          event.stopPropagation();
+          this.activateBodyLabel(sp);
+        });
         this.container.appendChild(sp);
         this.spans.set(b.id, sp);
       }
 
       const sp  = this.spans.get(b.id)!;
+      sp.className = bodyLabelClassName(b);
+      sp.classList.toggle('clickable', this.bodyLabelClickHandler !== null);
+      sp.dataset["bodyId"] = String(b.id);
+      sp.tabIndex = this.bodyLabelClickHandler ? 0 : -1;
+      if (this.bodyLabelClickHandler) sp.setAttribute('role', 'button');
+      else sp.removeAttribute('role');
       const isFocusedSystemMember = focusedSystemMembers.has(b.name);
       const isMajorBody = ALWAYS_VISIBLE_BODY_NAMES.has(b.name);
       const renderVisibility = bodyVisibility.get(b.id) ?? 1;

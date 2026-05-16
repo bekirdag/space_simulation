@@ -998,6 +998,19 @@
         padding: 1px 4px;
         border-radius: 2px;
       }
+      .body-label.clickable {
+        pointer-events: auto;
+        cursor: pointer;
+      }
+      .body-label.clickable:focus-visible {
+        outline: 1px solid rgba(160, 210, 255, 0.5);
+        outline-offset: 2px;
+      }
+      .body-label.exoplanet {
+        color: rgba(185, 235, 255, 0.92);
+        border: 1px solid rgba(140, 210, 255, 0.25);
+        background: rgba(0, 10, 20, 0.78);
+      }
       .body-label.pinned {
         transform: translate(-50%, -50%);
         padding: 2px 7px;
