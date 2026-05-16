@@ -67,12 +67,34 @@ async function probeBackend(origin: string): Promise<boolean> {
   }
 }
 
+async function firstHealthyFallback(origins: string[]): Promise<string | null> {
+  if (origins.length === 0) return null;
+
+  return await new Promise(resolve => {
+    let settled = false;
+    let pending = origins.length;
+
+    for (const origin of origins) {
+      void probeBackend(origin).then(ok => {
+        if (settled) return;
+        if (ok) {
+          settled = true;
+          resolve(origin);
+          return;
+        }
+        pending -= 1;
+        if (pending === 0) resolve(null);
+      });
+    }
+  });
+}
+
 export async function backendOrigin(): Promise<string> {
   backendOriginPromise ??= (async () => {
-    for (const origin of localBackendOrigins()) {
-      if (await probeBackend(origin)) return origin;
-    }
-    return window.location.origin;
+    const origins = localBackendOrigins();
+    const sameOrigin = origins[0] ?? window.location.origin;
+    if (await probeBackend(sameOrigin)) return sameOrigin;
+    return await firstHealthyFallback(origins.slice(1)) ?? window.location.origin;
   })();
   return backendOriginPromise;
 }

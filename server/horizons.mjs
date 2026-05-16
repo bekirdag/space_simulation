@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -11,7 +11,10 @@ const CACHE_ROOT = process.env.COSMOSMAP_HORIZONS_CACHE_DIR
 const PUBLIC_CACHE_ROOT = path.join(REPO_ROOT, "public", "cache", "horizons");
 const D2Y = 365.25;
 const RETRY_STATUSES = new Set([429, 500, 502, 503, 504]);
+const HORIZONS_REQUEST_SPACING_MS = Number.parseInt(process.env.COSMOSMAP_HORIZONS_REQUEST_SPACING_MS || "", 10) || 150;
+const STALE_CACHE_LOOKBACK_DAYS = Number.parseInt(process.env.COSMOSMAP_HORIZONS_STALE_DAYS || "", 10) || 30;
 const inFlight = new Map();
+const backgroundRefreshes = new Map();
 
 const TARGETS = [
   ["Sun", "10"],
@@ -130,6 +133,53 @@ async function writeSnapshot(filePath, snapshot) {
   await rename(tempFile, filePath);
 }
 
+function isCurrentUtcDate(dateStr) {
+  return dateStr === utcDateStr(new Date());
+}
+
+async function listCacheDates(root) {
+  try {
+    const entries = await readdir(root, { withFileTypes: true });
+    return entries
+      .filter(entry => entry.isFile() && /^\d{4}-\d{2}-\d{2}\.json$/.test(entry.name))
+      .map(entry => entry.name.slice(0, 10));
+  } catch (err) {
+    if (err?.code === "ENOENT") return [];
+    throw err;
+  }
+}
+
+async function findLatestCachedSnapshot(dateStr) {
+  const requestedMs = Date.parse(`${dateStr}T00:00:00Z`);
+  const minMs = requestedMs - STALE_CACHE_LOOKBACK_DAYS * 24 * 60 * 60 * 1000;
+  let best = null;
+
+  for (const [root, cacheStatus] of [
+    [CACHE_ROOT, "stale-runtime-cache"],
+    [PUBLIC_CACHE_ROOT, "stale-public-cache"],
+  ]) {
+    const dates = await listCacheDates(root);
+    for (const cachedDate of dates) {
+      const cachedMs = Date.parse(`${cachedDate}T00:00:00Z`);
+      if (!Number.isFinite(cachedMs) || cachedMs > requestedMs || cachedMs < minMs) continue;
+      if (best && cachedDate <= best.snapshot.date) continue;
+
+      const snapshot = await readSnapshot(path.join(root, `${cachedDate}.json`), cachedDate);
+      if (snapshot) best = { snapshot, cacheStatus };
+    }
+  }
+
+  return best;
+}
+
+function startBackgroundRefresh(dateStr) {
+  if (backgroundRefreshes.has(dateStr)) return;
+  const task = horizonsResponse(dateStr, true)
+    .catch(err => console.warn("CosmosMap background Horizons refresh failed:", err))
+    .finally(() => backgroundRefreshes.delete(dateStr));
+  backgroundRefreshes.set(dateStr, task);
+}
+
 function withCacheStatus(snapshot, cacheStatus, extra = {}) {
   return {
     ...snapshot,
@@ -229,8 +279,16 @@ async function mapLimit(items, limit, task) {
 }
 
 async function fetchSnapshotFromJpl(dateStr) {
-  const settled = await mapLimit(TARGETS, 2, async (target, index) => {
-    await delay(index * 150);
+  let nextRequestStart = 0;
+  async function waitForRequestSlot() {
+    const now = Date.now();
+    const startAt = Math.max(now, nextRequestStart);
+    nextRequestStart = startAt + HORIZONS_REQUEST_SPACING_MS;
+    if (startAt > now) await delay(startAt - now);
+  }
+
+  const settled = await mapLimit(TARGETS, 2, async (target) => {
+    await waitForRequestSlot();
     return fetchTarget(target, dateStr);
   });
 
@@ -243,6 +301,10 @@ async function fetchSnapshotFromJpl(dateStr) {
       const name = TARGETS[index]?.[0] ?? `target-${index}`;
       warnings.push(`${name}: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`);
     }
+  }
+
+  if (vectors.length === 0) {
+    throw new Error(`No Horizons vectors returned. Warnings: ${warnings.join("; ")}`);
   }
 
   vectors.sort((a, b) => TARGETS.findIndex(target => target[0] === a.name) - TARGETS.findIndex(target => target[0] === b.name));
@@ -274,6 +336,19 @@ async function resolveSnapshot(dateStr, refresh) {
     if (publicSeed) {
       await writeSnapshot(cacheFile, publicSeed);
       return withCacheStatus(publicSeed, "public-cache");
+    }
+  }
+
+  if (!refresh && isCurrentUtcDate(dateStr)) {
+    const latest = await findLatestCachedSnapshot(dateStr);
+    if (latest) {
+      startBackgroundRefresh(dateStr);
+      return withCacheStatus(latest.snapshot, latest.cacheStatus, {
+        stale: true,
+        requestedDate: dateStr,
+        refreshQueued: true,
+        warning: `Queued a background Horizons refresh for ${dateStr}; served latest cached snapshot from ${latest.snapshot.date}.`,
+      });
     }
   }
 
@@ -356,7 +431,7 @@ export async function handleHorizonsRequest(req, res) {
   const refresh = url.searchParams.get("refresh") === "1";
   try {
     const payload = await horizonsResponse(dateStr, refresh);
-    sendJson(res, 200, payload, !refresh);
+    sendJson(res, 200, payload, !refresh && !payload.stale && payload.date === dateStr);
   } catch (err) {
     console.error("CosmosMap Horizons lookup failed:", err);
     sendJson(res, 502, {

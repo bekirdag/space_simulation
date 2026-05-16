@@ -286,7 +286,9 @@ function hideLoading() {
 
 function horizonsSourceLabel(result: HorizonsResult, dateStr: string): string {
   const source = result.source === "jpl-network"
-    ? "NASA JPL Horizons"
+    ? "NASA JPL backend refresh"
+    : result.source === "backend-cache"
+      ? "NASA JPL backend cache"
     : result.source === "file-cache"
       ? "NASA JPL file cache"
       : result.source === "stale-cache"
