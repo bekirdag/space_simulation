@@ -4,7 +4,7 @@
 // when the camera is far from the solar system origin.
 //
 // Buffer layout per star (32 bytes):
-//   vec4 pos_size:    xyz = compressed ecliptic AU position, w = size multiplier
+//   vec4 pos_size:    xyz = compressed ecliptic AU position, w = physical radius AU
 //   vec4 color_alpha: rgb = star colour, w = base alpha
 
 struct Camera {
@@ -25,6 +25,7 @@ struct Star {
 
 const CLOSE_STAR_SPHERE_LOD_START_PX: f32 = 2.25;
 const CLOSE_STAR_SPHERE_LOD_FULL_PX:  f32 = 4.50;
+const SOLAR_RADIUS_AU: f32 = 0.00465047;
 
 struct VertexOut {
   @builtin(position) clip_pos: vec4<f32>,
@@ -41,16 +42,18 @@ var<private> quad: array<vec2<f32>, 6> = array<vec2<f32>, 6>(
   vec2(-1.0, 1.0), vec2(1.0,-1.0), vec2( 1.0,1.0),
 );
 
-fn stellar_luminosity_proxy(color: vec3<f32>, size: f32, alpha: f32) -> f32 {
+fn stellar_luminosity_proxy(color: vec3<f32>, radiusAU: f32, alpha: f32) -> f32 {
   let blueWeight = clamp((color.b - color.r + 0.35) / 0.70, 0.0, 1.0);
   let warmWeight = clamp((color.r - color.b + 0.20) / 0.80, 0.0, 1.0);
   let spectralLum = mix(0.65, 18.0, blueWeight) * mix(1.0, 0.55, warmWeight * (1.0 - blueWeight));
-  return spectralLum * (0.35 + size * 0.65) * (0.65 + alpha);
+  let radiusSolar = clamp(radiusAU / SOLAR_RADIUS_AU, 0.08, 600.0);
+  let radiusLum = clamp(pow(radiusSolar, 0.55), 0.35, 12.0);
+  return spectralLum * radiusLum * (0.65 + alpha);
 }
 
-fn apparent_mw_brightness(cameraDistanceAU: f32, color: vec3<f32>, size: f32, alpha: f32) -> f32 {
+fn apparent_mw_brightness(cameraDistanceAU: f32, color: vec3<f32>, radiusAU: f32, alpha: f32) -> f32 {
   let distKpc = max(cameraDistanceAU / 8000.0, 0.10);
-  let flux = stellar_luminosity_proxy(color, size, alpha) / (distKpc * distKpc);
+  let flux = stellar_luminosity_proxy(color, radiusAU, alpha) / (distKpc * distKpc);
   return clamp(pow(max(flux * 8.0, 0.0001), 0.45), 0.05, 2.8);
 }
 
@@ -85,7 +88,8 @@ fn vs_main(
   out.effects = clamp(lodFade.z, 0.0, 1.0);
   out.pixel_radius = 0.0;
   let cameraDistanceAU = length(center - camera.eyeAndFlags.xyz);
-  out.brightness = select(1.0, apparent_mw_brightness(cameraDistanceAU, out.color, star.pos_size.w, star.color_alpha.w), actual);
+  let radiusAU = max(star.pos_size.w, SOLAR_RADIUS_AU * 0.08);
+  out.brightness = select(1.0, apparent_mw_brightness(cameraDistanceAU, out.color, radiusAU, star.color_alpha.w), actual);
   out.alpha = star.color_alpha.w * lodFade.x * select(1.0, clamp(0.35 + out.brightness, 0.25, 2.1), actual);
 
   // Skip invisible or back-facing instances
@@ -98,8 +102,20 @@ fn vs_main(
   // Cull only once the complete billboard is outside the frame.
   let ndcX = clip_c.x / clip_c.w;
   let ndcY = clip_c.y / clip_c.w;
-  let sizeMult = star.pos_size.w;
-  let pxRadius = camera.rightAndMNR.w * max(sizeMult * 1.8, 0.6);
+  let focalY = camera.upAndFocal.w;
+  let radiusSolar = clamp(radiusAU / SOLAR_RADIUS_AU, 0.08, 600.0);
+  let physicalNdcRadius = radiusAU * focalY / max(clip_c.w, 0.000001);
+  let radiusMarkerLift = clamp(pow(radiusSolar, 0.22), 0.42, 3.2);
+  let brightnessMarkerLift = select(
+    1.0,
+    clamp(pow(max(out.brightness, 0.08), 0.12), 0.75, 1.75),
+    actual,
+  );
+  let pointNdcRadius = camera.rightAndMNR.w * max(
+    (0.42 * radiusMarkerLift + 0.18 * out.alpha) * brightnessMarkerLift,
+    0.35,
+  );
+  let pxRadius = max(physicalNdcRadius, pointNdcRadius);
   out.pixel_radius = pxRadius * 2.5 / max(camera.rightAndMNR.w, 0.000001);
   let cullMargin = max(pxRadius * 1.5, 0.06);
   if ndcX - cullMargin > 1.0 || ndcX + cullMargin < -1.0 ||
@@ -111,7 +127,6 @@ fn vs_main(
   // Fixed-size billboard expanded from the projected center in clip space.
   // This keeps small but inspectable Milky Way stars round instead of letting
   // large galactic coordinates quantize the quad corners.
-  let focalY      = camera.upAndFocal.w;
   let worldRadius = pxRadius * clip_c.w / focalY;
   let clipRight = camera.viewProj * vec4(camera.rightAndMNR.xyz * worldRadius, 0.0);
   let clipUp = camera.viewProj * vec4(camera.upAndFocal.xyz * worldRadius, 0.0);

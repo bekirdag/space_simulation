@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-// Generates 100k Milky Way background stars for the galaxy-scale LOD layer.
+// Generates 200k Milky Way background stars for the galaxy-scale LOD layer.
 // Positions are distributed with a realistic density model (disk + bulge + spiral arms),
 // converted from galactocentric galactic → heliocentric ecliptic J2000 at 8000 AU/kpc.
 //
 // Output: public/data/milkyway-stars.bin
-//         100 000 × 8 floats × 4 bytes = 3.2 MB
-//         Layout per star: [x, y, z, size, r, g, b, alpha]
+//         200 000 × 8 floats × 4 bytes = 6.4 MB
+//         Layout per star: [x, y, z, physical_radius_AU, r, g, b, alpha]
 //         (same as the STAR_FLOATS=8 layout used by star.wgsl)
 
 import { writeFileSync, mkdirSync } from "fs";
@@ -19,6 +19,7 @@ mkdirSync(path.dirname(OUT), { recursive: true });
 const N_STARS    = 200_000;
 const KPC_TO_AU  = 8_000;   // 8 000 AU per kpc → galaxy diameter 30 kpc = 240 000 AU
 const R_SUN      = 8.5;     // kpc, Sun's galactocentric radius
+const SOLAR_RADIUS_AU = 0.00465047;
 
 // ── Galactic → Ecliptic J2000 rotation matrix ───────────────────────────────
 // Computed from the Hipparcos/ICRS galactic→equatorial matrix (R^T) composed
@@ -95,11 +96,29 @@ function armBoost(R, theta) {
 // OB: 5%, A: 12%, FG: 30%, KM: 53%
 function starColor() {
   const u = rand();
-  if (u < 0.05) return { r: 0.65, g: 0.75, b: 1.00, luminosityBias: 5.0 }; // O/B
-  if (u < 0.17) return { r: 0.90, g: 0.95, b: 1.00, luminosityBias: 2.1 }; // A/F
-  if (u < 0.47) return { r: 1.00, g: 0.92, b: 0.75, luminosityBias: 0.9 }; // G
-  if (u < 0.72) return { r: 1.00, g: 0.65, b: 0.35, luminosityBias: 0.55 }; // K
-  return         { r: 1.00, g: 0.35, b: 0.20, luminosityBias: 0.28 };        // M
+  let star;
+  if (u < 0.05) {
+    star = { r: 0.65, g: 0.75, b: 1.00, luminosityBias: 5.0, radiusSolar: 3.5 + Math.pow(rand(), 0.7) * 12.0 }; // O/B
+  } else if (u < 0.17) {
+    star = { r: 0.90, g: 0.95, b: 1.00, luminosityBias: 2.1, radiusSolar: 1.15 + rand() * 1.45 }; // A/F
+  } else if (u < 0.47) {
+    star = { r: 1.00, g: 0.92, b: 0.75, luminosityBias: 0.9, radiusSolar: 0.85 + rand() * 0.40 }; // G
+  } else if (u < 0.72) {
+    star = { r: 1.00, g: 0.65, b: 0.35, luminosityBias: 0.55, radiusSolar: 0.55 + rand() * 0.35 }; // K
+  } else {
+    star = { r: 1.00, g: 0.35, b: 0.20, luminosityBias: 0.28, radiusSolar: 0.12 + Math.pow(rand(), 1.2) * 0.43 }; // M
+  }
+
+  const evolved = rand();
+  if (evolved < 0.0015) {
+    star.radiusSolar = 80 + Math.pow(rand(), 2.0) * 520;
+    star.luminosityBias *= 8;
+  } else if (evolved < 0.018) {
+    star.radiusSolar = 6 + Math.pow(rand(), 1.4) * 75;
+    star.luminosityBias *= 3;
+  }
+
+  return star;
 }
 
 function displayBrightness(luminosityBias) {
@@ -177,16 +196,17 @@ while (i < N_STARS) {
   const distKpc = Math.sqrt(xh*xh + yh*yh + zh*zh);
   if (distKpc < 0.1) continue;
 
-  const { r, g, b, luminosityBias } = starColor();
+  const star = starColor();
+  const { r, g, b, luminosityBias } = star;
+  const radiusAU = star.radiusSolar * SOLAR_RADIUS_AU;
   const brightness = displayBrightness(luminosityBias);
-  const size  = 0.32 + Math.pow(brightness, 1.25) * 1.35;
   const alpha = 0.055 + Math.pow(brightness, 0.90) * 0.54;
 
   const o = i * 8;
   out[o+0] = x_au;
   out[o+1] = y_au;
   out[o+2] = z_au;
-  out[o+3] = size;
+  out[o+3] = radiusAU;
   out[o+4] = r;
   out[o+5] = g;
   out[o+6] = b;

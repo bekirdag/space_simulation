@@ -32,6 +32,8 @@ const CLOSE_STAR_SPHERE_LOD_FULL_PX:  f32 = 4.50;
 const CAMERA_NEAR: f32 = 1e-8;
 const CAMERA_FAR:  f32 = 50000000.0;
 const SOLAR_RADIUS_AU: f32 = 0.00465047;
+const SUN_STELLAR_MARKER_FADE_START_AU: f32 = 24.0;
+const SUN_STELLAR_MARKER_FADE_FULL_AU:  f32 = 96.0;
 
 struct VertexOut {
   @builtin(position) clip_pos: vec4<f32>,
@@ -147,7 +149,16 @@ fn vs_main(
   let cameraAU   = lodFade.y;
   let globalFade = clamp(1.0 - (cameraAU - 500.0) / 19500.0, 0.0, 1.0);
   let isSelected = selectedStar.w > 0.5 && length(center - selectedStar.xyz) < 0.5;
+  let isSunAnchor = length(center) < 0.05 &&
+    star.pos_size.w > SOLAR_RADIUS_AU * 0.80 &&
+    star.pos_size.w < SOLAR_RADIUS_AU * 1.20;
+  let sunAnchorFade = select(
+    1.0,
+    smoothstep(SUN_STELLAR_MARKER_FADE_START_AU, SUN_STELLAR_MARKER_FADE_FULL_AU, cameraAU),
+    isSunAnchor,
+  );
   out.alpha     *= select(globalFade, max(globalFade, 0.9), isSelected);
+  out.alpha     *= sunAnchorFade;
   out.alpha     *= mix(1.0, distanceAlpha, out.effects);
 
   if out.alpha <= 0.001 && !isSelected {
@@ -158,7 +169,7 @@ fn vs_main(
     out.clip_pos = vec4(10.0, 10.0, 10.0, 1.0);
     return out;
   }
-  out.selected = 0.0;
+  out.selected = select(0.0, 1.0, isSelected);
 
   // ── Frustum culling ────────────────────────────────────────────────────────
   // Cull only when the whole billboard is outside the frame plus a small margin.
@@ -167,9 +178,15 @@ fn vs_main(
   let ndcY = clip_c.y / clip_c.w;
   let focalY = camera.upAndFocal.w;
   let radiusAU = max(star.pos_size.w, SOLAR_RADIUS_AU * 0.01);
+  let radiusSolar = clamp(radiusAU / SOLAR_RADIUS_AU, 0.01, 1800.0);
   let physicalNdcRadius = radiusAU * focalY / max(clip_c.w, 0.000001);
-  let distanceSizeLift = mix(1.0, clamp(pow(distanceFlux, 0.14), 0.65, 7.0), out.effects);
-  let pointNdcRadius = camera.rightAndMNR.w * max((0.35 + out.alpha * 1.25) * distanceSizeLift, 0.6);
+  let radiusMarkerLift = clamp(pow(radiusSolar, 0.28), 0.42, 5.2);
+  let alphaMarkerLift = clamp(pow(max(out.alpha, 0.04), 0.35), 0.55, 1.35);
+  let distanceSizeLift = mix(1.0, clamp(pow(distanceFlux, 0.045), 0.85, 1.8), out.effects);
+  let pointNdcRadius = camera.rightAndMNR.w * max(
+    (0.52 * radiusMarkerLift + 0.22 * alphaMarkerLift) * distanceSizeLift,
+    0.38,
+  );
   let billboardNdcRadius = max(physicalNdcRadius, pointNdcRadius);
   let cullMargin = max(billboardNdcRadius * 1.5, 0.06);
   if ndcX - cullMargin > 1.0 || ndcX + cullMargin < -1.0 ||

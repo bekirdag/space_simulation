@@ -1,6 +1,7 @@
-// Milky Way background star catalog — 100k stars distributed across the galactic disk.
+// Milky Way background star catalog — 200k stars distributed across the galactic disk.
 // Positions use the same 8-float layout as the nearby HYG catalog (star.wgsl),
-// but are scaled at 8 000 AU/kpc so the galaxy spans ~240 000 AU.
+// but are scaled at 8 000 AU/kpc so the galaxy spans ~240 000 AU. The fourth
+// float is physical stellar radius in AU, not a screen-size multiplier.
 //
 // Only rendered when the camera is far from the solar system origin (LOD).
 
@@ -13,7 +14,7 @@ export interface MilkywayBuffer {
 }
 
 export async function loadMilkywayStars(): Promise<MilkywayBuffer> {
-  const url = `/data/milkyway-stars.bin`;
+  const url = `/data/milkyway-stars.bin?v=physical-radius-v1`;
   const res = await fetch(url, { cache: "force-cache" });
   if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.status}`);
   const buf = await res.arrayBuffer();

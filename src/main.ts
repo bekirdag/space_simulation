@@ -1,5 +1,5 @@
 import { initGPU } from "./gpu/device";
-import { Renderer } from "./gpu/renderer";
+import { Renderer, type SelectedStarModel } from "./gpu/renderer";
 import { Camera, type CameraUniforms } from "./scene/camera";
 import { HUD } from "./ui/hud";
 import { ScaleBar } from "./ui/scale-bar";
@@ -227,6 +227,19 @@ function nearbyStarLabelsToRenderBuffer(stars: readonly NearbyStarLabel[]): Star
     data[o + 7] = clamp((0.08 + Math.pow(display, 0.90) * 0.82) * tierFade, 0.04, 0.98);
   }
 
+  return data;
+}
+
+function sunStellarAnchorRenderBuffer(): StarBuffer {
+  const data = new Float32Array(STAR_FLOATS);
+  data[0] = 0;
+  data[1] = 0;
+  data[2] = 0;
+  data[3] = SOLAR_RADIUS_AU;
+  data[4] = 1.00;
+  data[5] = 0.92;
+  data[6] = 0.75;
+  data[7] = 0.92;
   return data;
 }
 
@@ -1193,6 +1206,7 @@ async function main(): Promise<void> {
   let rawVisibleStarBuffer: StarBuffer = new Float32Array(0);
   let visibleStarBuffer: StarBuffer = new Float32Array(0);
   let exoplanetHostBuffer: StarBuffer = new Float32Array(0);
+  const sunStellarAnchorBuffer = sunStellarAnchorRenderBuffer();
   const nearbyStarLabelBuffer = nearbyStarLabelsToRenderBuffer(NEARBY_STAR_LABELS);
   let exoplanetHosts: CatalogStar[] = [];
   let catalogStatus = "Loading exoplanet host catalog...";
@@ -1204,10 +1218,11 @@ async function main(): Promise<void> {
     try {
       const filteredVisible = filterStarBufferByPosition(
         rawVisibleStarBuffer,
-        [nearbyStarLabelBuffer, exoplanetHostBuffer],
+        [sunStellarAnchorBuffer, nearbyStarLabelBuffer, exoplanetHostBuffer],
       );
       visibleStarBuffer = filteredVisible.data;
       const combinedResult = combineStarBuffersUnique([
+        { label: "Sun stellar anchor", buffer: sunStellarAnchorBuffer },
         { label: "nearby known stars", buffer: nearbyStarLabelBuffer },
         { label: "exoplanet host stars", buffer: exoplanetHostBuffer },
         { label: "visible mapped stars", buffer: visibleStarBuffer },
@@ -1990,6 +2005,18 @@ async function main(): Promise<void> {
       !hit.id.startsWith("body:");
   }
 
+  function selectedStarModelFromHit(hit: StarSearchResult | null): SelectedStarModel | null {
+    if (!hit) return null;
+    const model: SelectedStarModel = {
+      position: [hit.x, hit.y, hit.z],
+      radiusAU: hit.radiusAU ?? SOLAR_RADIUS_AU,
+      color: hit.color,
+      alpha: 1,
+    };
+    if (hit.starType) model.starType = hit.starType;
+    return model;
+  }
+
   function selectMapCatalogObject(
     hit: StarSearchResult,
     mode: MapObjectClickMode,
@@ -2623,12 +2650,13 @@ async function main(): Promise<void> {
     renderer.ensureVisibleMilkyWayModels(MILKY_WAY_MODEL_OBJECTS, camUniforms.eye);
 
     const sel = nav.selectedCatalogStar;
+    const highlightedStar = shouldHighlightCatalogStar(sel) ? sel : null;
     renderer.uploadSelectedStar(
-      shouldHighlightCatalogStar(sel)
-        ? [sel.x, sel.y, sel.z]
+      highlightedStar
+        ? [highlightedStar.x, highlightedStar.y, highlightedStar.z]
         : null,
     );
-    renderer.uploadSelectedStarModel(null);
+    renderer.uploadSelectedStarModel(selectedStarModelFromHit(highlightedStar));
     const focusedMembers = nav.focusedSystemMembers();
     const bodyVisibility = buildBodyRenderVisibility(bodies, camUniforms.viewProj, focusedMembers, camUniforms);
     renderer.uploadBodies(bodies, bodyVisibility);
