@@ -1283,7 +1283,8 @@ export class Renderer {
       baseColor: [1, 1, 1, material.baseColor[3]],
       textureIndex,
       useTexture: 1,
-      useProcedural: Math.min(material.useProcedural, 0.35),
+      useProcedural: Math.min(material.useProcedural, 0.12),
+      textureEmission: 0.85,
     };
   }
 
@@ -1334,7 +1335,7 @@ export class Renderer {
     data[8] = material.useTexture;
     data[9] = material.useProcedural;
     data[10] = material.useVertexColor;
-    data[11] = 0;
+    data[11] = material.textureEmission;
     device.queue.writeBuffer(buffer, 0, data);
     return buffer;
   }

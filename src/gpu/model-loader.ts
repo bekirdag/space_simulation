@@ -17,6 +17,7 @@ export interface ParsedMilkyWayMaterial {
   useTexture: number;
   useProcedural: number;
   useVertexColor: number;
+  textureEmission: number;
 }
 
 export interface ParsedMilkyWayMeshPart {
@@ -82,6 +83,7 @@ function defaultMaterial(useProcedural = 0): ParsedMilkyWayMaterial {
     useTexture: 0,
     useProcedural,
     useVertexColor: 0,
+    textureEmission: 0,
   };
 }
 
@@ -187,6 +189,7 @@ async function parseMaterial(
     useTexture: textureIndex >= 0 ? 1 : 0,
     useProcedural: 0,
     useVertexColor: hasVertexColors || mat.vertexColors ? 1 : 0,
+    textureEmission: 0,
   };
 }
 

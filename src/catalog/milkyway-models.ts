@@ -22,6 +22,9 @@ export interface MilkyWayModelObject {
   color: [number, number, number];
   opacity: number;
   textureUrl?: string;
+  textureSource?: string;
+  textureSourceUrl?: string;
+  textureCredit?: string;
   aliases: string[];
 }
 
@@ -41,6 +44,9 @@ interface ModelDef {
   color: [number, number, number];
   opacity?: number;
   textureUrl?: string;
+  textureSource?: string;
+  textureSourceUrl?: string;
+  textureCredit?: string;
   aliases?: string[];
 }
 
@@ -108,6 +114,9 @@ function toModel(def: ModelDef): MilkyWayModelObject {
     aliases: def.aliases ?? [],
   };
   if (def.textureUrl) model.textureUrl = def.textureUrl;
+  if (def.textureSource) model.textureSource = def.textureSource;
+  if (def.textureSourceUrl) model.textureSourceUrl = def.textureSourceUrl;
+  if (def.textureCredit) model.textureCredit = def.textureCredit;
   return model;
 }
 
@@ -414,6 +423,9 @@ const DEFINITIONS: ModelDef[] = [
     radiusAU: 42,
     color: [1.0, 0.62, 0.36],
     textureUrl: "/textures/nebula-eta-carinae.jpg",
+    textureSource: "ESA/Hubble",
+    textureSourceUrl: "https://esahubble.org/images/opo9110a/",
+    textureCredit: "J. Hester/Caltech & NASA/ESA",
     aliases: ["Eta Carinae", "Homunculus Nebula", "Eta Carinae Nebula"],
   },
   {

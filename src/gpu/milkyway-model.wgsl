@@ -100,6 +100,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
   let textureMix = material.params.x;
   let proceduralMix = material.params.y;
   let vertexColorMix = material.params.z;
+  let textureEmission = material.params.w;
   let vertexColor = mix(vec4<f32>(1.0), in.vertexColor, vec4<f32>(vertexColorMix));
   var albedo = material.baseColor * vertexColor * mix(vec4<f32>(1.0), texel, vec4<f32>(textureMix));
 
@@ -108,7 +109,8 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
   let proceduralColor = albedo.rgb * (0.42 + filament * 0.95) + model.colorPad.rgb * (rim * 0.55 + filament * 0.22);
   let litColor = albedo.rgb * (0.22 + lambert * 0.46 + rim * 0.58);
   let emissive = material.emissive.rgb * material.emissive.a;
-  let color = mix(litColor, proceduralColor, vec3<f32>(proceduralMix)) + emissive + albedo.rgb * rim * 0.22;
+  let projectedTexture = texel.rgb * textureMix * textureEmission;
+  let color = mix(litColor, proceduralColor, vec3<f32>(proceduralMix)) + emissive + projectedTexture + albedo.rgb * rim * 0.22;
   let alpha = in.alpha * clamp(albedo.a, 0.0, 1.0) * mix(1.0, 0.72 + rim * 0.22 + filament * 0.18, proceduralMix);
 
   return vec4<f32>(color * alpha, alpha);
