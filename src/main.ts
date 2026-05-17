@@ -4,6 +4,7 @@ import { Camera, type CameraUniforms } from "./scene/camera";
 import { HUD } from "./ui/hud";
 import { ScaleBar } from "./ui/scale-bar";
 import { NavPanel } from "./ui/nav";
+import { ViewControls, type ViewAxis } from "./ui/view-controls";
 import { LabelManager, type GalaxyNameLabel } from "./ui/labels";
 import { ContextMenu } from "./ui/context-menu";
 import { TrailSystem } from "./scene/trail-system";
@@ -1417,6 +1418,85 @@ async function main(): Promise<void> {
       if (objectType !== "constellation") clearSelectedConstellation();
       setFocusTitle(title, subtitle, objectType);
     },
+  });
+
+  const VIEW_CONTROL_POLE_MARGIN = 0.02;
+  const VIEW_CONTROL_TRAVEL_SECONDS = 0.25;
+
+  function setViewAxis(axis: ViewAxis): void {
+    camera.clearWheelZoomGoal();
+    switch (axis) {
+      case "pos-x":
+        camera.azimuth = 0;
+        camera.elevation = 0;
+        break;
+      case "neg-x":
+        camera.azimuth = Math.PI;
+        camera.elevation = 0;
+        break;
+      case "pos-y":
+        camera.azimuth = Math.PI / 2;
+        camera.elevation = 0;
+        break;
+      case "neg-y":
+        camera.azimuth = -Math.PI / 2;
+        camera.elevation = 0;
+        break;
+      case "pos-z":
+        camera.elevation = Math.PI / 2 - VIEW_CONTROL_POLE_MARGIN;
+        break;
+      case "neg-z":
+        camera.elevation = -Math.PI / 2 + VIEW_CONTROL_POLE_MARGIN;
+        break;
+    }
+  }
+
+  function zoomViewport(factor: number): void {
+    if (!Number.isFinite(factor) || factor <= 0) return;
+    camera.clearWheelZoomGoal();
+    camera.travelTo(
+      camera.target[0],
+      camera.target[1],
+      camera.target[2],
+      camera.distance * factor,
+      VIEW_CONTROL_TRAVEL_SECONDS,
+    );
+  }
+
+  function frameCurrentView(): void {
+    const focusedName = nav.focusedBodyName;
+    if (focusedName) {
+      nav.travelToSystem(focusedName);
+      return;
+    }
+
+    const selected = nav.selectedCatalogStar;
+    if (selected) {
+      nav.selectCatalogStar(selected, VIEW_CONTROL_TRAVEL_SECONDS);
+      return;
+    }
+
+    camera.travelTo(
+      camera.target[0],
+      camera.target[1],
+      camera.target[2],
+      camera.distance,
+      VIEW_CONTROL_TRAVEL_SECONDS,
+    );
+  }
+
+  function homeViewport(): void {
+    clearSelectedConstellation();
+    renderer.setActiveMilkyWayModel(null);
+    nav.clearFocusedBody();
+    camera.travelTo(0, 0, 0, 55, VIEW_CONTROL_TRAVEL_SECONDS);
+  }
+
+  new ViewControls({
+    onAxis: setViewAxis,
+    onZoom: zoomViewport,
+    onFrame: frameCurrentView,
+    onHome: homeViewport,
   });
 
   function shouldIgnoreLockedObjectEnter(event: KeyboardEvent): boolean {
