@@ -146,27 +146,28 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   let silhouette = 1.0 - smoothstep(1.0 - edgeAa, 1.0 + edgeAa, d);
   if silhouette <= 0.001 { discard; }
 
-  // Same Lorentzian PSF as the nearby star shader
+  // Crisp distant-star impostor: use a tight point core instead of a soft PSF.
   let d2    = d * d;
-  let core  = exp(-d2 * 22.0);
-  let wings = max(0.0, 1.0 / (1.0 + d2 * 10.0) - 0.09);
+  let core  = exp(-d2 * 46.0);
+  let pointDisk = 1.0 - smoothstep(0.54 - edgeAa, 0.54 + edgeAa, d);
+  let pointCore = max(core, pointDisk * 0.72);
 
   let baseSpectral = mix(in.color, subtle_spectral_color(in.color), in.effects);
   let coolWeight = cool_star_weight(baseSpectral);
   let spectral = mix(baseSpectral, pow(baseSpectral, vec3<f32>(2.25)), coolWeight * in.effects * 0.72);
   var col = spectral;
   let lift   = mix(1.0, clamp(pow(max(in.brightness, 0.08), 0.28), 0.55, 1.8), in.effects);
-  let bleach = clamp(core * in.alpha * (0.95 + lift * 0.42) * mix(1.0, 0.38, coolWeight) * in.effects, 0.0, 1.0);
+  let bleach = clamp(pointCore * in.alpha * (0.95 + lift * 0.42) * mix(1.0, 0.38, coolWeight) * in.effects, 0.0, 1.0);
   let coreTint = bright_spectral_color(spectral, coolWeight);
   col = mix(spectral, coreTint, bleach);
 
-  let psf = mix(core, core * 1.12 + wings * 0.58, in.effects);
-  var alpha = clamp(psf * in.alpha * mix(1.0, 0.72 + lift * 0.42, in.effects) * silhouette, 0.0, 1.0);
+  let pointProfile = pointCore * silhouette;
+  var alpha = clamp(pointProfile * in.alpha * mix(1.0, 0.72 + lift * 0.42, in.effects), 0.0, 1.0);
   let intensity = mix(1.0, clamp(pow(max(in.brightness, 0.05), 1.55) * 10.5, 0.40, 95.0), in.effects);
-  var hdr = col * psf * in.alpha * intensity * silhouette;
+  var hdr = col * pointProfile * in.alpha * intensity;
 
   // Close/background Milky Way stars should not expose the quad impostor.
-  // Keep the cheap PSF for tiny distant points, then blend into an implicit
+  // Keep a crisp point for tiny distant stars, then blend into an implicit
   // spherical photosphere once the projected radius is large enough to inspect.
   let sphereLod = smoothstep(CLOSE_STAR_SPHERE_LOD_START_PX, CLOSE_STAR_SPHERE_LOD_FULL_PX, in.pixel_radius);
   if sphereLod > 0.001 {

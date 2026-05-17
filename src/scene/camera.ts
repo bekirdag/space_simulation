@@ -630,7 +630,7 @@ export class Camera {
       startMs: performance.now(),
       durationMs,
       ...timing,
-      motionBlur: true,
+      motionBlur: false,
       spaceWarp: true,
       approachTarget,
     };

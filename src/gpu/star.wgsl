@@ -215,13 +215,13 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   let silhouette = 1.0 - smoothstep(1.0 - edgeAa, 1.0 + edgeAa, d);
   if silhouette <= 0.001 { discard; }
 
-  // ── Physically realistic stellar PSF ─────────────────────────────────────
-  // Real stars have a Lorentzian (power-law) halo, not a smoothstep.
-  // Combination of tight Gaussian core + Lorentzian wings closely matches
-  // what a real star looks like on a CCD or to the dark-adapted human eye.
+  // ── Crisp distant-star impostor ─────────────────────────────────────────
+  // Far stars should read as defined points, not blurred smears. Keep only a
+  // tight anti-aliased core here; close selections still blend into a sphere.
   let d2    = d * d;
-  let core  = exp(-d2 * 22.0);                            // tight Gaussian nucleus
-  let wings = max(0.0, 1.0 / (1.0 + d2 * 10.0) - 0.09); // Lorentzian halo
+  let core  = exp(-d2 * 46.0);
+  let pointDisk = 1.0 - smoothstep(0.54 - edgeAa, 0.54 + edgeAa, d);
+  let pointCore = max(core, pointDisk * 0.72);
 
   // ── Color-preserving bright core ───────────────────────────────────────────
   // Brightness should increase the star's own spectral color, not bleach every
@@ -231,12 +231,12 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   let spectral = mix(baseSpectral, pow(baseSpectral, vec3<f32>(2.25)), coolWeight * in.effects * 0.72);
   let coreTint = bright_spectral_color(spectral, coolWeight);
   var col = spectral;
-  let bleach = clamp(core * in.alpha * mix(1.10, 0.06, coolWeight) * in.effects, 0.0, 1.0);
+  let bleach = clamp(pointCore * in.alpha * mix(1.10, 0.06, coolWeight) * in.effects, 0.0, 1.0);
   col = mix(spectral, coreTint, bleach);
 
-  let psf = mix(core, core * 1.20 + wings * 0.62, in.effects);
-  var alpha = clamp(psf * in.alpha * mix(1.0, 1.35, in.effects) * silhouette, 0.0, 1.0);
-  var hdr = col * psf * in.intensity * in.alpha * silhouette;
+  let pointProfile = pointCore * silhouette;
+  var alpha = clamp(pointProfile * in.alpha * mix(1.0, 1.18, in.effects), 0.0, 1.0);
+  var hdr = col * pointProfile * in.intensity * in.alpha;
 
   // ── Close LOD: implicit spherical photosphere ─────────────────────────────
   // Large star billboards expose the underlying quad/PSF approximation. Blend

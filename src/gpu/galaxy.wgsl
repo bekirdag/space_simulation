@@ -193,21 +193,21 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   let d = length(in.uv);
   if d > 1.0 { discard; }
 
-  // ── Sérsic-like galaxy surface brightness profile ─────────────────────────
+  // ── Crisp galaxy impostor profile ────────────────────────────────────────
   // Real galaxies follow I(r) ∝ exp(-b·(r/re)^(1/n)):
   //   Ellipticals  n≈4  — concentrated bright core, extended faint halo
   //   Spirals      n≈1  — roughly exponential, more uniform
   //
-  // We approximate with three radial components:
+  // We approximate with two radial components:
   //   Nucleus:  very tight, models the galactic bulge / AGN
-  //   Disk:     exponential falloff, models the stellar disk
-  //   Envelope: faint outer light, models the stellar halo / intracluster
+  //   Disk:     bounded stellar disk without the old soft outer blur
   let d2      = d * d;
-  let nucleus = exp(-d2 * 40.0);           // tight bulge
-  let disk    = exp(-d  *  3.5);           // exponential disk
-  let env     = max(0.0, 1.0 - d) * 0.4;  // faint outer envelope
+  let edgeAa = clamp(fwidth(d), 0.0015, 0.035);
+  let edge = 1.0 - smoothstep(0.86 - edgeAa, 0.86 + edgeAa, d);
+  let nucleus = exp(-d2 * 58.0);           // tight bulge
+  let disk    = exp(-d2 * 5.6) * edge;     // bounded stellar disk
 
-  let profileBrightness = nucleus * 0.65 + disk * 0.45 + env * 0.15;
+  let profileBrightness = nucleus * 0.68 + disk * 0.52;
   let lift = clamp(pow(max(in.brightness, 0.08), 0.30), 0.55, 1.85);
   let a = clamp(
     profileBrightness * in.alpha * (1.10 + lift * 0.55) * BACKGROUND_GALAXY_BRIGHTNESS_SCALE,
