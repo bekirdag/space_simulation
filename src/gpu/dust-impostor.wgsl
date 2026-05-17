@@ -179,13 +179,15 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     shape = max(shape * 0.74, shell * base * raggedEdge * 0.48);
   }
 
-  let densityBoost = 0.58 + clamp(in.density, 0.0, 1.0) * 0.36;
+  let density = clamp(in.density, 0.0, 1.0);
+  let densityBoost = 0.58 + density * 0.36;
   let alpha = clamp(shape * in.alpha * densityBoost, 0.0, 0.30);
   if (alpha < 0.003) {
     discard;
   }
 
-  let tone = 0.82 + base * 0.13 + clamp(in.density, 0.0, 1.0) * 0.06;
-  let darkCore = mix(in.color * tone, vec3<f32>(0.0038, 0.0031, 0.0031), shape * 0.18);
+  let tone = 0.42 + base * 0.08 + (1.0 - density) * 0.10;
+  let darkMix = clamp(shape * (0.44 + density * 0.26), 0.0, 0.82);
+  let darkCore = mix(in.color * tone, vec3<f32>(0.0038, 0.0031, 0.0031), darkMix);
   return vec4<f32>(darkCore, alpha);
 }

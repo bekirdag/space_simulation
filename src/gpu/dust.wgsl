@@ -209,12 +209,15 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     discard;
   }
 
-  let densityBoost = 0.72 + clamp(in.density, 0.0, 1.0) * 0.42;
+  let density = clamp(in.density, 0.0, 1.0);
+  let densityBoost = 0.72 + density * 0.42;
   let alpha = clamp(shape * in.alpha * densityBoost, 0.0, 0.72);
   if (alpha < 0.004) {
     discard;
   }
 
-  let darkCore = mix(in.color, vec3<f32>(0.0038, 0.0031, 0.0031), shape * 0.24);
+  let hdrAlbedo = in.color * (0.42 + (1.0 - density) * 0.18);
+  let darkMix = clamp(shape * (0.48 + density * 0.28), 0.0, 0.86);
+  let darkCore = mix(hdrAlbedo, vec3<f32>(0.0038, 0.0031, 0.0031), darkMix);
   return vec4<f32>(darkCore, alpha);
 }
