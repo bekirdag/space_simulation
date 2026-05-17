@@ -12,6 +12,8 @@ struct Camera {
   rightAndMNR: vec4<f32>,
   upAndFocal:  vec4<f32>,
   eyeAndFlags: vec4<f32>,
+  screenAndTarget: vec4<f32>,
+  eyeOffset:       vec4<f32>,
 };
 
 struct Galaxy {
@@ -24,6 +26,8 @@ struct Galaxy {
 @group(0) @binding(2) var<uniform>       galaxyLod: vec4<f32>; // x=legacy apparent boost, y=brightness effects
 
 const BACKGROUND_GALAXY_BRIGHTNESS_SCALE: f32 = 0.5;
+const CAMERA_NEAR: f32 = 1e-8;
+const CAMERA_FAR:  f32 = 50000000.0;
 
 struct VertexOut {
   @builtin(position) clip_pos: vec4<f32>,
@@ -48,6 +52,37 @@ fn visual_radius_to_mpc(radiusAU: f32) -> f32 {
   return linearLimitMpc + 2.0 * (pow(2.0, (radiusAU - linearLimitAU) / 1200000.0) - 1.0);
 }
 
+fn camera_back() -> vec3<f32> {
+  return normalize(cross(camera.rightAndMNR.xyz, camera.upAndFocal.xyz));
+}
+
+fn camera_relative(pos: vec3<f32>) -> vec3<f32> {
+  let rel = (pos - camera.screenAndTarget.yzw) - camera.eyeOffset.xyz;
+  let back = camera_back();
+  return vec3<f32>(
+    dot(rel, camera.rightAndMNR.xyz),
+    dot(rel, camera.upAndFocal.xyz),
+    dot(rel, back),
+  );
+}
+
+fn project_world(pos: vec3<f32>) -> vec4<f32> {
+  let v = camera_relative(pos);
+  let nf = 1.0 / (CAMERA_NEAR - CAMERA_FAR);
+  let aspect = max(camera.screenAndTarget.x, 0.000001);
+  let focalY = camera.upAndFocal.w;
+  return vec4<f32>(
+    v.x * focalY / aspect,
+    v.y * focalY,
+    CAMERA_FAR * nf * v.z + CAMERA_FAR * CAMERA_NEAR * nf,
+    -v.z,
+  );
+}
+
+fn camera_distance(center: vec3<f32>) -> f32 {
+  return length(camera_relative(center));
+}
+
 // ── Physically-grounded brightness ───────────────────────────────────────
 //
 // Three requirements:
@@ -62,12 +97,11 @@ fn visual_radius_to_mpc(radiusAU: f32) -> f32 {
 // Fix: derive galaxy Mpc from its origin distance; scale by how close the
 // camera is relative to that distance.
 
-fn apparent_galaxy_brightness(center: vec3<f32>, eye: vec3<f32>,
-                               size: f32, col: vec3<f32>, alpha: f32) -> f32 {
+fn apparent_galaxy_brightness(center: vec3<f32>, size: f32, col: vec3<f32>, alpha: f32) -> f32 {
   // ── Physical distance (Mpc) ───────────────────────────────────────────────
   let galMpc    = max(visual_radius_to_mpc(length(center)), 0.008);
   let galAU     = max(length(center), 1.0);
-  let distRatio = max(length(center - eye), 0.01) / galAU;
+  let distRatio = max(camera_distance(center), 0.01) / galAU;
   let effMpc    = max(galMpc * distRatio, 0.005);
 
   // ── Intrinsic luminosity proxy ────────────────────────────────────────────
@@ -100,15 +134,14 @@ fn vs_main(
   let g      = galaxies[idx];
   let uv     = quad[vi];
   let center = g.pos_size.xyz;
-  let clip_c = camera.viewProj * vec4(center, 1.0);
+  let clip_c = project_world(center);
 
   var out: VertexOut;
   out.uv    = uv;
   out.color = g.col_alpha.xyz;
   let actual = galaxyLod.x > 0.5;
   out.brightness = select(1.0,
-    apparent_galaxy_brightness(center, camera.eyeAndFlags.xyz,
-                               g.pos_size.w, g.col_alpha.xyz, g.col_alpha.w),
+    apparent_galaxy_brightness(center, g.pos_size.w, g.col_alpha.xyz, g.col_alpha.w),
     actual);
   // ── Zoom-out brightness boost (> 10 kpc from origin) ─────────────────────
   // At galaxy-scale distances the camera is far from the solar system.
@@ -136,7 +169,7 @@ fn vs_main(
   // Catalog-only galaxies do not have physical 3D meshes. When the camera has
   // intentionally traveled very close to one, expand the billboard so the
   // clicked galaxy reads as a close-up target instead of remaining a tiny dot.
-  let closeDist = length(center - camera.eyeAndFlags.xyz);
+  let closeDist = camera_distance(center);
   let closeFocus = 1.0 - smoothstep(220.0, 900.0, closeDist);
   let pxRadius = max(catalogRadius, closeFocus * 0.5);
 
@@ -151,14 +184,7 @@ fn vs_main(
     return out;
   }
 
-  let focalY      = camera.upAndFocal.w;
-  let worldRadius = pxRadius * clip_c.w / focalY;
-
-  let world_pos = center
-    + uv.x * camera.rightAndMNR.xyz * worldRadius
-    + uv.y * camera.upAndFocal.xyz  * worldRadius;
-
-  out.clip_pos = camera.viewProj * vec4(world_pos, 1.0);
+  out.clip_pos = clip_c + vec4(uv.x * pxRadius * clip_c.w, uv.y * pxRadius * clip_c.w, 0.0, 0.0);
   return out;
 }
 

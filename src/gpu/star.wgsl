@@ -13,6 +13,8 @@ struct Camera {
   rightAndMNR: vec4<f32>,
   upAndFocal:  vec4<f32>,
   eyeAndFlags: vec4<f32>,
+  screenAndTarget: vec4<f32>,
+  eyeOffset:       vec4<f32>,
 };
 
 struct Star {
@@ -27,6 +29,8 @@ struct Star {
 
 const CLOSE_STAR_SPHERE_LOD_START_PX: f32 = 2.25;
 const CLOSE_STAR_SPHERE_LOD_FULL_PX:  f32 = 4.50;
+const CAMERA_NEAR: f32 = 1e-8;
+const CAMERA_FAR:  f32 = 50000000.0;
 
 struct VertexOut {
   @builtin(position) clip_pos: vec4<f32>,
@@ -52,9 +56,40 @@ fn star_hdr_intensity(color: vec3<f32>, size: f32, alpha: f32) -> f32 {
   return clamp(pow(catalogFlux * spectralLum * 2.35, 1.85) * 8.0, 0.65, 260.0);
 }
 
+fn camera_back() -> vec3<f32> {
+  return normalize(cross(camera.rightAndMNR.xyz, camera.upAndFocal.xyz));
+}
+
+fn camera_relative(pos: vec3<f32>) -> vec3<f32> {
+  let rel = (pos - camera.screenAndTarget.yzw) - camera.eyeOffset.xyz;
+  let back = camera_back();
+  return vec3<f32>(
+    dot(rel, camera.rightAndMNR.xyz),
+    dot(rel, camera.upAndFocal.xyz),
+    dot(rel, back),
+  );
+}
+
+fn project_world(pos: vec3<f32>) -> vec4<f32> {
+  let v = camera_relative(pos);
+  let nf = 1.0 / (CAMERA_NEAR - CAMERA_FAR);
+  let aspect = max(camera.screenAndTarget.x, 0.000001);
+  let focalY = camera.upAndFocal.w;
+  return vec4<f32>(
+    v.x * focalY / aspect,
+    v.y * focalY,
+    CAMERA_FAR * nf * v.z + CAMERA_FAR * CAMERA_NEAR * nf,
+    -v.z,
+  );
+}
+
+fn camera_distance(center: vec3<f32>) -> f32 {
+  return length(camera_relative(center));
+}
+
 fn camera_distance_flux(center: vec3<f32>) -> f32 {
   let referenceDistanceAU = max(length(center), 1.0);
-  let cameraDistanceAU = max(length(center - camera.eyeAndFlags.xyz), referenceDistanceAU * 0.0005);
+  let cameraDistanceAU = max(camera_distance(center), referenceDistanceAU * 0.0005);
   let ratio = clamp(referenceDistanceAU / cameraDistanceAU, 0.02, 400.0);
   return clamp(ratio * ratio, 0.0004, 160000.0);
 }
@@ -77,7 +112,7 @@ fn vs_main(
   let star   = stars[idx];
   let uv     = quad[vi];
   let center = star.pos_size.xyz;
-  let clip_c = camera.viewProj * vec4(center, 1.0);
+  let clip_c = project_world(center);
 
   var out: VertexOut;
   out.uv       = uv;
@@ -141,12 +176,7 @@ fn vs_main(
     // Never shrink below 3× the base minimum so the star stays visible at range.
     let selectedNdcRadius = max(physNdcR, camera.rightAndMNR.w * 3.0);
     out.pixel_radius = selectedNdcRadius * 2.5 / max(camera.rightAndMNR.w, 0.000001);
-    let worldR = selectedNdcRadius * clip_c.w / focalY;
-    let clipRight = camera.viewProj * vec4(camera.rightAndMNR.xyz * worldR, 0.0);
-    let clipUp = camera.viewProj * vec4(camera.upAndFocal.xyz * worldR, 0.0);
-    let clipOffset = uv.x * clipRight + uv.y * clipUp;
-
-    out.clip_pos = clip_c + vec4(clipOffset.xy, 0.0, 0.0);
+    out.clip_pos = clip_c + vec4(uv.x * selectedNdcRadius * clip_c.w, uv.y * selectedNdcRadius * clip_c.w, 0.0, 0.0);
     return out;
   }
 
@@ -155,12 +185,7 @@ fn vs_main(
   // when their catalog positions are far from the origin.
   let pxRadius    = billboardNdcRadius;
   out.pixel_radius = pxRadius * 2.5 / max(camera.rightAndMNR.w, 0.000001);
-  let worldRadius = pxRadius * clip_c.w / focalY;
-  let clipRight = camera.viewProj * vec4(camera.rightAndMNR.xyz * worldRadius, 0.0);
-  let clipUp = camera.viewProj * vec4(camera.upAndFocal.xyz * worldRadius, 0.0);
-  let clipOffset = uv.x * clipRight + uv.y * clipUp;
-
-  out.clip_pos = clip_c + vec4(clipOffset.xy, 0.0, 0.0);
+  out.clip_pos = clip_c + vec4(uv.x * pxRadius * clip_c.w, uv.y * pxRadius * clip_c.w, 0.0, 0.0);
   return out;
 }
 

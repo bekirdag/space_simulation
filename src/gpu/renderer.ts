@@ -33,8 +33,8 @@ import { type CameraUniforms } from "../scene/camera";
 import { MILKY_WAY_MODEL_VERTEX_FLOATS, parseMilkyWayModel, type ParsedMilkyWayMaterial } from "./model-loader";
 import { BackendUnavailableError, backendFetch } from "../services/backend";
 
-// Camera uniform: mat4 (64) + right/min vec4 + up/focal vec4 + eye vec4 = 112 bytes
-const CAMERA_BYTES = 112;
+// Camera uniform: mat4 (64) + right/min vec4 + up/focal vec4 + eye vec4 + screen/target vec4 + eye-offset vec4 = 144 bytes
+const CAMERA_BYTES = 144;
 const CAMERA_NEAR = 1e-8;
 const CAMERA_FAR = 50_000_000;
 const BLACK_HOLE_BYTES = 48;
@@ -1821,12 +1821,15 @@ export class Renderer {
     this.viewportHeight = Math.max(1, canvasHeight);
     this.cameraUniforms = uniforms;
 
-    // 112-byte layout:
+    // 144-byte layout:
     //   [0–63]  viewProj (mat4x4, 16 floats)
     //   [64–79] rightAndMNR (vec4: right.xyz, minNDCRadius)
     //   [80–95] upAndFocal  (vec4: up.xyz,    focalY)
     //   [96–111] eyeAndFlags (vec4: camera eye xyz, object brightness)
+    //   [112–127] screenAndTarget (vec4: aspect, target.xyz)
+    //   [128–143] eyeOffset (vec4: eye-target xyz, unused)
     const data = new Float32Array(CAMERA_BYTES / 4);
+    const aspect = this.viewportWidth / this.viewportHeight;
     data.set(uniforms.viewProj, 0);
     data[16] = uniforms.camRight[0]; data[17] = uniforms.camRight[1]; data[18] = uniforms.camRight[2];
     data[19] = minNDCRadius;
@@ -1834,17 +1837,20 @@ export class Renderer {
     data[23] = uniforms.focalY;
     data[24] = uniforms.eye[0];      data[25] = uniforms.eye[1];      data[26] = uniforms.eye[2];
     data[27] = this._objectBrightness;
+    data[28] = aspect;                 data[29] = uniforms.target[0];    data[30] = uniforms.target[1];    data[31] = uniforms.target[2];
+    data[32] = uniforms.eyeOffset[0];  data[33] = uniforms.eyeOffset[1]; data[34] = uniforms.eyeOffset[2];
     this._blackHoleUniform[8] = clamp(uniforms.flightEffect, 0, 1);
     this.ctx.device.queue.writeBuffer(this.cameraBuffer, 0, data);
 
     const bodyData = new Float32Array(CAMERA_BYTES / 4);
-    bodyData.set(projectionOnlyMatrix(uniforms.focalY, this.viewportWidth / this.viewportHeight), 0);
+    bodyData.set(projectionOnlyMatrix(uniforms.focalY, aspect), 0);
     bodyData[16] = 1; bodyData[17] = 0; bodyData[18] = 0;
     bodyData[19] = minNDCRadius;
     bodyData[20] = 0; bodyData[21] = 1; bodyData[22] = 0;
     bodyData[23] = uniforms.focalY;
     bodyData[24] = 0; bodyData[25] = 0; bodyData[26] = 0;
     bodyData[27] = this._objectBrightness;
+    bodyData[28] = aspect;
     this.ctx.device.queue.writeBuffer(this.bodyCameraBuffer, 0, bodyData);
 
     this.ctx.device.queue.writeBuffer(this.trailScreenBuffer, 0, new Float32Array([

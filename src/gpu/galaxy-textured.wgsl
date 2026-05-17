@@ -9,6 +9,8 @@ struct Camera {
   rightAndMNR: vec4<f32>,
   upAndFocal:  vec4<f32>,
   eyeAndFlags: vec4<f32>,
+  screenAndTarget: vec4<f32>,
+  eyeOffset:       vec4<f32>,
 };
 
 struct GalaxyModel {
@@ -22,6 +24,9 @@ struct GalaxyModel {
 @group(0) @binding(1) var<storage, read> galaxyModels: array<GalaxyModel>;
 @group(0) @binding(2) var                galaxyTex:   texture_2d<f32>;
 @group(0) @binding(3) var                galaxySmp:   sampler;
+
+const CAMERA_NEAR: f32 = 1e-8;
+const CAMERA_FAR:  f32 = 50000000.0;
 
 struct VertexOut {
   @builtin(position) clip_pos: vec4<f32>,
@@ -39,6 +44,37 @@ fn smoother01(value: f32) -> f32 {
   return t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
 }
 
+fn camera_back() -> vec3<f32> {
+  return normalize(cross(camera.rightAndMNR.xyz, camera.upAndFocal.xyz));
+}
+
+fn camera_relative(pos: vec3<f32>) -> vec3<f32> {
+  let rel = (pos - camera.screenAndTarget.yzw) - camera.eyeOffset.xyz;
+  let back = camera_back();
+  return vec3<f32>(
+    dot(rel, camera.rightAndMNR.xyz),
+    dot(rel, camera.upAndFocal.xyz),
+    dot(rel, back),
+  );
+}
+
+fn project_world(pos: vec3<f32>) -> vec4<f32> {
+  let v = camera_relative(pos);
+  let nf = 1.0 / (CAMERA_NEAR - CAMERA_FAR);
+  let aspect = max(camera.screenAndTarget.x, 0.000001);
+  let focalY = camera.upAndFocal.w;
+  return vec4<f32>(
+    v.x * focalY / aspect,
+    v.y * focalY,
+    CAMERA_FAR * nf * v.z + CAMERA_FAR * CAMERA_NEAR * nf,
+    -v.z,
+  );
+}
+
+fn camera_distance(center: vec3<f32>) -> f32 {
+  return length(camera_relative(center));
+}
+
 @vertex
 fn vs_main(
   @builtin(vertex_index)   vi:  u32,
@@ -49,7 +85,7 @@ fn vs_main(
   let center = model.pos_radius.xyz;
   let radius = model.pos_radius.w;
   let aspect = max(model.right_aspect.w, 0.1);
-  let camDist = length(camera.eyeAndFlags.xyz - center);
+  let camDist = camera_distance(center);
   let fade = 1.0 - smoother01((camDist - model.lod.x) / max(model.lod.y - model.lod.x, 1.0));
   let alpha = model.up_alpha.w * fade;
 
@@ -62,7 +98,7 @@ fn vs_main(
     return out;
   }
 
-  let clip_c = camera.viewProj * vec4(center, 1.0);
+  let clip_c = project_world(center);
   if clip_c.w <= 0.0 {
     out.clip_pos = vec4(10.0, 10.0, 10.0, 1.0);
     return out;
@@ -82,7 +118,7 @@ fn vs_main(
     + uv.x * model.right_aspect.xyz * radius * aspect
     + uv.y * model.up_alpha.xyz * radius;
 
-  out.clip_pos = camera.viewProj * vec4(worldPos, 1.0);
+  out.clip_pos = project_world(worldPos);
   return out;
 }
 

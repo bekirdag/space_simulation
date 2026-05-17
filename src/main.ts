@@ -1,6 +1,6 @@
 import { initGPU } from "./gpu/device";
 import { Renderer } from "./gpu/renderer";
-import { Camera } from "./scene/camera";
+import { Camera, type CameraUniforms } from "./scene/camera";
 import { HUD } from "./ui/hud";
 import { ScaleBar } from "./ui/scale-bar";
 import { NavPanel } from "./ui/nav";
@@ -136,6 +136,8 @@ const LIGHT_YEARS_PER_PARSEC = 3.26156;
 const SELECTED_NEARBY_STAR_RENDER_RADIUS_AU = 0.005; // keep in sync with src/gpu/star.wgsl
 const SELECTED_NEARBY_STAR_SCREEN_WIDTH_FRACTION = 0.50;
 const CAMERA_FOV_Y = Math.PI / 4; // keep in sync with src/scene/camera.ts
+const CAMERA_NEAR_AU = 1e-8; // keep in sync with src/scene/camera.ts
+const CAMERA_FAR_AU = 50_000_000; // keep in sync with src/scene/camera.ts
 const MAP_WHEEL_ZOOM_STEPS = 10;
 const MAP_DOUBLE_CLICK_TRAVEL_SECONDS = 2;
 // Active substep size (yr) — changed via Settings panel.
@@ -226,10 +228,60 @@ function isMajorRenderBody(body: Body): boolean {
     body.type === BodyType.Exoplanet;
 }
 
+interface StableProjectionPoint {
+  nx: number;
+  ny: number;
+  nz: number;
+  w: number;
+}
+
+function projectStableNdc(
+  x: number,
+  y: number,
+  z: number,
+  viewProj: Mat4,
+  cameraFrame: CameraUniforms | null = null,
+): StableProjectionPoint | null {
+  if (cameraFrame) {
+    const right = cameraFrame.camRight;
+    const up = cameraFrame.camUp;
+    const back: [number, number, number] = [
+      right[1] * up[2] - right[2] * up[1],
+      right[2] * up[0] - right[0] * up[2],
+      right[0] * up[1] - right[1] * up[0],
+    ];
+    const rx = x - cameraFrame.eye[0];
+    const ry = y - cameraFrame.eye[1];
+    const rz = z - cameraFrame.eye[2];
+    const vx = rx * right[0] + ry * right[1] + rz * right[2];
+    const vy = rx * up[0] + ry * up[1] + rz * up[2];
+    const vz = rx * back[0] + ry * back[1] + rz * back[2];
+    const w = -vz;
+    if (w <= 0) return null;
+
+    const aspect = Math.max(window.innerWidth / Math.max(window.innerHeight, 1), 1e-6);
+    const nf = 1 / (CAMERA_NEAR_AU - CAMERA_FAR_AU);
+    const cx = vx * cameraFrame.focalY / aspect;
+    const cy = vy * cameraFrame.focalY;
+    const cz = CAMERA_FAR_AU * nf * vz + CAMERA_FAR_AU * CAMERA_NEAR_AU * nf;
+    return { nx: cx / w, ny: cy / w, nz: cz / w, w };
+  }
+
+  /* eslint-disable @typescript-eslint/no-non-null-assertion */
+  const cx = viewProj[0]!*x + viewProj[4]!*y + viewProj[8]! *z + viewProj[12]!;
+  const cy = viewProj[1]!*x + viewProj[5]!*y + viewProj[9]! *z + viewProj[13]!;
+  const cz = viewProj[2]!*x + viewProj[6]!*y + viewProj[10]!*z + viewProj[14]!;
+  const cw = viewProj[3]!*x + viewProj[7]!*y + viewProj[11]!*z + viewProj[15]!;
+  /* eslint-enable */
+  if (cw <= 0) return null;
+  return { nx: cx / cw, ny: cy / cw, nz: cz / cw, w: cw };
+}
+
 function buildBodyRenderVisibility(
   bodies: Body[],
   viewProj: Mat4,
   focusedSystemMembers: ReadonlySet<string>,
+  cameraFrame: CameraUniforms | null = null,
 ): Map<number, number> {
   interface ClusterEntry {
     body: Body;
@@ -245,24 +297,16 @@ function buildBodyRenderVisibility(
   for (const body of bodies) visibility.set(body.id, 1);
 
   for (const body of bodies) {
-    /* eslint-disable @typescript-eslint/no-non-null-assertion */
-    const cx = viewProj[0]!*body.x + viewProj[4]!*body.y + viewProj[8]! *body.z + viewProj[12]!;
-    const cy = viewProj[1]!*body.x + viewProj[5]!*body.y + viewProj[9]! *body.z + viewProj[13]!;
-    const cz = viewProj[2]!*body.x + viewProj[6]!*body.y + viewProj[10]!*body.z + viewProj[14]!;
-    const cw = viewProj[3]!*body.x + viewProj[7]!*body.y + viewProj[11]!*body.z + viewProj[15]!;
-    /* eslint-enable */
-    if (cw <= 0) continue;
-
-    const nx = cx / cw;
-    const ny = cy / cw;
-    const nz = cz / cw;
+    const projected = projectStableNdc(body.x, body.y, body.z, viewProj, cameraFrame);
+    if (!projected) continue;
+    const { nx, ny, nz, w } = projected;
     if (nz < 0 || nz > 1.02 || Math.abs(nx) > 1.04 || Math.abs(ny) > 1.04) continue;
 
     const screenX = (nx + 1) * 0.5 * cssW;
     const screenY = (1 - ny) * 0.5 * cssH;
     const cellX = Math.round(screenX / DENSE_CLUSTER_CELL_PX);
     const cellY = Math.round(screenY / DENSE_CLUSTER_CELL_PX);
-    const apparentRadiusPx = Math.max(0, body.radius / cw) * cssH;
+    const apparentRadiusPx = Math.max(0, body.radius / w) * cssH;
     const protectedBody = isMajorRenderBody(body) || focusedSystemMembers.has(body.name);
     const key = `${cellX}:${cellY}`;
     const bucket = clusters.get(key);
@@ -1466,6 +1510,7 @@ async function main(): Promise<void> {
   // Last computed viewProj matrix - used by pointer hit tests outside the render loop.
   let lastViewProj: Float32Array | null = null;
   let lastCameraEye: [number, number, number] | null = null;
+  let lastCameraUniforms: CameraUniforms | null = null;
 
   type MapObjectClickMode = "single" | "double";
 
@@ -1485,20 +1530,14 @@ async function main(): Promise<void> {
 
   function projectMapPoint(x: number, y: number, z: number): ProjectedMapPoint | null {
     if (!lastViewProj) return null;
-    const vp = lastViewProj;
-    const cx = vp[0]!*x + vp[4]!*y + vp[8]! *z + vp[12]!;
-    const cy = vp[1]!*x + vp[5]!*y + vp[9]! *z + vp[13]!;
-    const cz = vp[2]!*x + vp[6]!*y + vp[10]!*z + vp[14]!;
-    const cw = vp[3]!*x + vp[7]!*y + vp[11]!*z + vp[15]!;
-    if (cw <= 0) return null;
-    const nx = cx / cw;
-    const ny = cy / cw;
-    const nz = cz / cw;
+    const projected = projectStableNdc(x, y, z, lastViewProj, lastCameraUniforms);
+    if (!projected) return null;
+    const { nx, ny, nz, w } = projected;
     if (nz < 0 || nz > 1.02 || Math.abs(nx) > 1.08 || Math.abs(ny) > 1.08) return null;
     return {
       x: (nx + 1) * 0.5 * window.innerWidth,
       y: (1 - ny) * 0.5 * window.innerHeight,
-      w: cw,
+      w,
     };
   }
 
@@ -1822,17 +1861,10 @@ async function main(): Promise<void> {
     // ── Catalog stars (exoplanet hosts) ───────────────────────────────────
     const nearbyStars: CatalogStar[] = [];
     if (lastViewProj && exoplanetHosts.length > 0) {
-      const vp   = lastViewProj;
-      const cssW = window.innerWidth;
-      const cssH = window.innerHeight;
       for (const star of exoplanetHosts) {
-        const sx_ = vp[0]!*star.x + vp[4]!*star.y + vp[8]! *star.z + vp[12]!;
-        const sy_ = vp[1]!*star.x + vp[5]!*star.y + vp[9]! *star.z + vp[13]!;
-        const sw  = vp[3]!*star.x + vp[7]!*star.y + vp[11]!*star.z + vp[15]!;
-        if (sw <= 0) continue;
-        const sx = (sx_ / sw + 1) * 0.5 * cssW;
-        const sy = (1 - sy_ / sw) * 0.5 * cssH;
-        if (Math.abs(cx - sx) <= half && Math.abs(cy - sy) <= half) nearbyStars.push(star);
+        const projected = projectMapPoint(star.x, star.y, star.z);
+        if (!projected) continue;
+        if (Math.abs(cx - projected.x) <= half && Math.abs(cy - projected.y) <= half) nearbyStars.push(star);
       }
     }
 
@@ -1840,20 +1872,13 @@ async function main(): Promise<void> {
     interface GalaxyHit { name: string; dist: number; x: number; y: number; z: number }
     const nearbyGalaxies: GalaxyHit[] = [];
     if (showGalaxies && lastViewProj && galaxyBuffer.length > 0) {
-      const vp   = lastViewProj;
-      const cssW = window.innerWidth;
-      const cssH = window.innerHeight;
       const n    = galaxyBuffer.length / GALAXY_FLOATS;
       for (let i = 0; i < n; i++) {
         const o  = i * GALAXY_FLOATS;
         const gx = galaxyBuffer[o]!, gy = galaxyBuffer[o+1]!, gz = galaxyBuffer[o+2]!;
-        const sx_ = vp[0]!*gx + vp[4]!*gy + vp[8]! *gz + vp[12]!;
-        const sy_ = vp[1]!*gx + vp[5]!*gy + vp[9]! *gz + vp[13]!;
-        const sw  = vp[3]!*gx + vp[7]!*gy + vp[11]!*gz + vp[15]!;
-        if (sw <= 0) continue;
-        const sx = (sx_ / sw + 1) * 0.5 * cssW;
-        const sy = (1 - sy_ / sw) * 0.5 * cssH;
-        if (Math.abs(cx - sx) <= half && Math.abs(cy - sy) <= half) {
+        const projected = projectMapPoint(gx, gy, gz);
+        if (!projected) continue;
+        if (Math.abs(cx - projected.x) <= half && Math.abs(cy - projected.y) <= half) {
           const named = galaxyNames.find(g => g.index === i);
           nearbyGalaxies.push({ name: named?.name ?? "Galaxy", dist: named?.dist ?? 0, x: gx, y: gy, z: gz });
         }
@@ -1864,17 +1889,10 @@ async function main(): Promise<void> {
     interface NebHit { name: string; type: number; x: number; y: number; z: number }
     const nearbyNebulas: NebHit[] = [];
     if (lastViewProj) {
-      const vp   = lastViewProj;
-      const cssW = window.innerWidth;
-      const cssH = window.innerHeight;
       for (const neb of nebulaDets) {
-        const sx_ = vp[0]!*neb.x + vp[4]!*neb.y + vp[8]! *neb.z + vp[12]!;
-        const sy_ = vp[1]!*neb.x + vp[5]!*neb.y + vp[9]! *neb.z + vp[13]!;
-        const sw  = vp[3]!*neb.x + vp[7]!*neb.y + vp[11]!*neb.z + vp[15]!;
-        if (sw <= 0) continue;
-        const sx = (sx_ / sw + 1) * 0.5 * cssW;
-        const sy = (1 - sy_ / sw) * 0.5 * cssH;
-        if (Math.abs(cx - sx) <= half && Math.abs(cy - sy) <= half) {
+        const projected = projectMapPoint(neb.x, neb.y, neb.z);
+        if (!projected) continue;
+        if (Math.abs(cx - projected.x) <= half && Math.abs(cy - projected.y) <= half) {
           nearbyNebulas.push({ name: neb.name, type: neb.type, x: neb.x, y: neb.y, z: neb.z });
         }
       }
@@ -2206,6 +2224,7 @@ async function main(): Promise<void> {
     const camUniforms = camera.update(aspect);
     lastViewProj = camUniforms.viewProj;
     lastCameraEye = [camUniforms.eye[0], camUniforms.eye[1], camUniforms.eye[2]];
+    lastCameraUniforms = camUniforms;
     renderer.updateCamera(camUniforms, canvas.width, canvas.height);
     renderer.updateBlackHoleVisual(
       SGR_A_STAR_POS,
@@ -2243,7 +2262,7 @@ async function main(): Promise<void> {
         : null,
     );
     const focusedMembers = nav.focusedSystemMembers();
-    const bodyVisibility = buildBodyRenderVisibility(bodies, camUniforms.viewProj, focusedMembers);
+    const bodyVisibility = buildBodyRenderVisibility(bodies, camUniforms.viewProj, focusedMembers, camUniforms);
     renderer.uploadBodies(bodies, bodyVisibility);
     renderer.draw(trails);
 
@@ -2261,6 +2280,7 @@ async function main(): Promise<void> {
       sunWorldPos,
       focusNearbyStar,
       selectedNearbyStarName,
+      camUniforms,
     );
     labels.updateConstellationLabels(
       selectedConstellation ? [selectedConstellation.label] : constellationLabels,
@@ -2279,6 +2299,7 @@ async function main(): Promise<void> {
       showGalaxies,
       focusMilkyWay,
       selectedGalaxyId === "milky-way",
+      camUniforms,
     );
     labels.updateGalaxyNameLabels(
       LOCAL_GROUP_GALAXY_LABELS,
@@ -2288,6 +2309,7 @@ async function main(): Promise<void> {
       showGalaxies,
       focusGalaxyLabel,
       selectedGalaxyId,
+      camUniforms,
     );
     const sgrASelected = nav.selectedCatalogStar?.id === "blackhole:sgr-a";
     labels.updateGalacticCenterLabel(SGR_A_STAR_POS, camUniforms.viewProj, () => {
@@ -2295,14 +2317,14 @@ async function main(): Promise<void> {
       setExoplanetBodies(null);
       nav.selectCatalogStar(SGR_A_SEARCH_RESULT);
       renderer.uploadBodies(bodies);
-    }, !sgrASelected, 1 - milkyWayLabelOpacity);
+    }, !sgrASelected, 1 - milkyWayLabelOpacity, camUniforms);
     const selectedCatalogLabel =
       sgrASelected
         ? null
         : shouldHighlightCatalogStar(nav.selectedCatalogStar)
           ? nav.selectedCatalogStar
           : null;
-    labels.updateCatalogStarLabel(selectedCatalogLabel, camUniforms.viewProj);
+    labels.updateCatalogStarLabel(selectedCatalogLabel, camUniforms.viewProj, camUniforms);
     hud.galacticSpeedKms = galacticSpeedKmS(galacticOrigin);
     hud.update(bodies.length, simYears);
 

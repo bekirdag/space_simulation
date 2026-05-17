@@ -181,6 +181,17 @@ function projectCameraRelative(
   return pinToViewport(nx, ny, cssW, cssH);
 }
 
+function projectStable(
+  x: number, y: number, z: number,
+  vp: Mat4, cssW: number, cssH: number,
+  pin = false,
+  cameraFrame: BodyLabelCameraFrame | null = null,
+): ProjectedPoint | null {
+  return cameraFrame
+    ? projectCameraRelative(x, y, z, cameraFrame, cssW, cssH, pin)
+    : project(x, y, z, vp, cssW, cssH, pin);
+}
+
 interface Projected { x: number; y: number; body: Body }
 
 function bodyLabelClassName(body: Body): string {
@@ -455,14 +466,18 @@ export class LabelManager {
    * Show (or hide) a persistent label for a selected catalog star.
    * Called each frame so the label tracks the star as the camera moves.
    */
-  updateCatalogStarLabel(star: CatalogStarInfo | null, viewProj: Mat4): void {
+  updateCatalogStarLabel(
+    star: CatalogStarInfo | null,
+    viewProj: Mat4,
+    cameraFrame: BodyLabelCameraFrame | null = null,
+  ): void {
     if (!this._visible || !star) {
       this.starLabelEl.style.display = 'none';
       return;
     }
     const cssW = window.innerWidth;
     const cssH = window.innerHeight;
-    const pos = project(star.x, star.y, star.z, viewProj, cssW, cssH, false);
+    const pos = projectStable(star.x, star.y, star.z, viewProj, cssW, cssH, false, cameraFrame);
     if (!pos) {
       this.starLabelEl.style.display = 'none';
       return;
@@ -540,6 +555,7 @@ export class LabelManager {
     sunWorldPos: Vec3 = [0, 0, 0],
     onStarClick?: NearbyStarClickHandler,
     selectedStarName: string | null = null,
+    cameraFrame: BodyLabelCameraFrame | null = null,
   ): void {
     const cssW = window.innerWidth;
     const cssH = window.innerHeight;
@@ -595,7 +611,7 @@ export class LabelManager {
         this.nearbyStarSpans.set(star.name, sp);
       }
 
-      const pt = project(star.x, star.y, star.z, viewProj, cssW, cssH, false);
+      const pt = projectStable(star.x, star.y, star.z, viewProj, cssW, cssH, false, cameraFrame);
       if (!pt) {
         sp.style.display = 'none';
         continue;
@@ -697,6 +713,7 @@ export class LabelManager {
     visible: boolean,
     onClick: () => void,
     selected = false,
+    cameraFrame: BodyLabelCameraFrame | null = null,
   ): number {
     if (!visible || !this._visible) {
       if (this.milkyWayEl) this.milkyWayEl.style.display = 'none';
@@ -742,7 +759,7 @@ export class LabelManager {
 
     const cssW = window.innerWidth;
     const cssH = window.innerHeight;
-    const pos = project(worldPos[0], worldPos[1], worldPos[2], viewProj, cssW, cssH, true);
+    const pos = projectStable(worldPos[0], worldPos[1], worldPos[2], viewProj, cssW, cssH, true, cameraFrame);
     if (!pos) {
       this.milkyWayEl.style.display = 'none';
       return opacity;
@@ -764,6 +781,7 @@ export class LabelManager {
     visible: boolean,
     onGalaxyClick?: GalaxyNameClickHandler,
     selectedGalaxyId: string | null = null,
+    cameraFrame: BodyLabelCameraFrame | null = null,
   ): void {
     if (!visible || !this._visible || galaxies.length === 0) {
       for (const sp of this.galaxyNameSpans.values()) sp.style.display = 'none';
@@ -821,7 +839,7 @@ export class LabelManager {
         this.galaxyNameSpans.set(galaxy.id, sp);
       }
 
-      const pt = project(galaxy.x, galaxy.y, galaxy.z, viewProj, cssW, cssH, false);
+      const pt = projectStable(galaxy.x, galaxy.y, galaxy.z, viewProj, cssW, cssH, false, cameraFrame);
       if (!pt) {
         sp.style.display = 'none';
         continue;
@@ -849,6 +867,7 @@ export class LabelManager {
     onClick:  () => void,
     visible = true,
     opacity = 1,
+    cameraFrame: BodyLabelCameraFrame | null = null,
   ): void {
     if (!this._visible || !visible || opacity <= 0.04) {
       if (this.galacticCenterEl) this.galacticCenterEl.style.display = 'none';
@@ -867,7 +886,7 @@ export class LabelManager {
 
     const cssW = window.innerWidth;
     const cssH = window.innerHeight;
-    const pos  = project(worldPos[0], worldPos[1], worldPos[2], viewProj, cssW, cssH, true);
+    const pos  = projectStable(worldPos[0], worldPos[1], worldPos[2], viewProj, cssW, cssH, true, cameraFrame);
 
     if (!pos) {
       this.galacticCenterEl.style.display = 'none';

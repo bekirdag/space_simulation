@@ -99,6 +99,8 @@ export interface CameraUniforms {
   camUp:      Vec3;
   focalY:     number; // = 1 / tan(fovY/2), for perspective-correct min size
   eye:        Vec3;   // camera world-space position (for distance-based fades)
+  target:     Vec3;   // camera target, used for stable target-relative projection
+  eyeOffset:  Vec3;   // eye - target, small even when target is galaxy-scale
   flightEffect: number; // 0..1 cinematic travel warp/blur strength
 }
 
@@ -422,6 +424,12 @@ export class Camera {
       camUp:    up,
       focalY:   1 / Math.tan(FOV_Y / 2),
       eye,
+      target: [this.target[0], this.target[1], this.target[2]],
+      eyeOffset: [
+        eye[0] - this.target[0],
+        eye[1] - this.target[1],
+        eye[2] - this.target[2],
+      ],
       flightEffect: this.flightEffect,
     };
     return this._uniforms;
