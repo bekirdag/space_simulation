@@ -30,13 +30,14 @@ import { CONSTELLATION_FLOATS } from "../catalog/constellations";
 import { type TrailSystem, TRAIL_VTXFLOATS, TRAIL_SLOT_BYTES } from "../scene/trail-system";
 import { type OctantRange } from "./sky-cull";
 import { type CameraUniforms } from "../scene/camera";
-import { parseMilkyWayModel } from "./model-loader";
+import { MILKY_WAY_MODEL_VERTEX_FLOATS, parseMilkyWayModel, type ParsedMilkyWayMaterial } from "./model-loader";
 import { BackendUnavailableError, backendFetch } from "../services/backend";
 
 // Camera uniform: mat4 (64) + right/min vec4 + up/focal vec4 + eye vec4 = 112 bytes
 const CAMERA_BYTES = 112;
 const BLACK_HOLE_BYTES = 32;
 const MILKY_WAY_MODEL_UNIFORM_BYTES = 64;
+const MILKY_WAY_MODEL_MATERIAL_BYTES = 48;
 const MODEL_DEPTH_FORMAT: GPUTextureFormat = "depth24plus";
 const SCENE_DEPTH_DISABLED: GPUDepthStencilState = {
   format: MODEL_DEPTH_FORMAT,
@@ -109,8 +110,15 @@ interface BodyBrightnessSample {
 interface MilkyWayModelEntry {
   id: string;
   modelGroup: string;
-  vertexBuffer: GPUBuffer;
   uniformBuffer: GPUBuffer;
+  parts: MilkyWayModelPartEntry[];
+  textures: GPUTexture[];
+  vertexCount: number;
+}
+
+interface MilkyWayModelPartEntry {
+  vertexBuffer: GPUBuffer;
+  materialBuffer: GPUBuffer;
   bindGroup: GPUBindGroup;
   vertexCount: number;
 }
@@ -206,6 +214,8 @@ export class Renderer {
   private homunculusTexture:         GPUTexture | null = null;
   private homunculusSampler!:        GPUSampler;
   private milkyWayModelBGL!:         GPUBindGroupLayout;
+  private milkyWayModelSampler!:     GPUSampler;
+  private milkyWayModelWhiteTexture!: GPUTexture;
   private milkyWayModelEntries = new Map<string, MilkyWayModelEntry>();
   private milkyWayModelLoading = new Set<string>();
   private milkyWayModelFailedAt = new Map<string, number>();
@@ -739,8 +749,33 @@ export class Renderer {
       entries: [
         { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
         { binding: 1, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
+        { binding: 2, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
+        { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float" } },
+        { binding: 4, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "filtering" } },
       ],
     });
+    this.milkyWayModelSampler = device.createSampler({
+      label: "milky-way-model-sampler",
+      magFilter: "linear",
+      minFilter: "linear",
+      mipmapFilter: "linear",
+      addressModeU: "repeat",
+      addressModeV: "repeat",
+    });
+    this.milkyWayModelWhiteTexture = device.createTexture({
+      label: "milky-way-model-white-texture",
+      size: [1, 1, 1],
+      format: "rgba8unorm",
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+    });
+    const whiteTexturePixels = new Uint8Array(256);
+    whiteTexturePixels.set([255, 255, 255, 255]);
+    device.queue.writeTexture(
+      { texture: this.milkyWayModelWhiteTexture },
+      whiteTexturePixels,
+      { bytesPerRow: 256, rowsPerImage: 1 },
+      [1, 1, 1],
+    );
     const milkyWayModelShader = device.createShaderModule({ code: milkyWayModelWGSL });
     this.milkyWayModelPipeline = device.createRenderPipeline({
       label: "milky-way-model-pipeline",
@@ -749,10 +784,12 @@ export class Renderer {
         module: milkyWayModelShader,
         entryPoint: "vs_main",
         buffers: [{
-          arrayStride: 6 * 4,
+          arrayStride: MILKY_WAY_MODEL_VERTEX_FLOATS * 4,
           attributes: [
             { shaderLocation: 0, offset: 0,     format: "float32x3" },
             { shaderLocation: 1, offset: 3 * 4, format: "float32x3" },
+            { shaderLocation: 2, offset: 6 * 4, format: "float32x2" },
+            { shaderLocation: 3, offset: 8 * 4, format: "float32x4" },
           ],
         }],
       },
@@ -1150,31 +1187,50 @@ export class Renderer {
       if (mesh.vertexCount <= 0) throw new Error("empty mesh");
 
       const { device } = this.ctx;
-      const vertexBuffer = device.createBuffer({
-        label: `milky-way-model-vertices-${model.id}`,
-        size: mesh.vertices.byteLength,
-        usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-      });
-      device.queue.writeBuffer(vertexBuffer, 0, mesh.vertices as GPUAllowSharedBufferSource);
-
       const uniformBuffer = device.createBuffer({
         label: `milky-way-model-uniform-${model.id}`,
         size: MILKY_WAY_MODEL_UNIFORM_BYTES,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       });
+      const textures = mesh.textures.map((texture, index) => {
+        const gpuTexture = this.createMilkyWayModelTexture(texture.bitmap, `milky-way-model-texture-${model.id}-${index}`);
+        texture.bitmap.close();
+        return gpuTexture;
+      });
+      const parts: MilkyWayModelPartEntry[] = mesh.parts.map((part, index) => {
+        const vertexBuffer = device.createBuffer({
+          label: `milky-way-model-vertices-${model.id}-${index}`,
+          size: part.vertices.byteLength,
+          usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+        });
+        device.queue.writeBuffer(vertexBuffer, 0, part.vertices as GPUAllowSharedBufferSource);
+        const materialBuffer = this.createMilkyWayModelMaterialBuffer(model, part.material, index);
+        const texture = part.material.textureIndex >= 0
+          ? textures[part.material.textureIndex] ?? this.milkyWayModelWhiteTexture
+          : this.milkyWayModelWhiteTexture;
+        return {
+          vertexBuffer,
+          materialBuffer,
+          bindGroup: device.createBindGroup({
+            label: `milky-way-model-bg-${model.id}-${index}`,
+            layout: this.milkyWayModelBGL,
+            entries: [
+              { binding: 0, resource: { buffer: this.cameraBuffer } },
+              { binding: 1, resource: { buffer: uniformBuffer } },
+              { binding: 2, resource: { buffer: materialBuffer } },
+              { binding: 3, resource: texture.createView() },
+              { binding: 4, resource: this.milkyWayModelSampler },
+            ],
+          }),
+          vertexCount: part.vertexCount,
+        };
+      });
       const entry: MilkyWayModelEntry = {
         id: model.id,
         modelGroup: model.modelGroup,
-        vertexBuffer,
         uniformBuffer,
-        bindGroup: device.createBindGroup({
-          label: `milky-way-model-bg-${model.id}`,
-          layout: this.milkyWayModelBGL,
-          entries: [
-            { binding: 0, resource: { buffer: this.cameraBuffer } },
-            { binding: 1, resource: { buffer: uniformBuffer } },
-          ],
-        }),
+        parts,
+        textures,
         vertexCount: mesh.vertexCount,
       };
       this.writeMilkyWayModelUniform(entry, model);
@@ -1192,6 +1248,58 @@ export class Renderer {
     } finally {
       this.milkyWayModelLoading.delete(model.id);
     }
+  }
+
+  private createMilkyWayModelTexture(bitmap: ImageBitmap, label: string): GPUTexture {
+    const { device } = this.ctx;
+    const texture = device.createTexture({
+      label,
+      size: [Math.max(1, bitmap.width), Math.max(1, bitmap.height), 1],
+      format: "rgba8unorm",
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+    device.queue.copyExternalImageToTexture(
+      { source: bitmap },
+      { texture },
+      [Math.max(1, bitmap.width), Math.max(1, bitmap.height), 1],
+    );
+    return texture;
+  }
+
+  private createMilkyWayModelMaterialBuffer(
+    model: MilkyWayModelObject,
+    material: ParsedMilkyWayMaterial,
+    partIndex: number,
+  ): GPUBuffer {
+    const { device } = this.ctx;
+    const buffer = device.createBuffer({
+      label: `milky-way-model-material-${model.id}-${partIndex}`,
+      size: MILKY_WAY_MODEL_MATERIAL_BYTES,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    const baseColor: [number, number, number, number] = material.useProcedural > 0.5
+      ? [
+        model.color[0] ?? material.baseColor[0],
+        model.color[1] ?? material.baseColor[1],
+        model.color[2] ?? material.baseColor[2],
+        material.baseColor[3],
+      ]
+      : material.baseColor;
+    const data = new Float32Array(MILKY_WAY_MODEL_MATERIAL_BYTES / 4);
+    data[0] = baseColor[0];
+    data[1] = baseColor[1];
+    data[2] = baseColor[2];
+    data[3] = baseColor[3];
+    data[4] = material.emissive[0];
+    data[5] = material.emissive[1];
+    data[6] = material.emissive[2];
+    data[7] = material.emissive[3];
+    data[8] = material.useTexture;
+    data[9] = material.useProcedural;
+    data[10] = material.useVertexColor;
+    data[11] = 0;
+    device.queue.writeBuffer(buffer, 0, data);
+    return buffer;
   }
 
   private pruneMilkyWayModelFailures(): void {
@@ -1620,9 +1728,11 @@ export class Renderer {
     if (this.milkyWayModelEntries.size > 0) {
       pass.setPipeline(this.milkyWayModelPipeline);
       const drawModelEntry = (entry: MilkyWayModelEntry): void => {
-        pass.setBindGroup(0, entry.bindGroup);
-        pass.setVertexBuffer(0, entry.vertexBuffer);
-        pass.draw(entry.vertexCount);
+        for (const part of entry.parts) {
+          pass.setBindGroup(0, part.bindGroup);
+          pass.setVertexBuffer(0, part.vertexBuffer);
+          pass.draw(part.vertexCount);
+        }
       };
       if (this.activeMilkyWayModelId) {
         const activeEntry = this.milkyWayModelEntries.get(this.activeMilkyWayModelId);

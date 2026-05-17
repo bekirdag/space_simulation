@@ -1,9 +1,33 @@
-import { Matrix3, Vector3, type Mesh } from "three";
+import { Matrix3, Vector3, type Material, type Mesh, type Texture } from "three";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
-export interface ParsedMilkyWayMesh {
+export const MILKY_WAY_MODEL_VERTEX_FLOATS = 12;
+
+export interface ParsedMilkyWayTexture {
+  bitmap: ImageBitmap;
+  width: number;
+  height: number;
+}
+
+export interface ParsedMilkyWayMaterial {
+  baseColor: [number, number, number, number];
+  emissive: [number, number, number, number];
+  textureIndex: number;
+  useTexture: number;
+  useProcedural: number;
+  useVertexColor: number;
+}
+
+export interface ParsedMilkyWayMeshPart {
   vertices: Float32Array;
+  vertexCount: number;
+  material: ParsedMilkyWayMaterial;
+}
+
+export interface ParsedMilkyWayMesh {
+  parts: ParsedMilkyWayMeshPart[];
+  textures: ParsedMilkyWayTexture[];
   vertexCount: number;
   sourceTriangleCount: number;
   usedTriangleCount: number;
@@ -12,9 +36,30 @@ export interface ParsedMilkyWayMesh {
 interface PrimitiveData {
   positions: Float32Array;
   normals: Float32Array | null;
+  uvs: Float32Array | null;
+  colors: Float32Array | null;
   indices: Uint32Array | null;
   vertexCount: number;
+  indexStart: number;
+  indexCount: number;
+  material: Material | null;
 }
+
+interface TextureCache {
+  textureIndexByImage: Map<object, number>;
+  textures: ParsedMilkyWayTexture[];
+}
+
+type ThreeColorLike = { r: number; g: number; b: number };
+type ThreeMaterialLike = Material & {
+  color?: ThreeColorLike;
+  emissive?: ThreeColorLike;
+  emissiveIntensity?: number;
+  map?: Texture | null;
+  opacity?: number;
+  transparent?: boolean;
+  vertexColors?: boolean;
+};
 
 const MAX_TRIANGLES = 160_000;
 let gltfLoader: GLTFLoader | null = null;
@@ -29,7 +74,123 @@ function getGltfLoader(): GLTFLoader {
   return gltfLoader;
 }
 
-function normalizeAndPack(prims: PrimitiveData[]): ParsedMilkyWayMesh {
+function defaultMaterial(useProcedural = 0): ParsedMilkyWayMaterial {
+  return {
+    baseColor: [1, 1, 1, 1],
+    emissive: [0, 0, 0, 0],
+    textureIndex: -1,
+    useTexture: 0,
+    useProcedural,
+    useVertexColor: 0,
+  };
+}
+
+function clamp01(value: number): number {
+  return Math.max(0, Math.min(1, value));
+}
+
+function colorToTuple(color: ThreeColorLike | undefined, fallback: [number, number, number]): [number, number, number] {
+  if (!color) return fallback;
+  return [clamp01(color.r), clamp01(color.g), clamp01(color.b)];
+}
+
+function materialOpacity(material: ThreeMaterialLike | null): number {
+  if (!material) return 1;
+  const opacity = Number.isFinite(material.opacity) ? Number(material.opacity) : 1;
+  return clamp01(opacity);
+}
+
+function imageDimensions(value: unknown): { width: number; height: number } | null {
+  const image = value as { width?: unknown; height?: unknown };
+  const width = typeof image.width === "number" ? image.width : 0;
+  const height = typeof image.height === "number" ? image.height : 0;
+  return width > 0 && height > 0 ? { width, height } : null;
+}
+
+function dataTextureBitmap(value: unknown): Promise<ImageBitmap | null> | null {
+  const image = value as { data?: unknown; width?: unknown; height?: unknown };
+  const width = typeof image.width === "number" ? image.width : 0;
+  const height = typeof image.height === "number" ? image.height : 0;
+  if (width <= 0 || height <= 0 || !image.data) return null;
+
+  const source = image.data;
+  let bytes: Uint8ClampedArray<ArrayBuffer> | null = null;
+  if (ArrayBuffer.isView(source)) {
+    const view = source as ArrayBufferView;
+    bytes = new Uint8ClampedArray(view.byteLength);
+    bytes.set(new Uint8Array(view.buffer, view.byteOffset, view.byteLength));
+  } else if (Array.isArray(source)) {
+    bytes = new Uint8ClampedArray(source);
+  }
+  if (!bytes || bytes.length < width * height * 4) return null;
+  const pixels: Uint8ClampedArray<ArrayBuffer> = bytes.length === width * height * 4
+    ? bytes
+    : new Uint8ClampedArray(bytes.slice(0, width * height * 4));
+  return createImageBitmap(new ImageData(pixels, width, height));
+}
+
+async function imageToBitmap(value: unknown): Promise<ImageBitmap | null> {
+  if (!value || typeof createImageBitmap !== "function") return null;
+  if (typeof ImageBitmap !== "undefined" && value instanceof ImageBitmap) return createImageBitmap(value);
+  if (typeof HTMLImageElement !== "undefined" && value instanceof HTMLImageElement) {
+    if (!value.complete && typeof value.decode === "function") {
+      await value.decode().catch(() => undefined);
+    }
+    return createImageBitmap(value);
+  }
+  if (typeof HTMLCanvasElement !== "undefined" && value instanceof HTMLCanvasElement) {
+    return createImageBitmap(value);
+  }
+  if (typeof OffscreenCanvas !== "undefined" && value instanceof OffscreenCanvas) {
+    return createImageBitmap(value);
+  }
+  if (typeof ImageData !== "undefined" && value instanceof ImageData) {
+    return createImageBitmap(value);
+  }
+  const dataBitmap = dataTextureBitmap(value);
+  if (dataBitmap) return dataBitmap;
+  return null;
+}
+
+async function textureIndexFor(texture: Texture | null | undefined, cache: TextureCache): Promise<number> {
+  const image = texture?.image as unknown;
+  if (!image || typeof image !== "object") return -1;
+  const cached = cache.textureIndexByImage.get(image);
+  if (cached !== undefined) return cached;
+
+  const bitmap = await imageToBitmap(image);
+  if (!bitmap) return -1;
+  const dims = imageDimensions(bitmap);
+  if (!dims) return -1;
+  const index = cache.textures.length;
+  cache.textureIndexByImage.set(image, index);
+  cache.textures.push({ bitmap, width: dims.width, height: dims.height });
+  return index;
+}
+
+async function parseMaterial(
+  material: Material | null,
+  hasUvs: boolean,
+  hasVertexColors: boolean,
+  cache: TextureCache,
+): Promise<ParsedMilkyWayMaterial> {
+  if (!material) return defaultMaterial();
+  const mat = material as ThreeMaterialLike;
+  const [r, g, b] = colorToTuple(mat.color, [1, 1, 1]);
+  const [er, eg, eb] = colorToTuple(mat.emissive, [0, 0, 0]);
+  const emissiveIntensity = Math.max(0, Number.isFinite(mat.emissiveIntensity) ? Number(mat.emissiveIntensity) : 1);
+  const textureIndex = hasUvs ? await textureIndexFor(mat.map, cache) : -1;
+  return {
+    baseColor: [r, g, b, materialOpacity(mat)],
+    emissive: [er, eg, eb, emissiveIntensity],
+    textureIndex,
+    useTexture: textureIndex >= 0 ? 1 : 0,
+    useProcedural: 0,
+    useVertexColor: hasVertexColors || mat.vertexColors ? 1 : 0,
+  };
+}
+
+async function normalizeAndPack(prims: PrimitiveData[]): Promise<ParsedMilkyWayMesh> {
   let minX = Infinity, minY = Infinity, minZ = Infinity;
   let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
   let sourceTriangles = 0;
@@ -42,7 +203,7 @@ function normalizeAndPack(prims: PrimitiveData[]): ParsedMilkyWayMesh {
       minX = Math.min(minX, x); minY = Math.min(minY, y); minZ = Math.min(minZ, z);
       maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); maxZ = Math.max(maxZ, z);
     }
-    sourceTriangles += Math.floor((prim.indices?.length ?? prim.vertexCount) / 3);
+    sourceTriangles += Math.floor(prim.indexCount / 3);
   }
 
   if (!Number.isFinite(minX) || sourceTriangles <= 0) throw new Error("Model has no triangles.");
@@ -51,25 +212,42 @@ function normalizeAndPack(prims: PrimitiveData[]): ParsedMilkyWayMesh {
   const cz = (minZ + maxZ) * 0.5;
   const radius = Math.max(maxX - minX, maxY - minY, maxZ - minZ) * 0.5 || 1;
   const triStep = Math.max(1, Math.ceil(sourceTriangles / MAX_TRIANGLES));
-  const packed: number[] = [];
+  const cache: TextureCache = { textureIndexByImage: new Map(), textures: [] };
+  const parts: ParsedMilkyWayMeshPart[] = [];
   let globalTri = 0;
   let usedTriangles = 0;
+  let vertexCount = 0;
 
-  const pushVertex = (pos: Float32Array, normals: Float32Array | null, index: number, nx: number, ny: number, nz: number) => {
+  const pushVertex = (
+    packed: number[],
+    prim: PrimitiveData,
+    index: number,
+    nx: number,
+    ny: number,
+    nz: number,
+  ) => {
     packed.push(
-      ((pos[index * 3 + 0] ?? cx) - cx) / radius,
-      ((pos[index * 3 + 1] ?? cy) - cy) / radius,
-      ((pos[index * 3 + 2] ?? cz) - cz) / radius,
-      normals ? (normals[index * 3 + 0] ?? nx) : nx,
-      normals ? (normals[index * 3 + 1] ?? ny) : ny,
-      normals ? (normals[index * 3 + 2] ?? nz) : nz,
+      ((prim.positions[index * 3 + 0] ?? cx) - cx) / radius,
+      ((prim.positions[index * 3 + 1] ?? cy) - cy) / radius,
+      ((prim.positions[index * 3 + 2] ?? cz) - cz) / radius,
+      prim.normals ? (prim.normals[index * 3 + 0] ?? nx) : nx,
+      prim.normals ? (prim.normals[index * 3 + 1] ?? ny) : ny,
+      prim.normals ? (prim.normals[index * 3 + 2] ?? nz) : nz,
+      prim.uvs ? (prim.uvs[index * 2 + 0] ?? 0) : 0,
+      prim.uvs ? (prim.uvs[index * 2 + 1] ?? 0) : 0,
+      prim.colors ? (prim.colors[index * 4 + 0] ?? 1) : 1,
+      prim.colors ? (prim.colors[index * 4 + 1] ?? 1) : 1,
+      prim.colors ? (prim.colors[index * 4 + 2] ?? 1) : 1,
+      prim.colors ? (prim.colors[index * 4 + 3] ?? 1) : 1,
     );
   };
 
   for (const prim of prims) {
+    const material = await parseMaterial(prim.material, prim.uvs !== null, prim.colors !== null, cache);
+    const packed: number[] = [];
     const indices = prim.indices;
-    const indexCount = indices?.length ?? prim.vertexCount;
-    for (let i = 0; i + 2 < indexCount; i += 3) {
+    const end = prim.indexStart + prim.indexCount;
+    for (let i = prim.indexStart; i + 2 < end; i += 3) {
       if (globalTri++ % triStep !== 0) continue;
       const ia = indices ? indices[i]! : i;
       const ib = indices ? indices[i + 1]! : i + 1;
@@ -90,19 +268,33 @@ function normalizeAndPack(prims: PrimitiveData[]): ParsedMilkyWayMesh {
       let nz = ux * vy - uy * vx;
       const nLen = Math.hypot(nx, ny, nz) || 1;
       nx /= nLen; ny /= nLen; nz /= nLen;
-      pushVertex(prim.positions, prim.normals, ia, nx, ny, nz);
-      pushVertex(prim.positions, prim.normals, ib, nx, ny, nz);
-      pushVertex(prim.positions, prim.normals, ic, nx, ny, nz);
+      pushVertex(packed, prim, ia, nx, ny, nz);
+      pushVertex(packed, prim, ib, nx, ny, nz);
+      pushVertex(packed, prim, ic, nx, ny, nz);
       usedTriangles++;
+    }
+    if (packed.length > 0) {
+      const vertices = new Float32Array(packed);
+      const partVertexCount = vertices.length / MILKY_WAY_MODEL_VERTEX_FLOATS;
+      parts.push({ vertices, vertexCount: partVertexCount, material });
+      vertexCount += partVertexCount;
     }
   }
 
+  if (parts.length <= 0) throw new Error("Model has no drawable triangles.");
   return {
-    vertices: new Float32Array(packed),
-    vertexCount: packed.length / 6,
+    parts,
+    textures: cache.textures,
+    vertexCount,
     sourceTriangleCount: sourceTriangles,
     usedTriangleCount: usedTriangles,
   };
+}
+
+function materialAt(mesh: Mesh, index: number): Material | null {
+  const material = mesh.material;
+  if (Array.isArray(material)) return material[index] ?? material[0] ?? null;
+  return material ?? null;
 }
 
 export async function parseGlbMesh(buffer: ArrayBuffer): Promise<ParsedMilkyWayMesh> {
@@ -121,8 +313,12 @@ export async function parseGlbMesh(buffer: ArrayBuffer): Promise<ParsedMilkyWayM
     const pos = geometry.getAttribute("position");
     if (!pos || pos.itemSize < 3 || pos.count <= 0) return;
     const normal = geometry.getAttribute("normal");
+    const uv = geometry.getAttribute("uv");
+    const color = geometry.getAttribute("color");
     const positions = new Float32Array(pos.count * 3);
-    const normals = normal && normal.itemSize >= 3 ? new Float32Array(normal.count * 3) : null;
+    const normals = normal && normal.itemSize >= 3 ? new Float32Array(pos.count * 3) : null;
+    const uvs = uv && uv.itemSize >= 2 ? new Float32Array(pos.count * 2) : null;
+    const colors = color && color.itemSize >= 3 ? new Float32Array(pos.count * 4) : null;
 
     normalMatrix.getNormalMatrix(mesh.matrixWorld);
     for (let i = 0; i < pos.count; i++) {
@@ -136,15 +332,56 @@ export async function parseGlbMesh(buffer: ArrayBuffer): Promise<ParsedMilkyWayM
         normals[i * 3 + 1] = normalTmp.y;
         normals[i * 3 + 2] = normalTmp.z;
       }
+      if (uvs && uv) {
+        uvs[i * 2 + 0] = uv.getX(i);
+        uvs[i * 2 + 1] = uv.getY(i);
+      }
+      if (colors && color) {
+        colors[i * 4 + 0] = color.getX(i);
+        colors[i * 4 + 1] = color.getY(i);
+        colors[i * 4 + 2] = color.getZ(i);
+        colors[i * 4 + 3] = color.itemSize >= 4 ? color.getW(i) : 1;
+      }
     }
 
     const index = geometry.getIndex();
     let indices: Uint32Array | null = null;
+    const indexCount = index?.count ?? pos.count;
     if (index) {
       indices = new Uint32Array(index.count);
       for (let i = 0; i < index.count; i++) indices[i] = index.getX(i);
     }
-    prims.push({ positions, normals, indices, vertexCount: pos.count });
+
+    if (geometry.groups.length > 0) {
+      for (const group of geometry.groups) {
+        const start = Math.max(0, group.start);
+        const count = Math.max(0, Math.min(group.count, indexCount - start));
+        if (count < 3) continue;
+        prims.push({
+          positions,
+          normals,
+          uvs,
+          colors,
+          indices,
+          vertexCount: pos.count,
+          indexStart: start,
+          indexCount: count,
+          material: materialAt(mesh, group.materialIndex ?? 0),
+        });
+      }
+    } else {
+      prims.push({
+        positions,
+        normals,
+        uvs,
+        colors,
+        indices,
+        vertexCount: pos.count,
+        indexStart: 0,
+        indexCount,
+        material: materialAt(mesh, 0),
+      });
+    }
   });
 
   return normalizeAndPack(prims);
@@ -199,14 +436,23 @@ export function parseStlMesh(buffer: ArrayBuffer): ParsedMilkyWayMesh {
         (dv.getFloat32(p + 4, true) - cy) / radius,
         (dv.getFloat32(p + 8, true) - cz) / radius,
         nx, ny, nz,
+        0, 0,
+        1, 1, 1, 1,
       );
     }
     usedTriangles++;
   }
 
+  const vertices = new Float32Array(packed);
+  const vertexCount = vertices.length / MILKY_WAY_MODEL_VERTEX_FLOATS;
   return {
-    vertices: new Float32Array(packed),
-    vertexCount: packed.length / 6,
+    parts: [{
+      vertices,
+      vertexCount,
+      material: defaultMaterial(1),
+    }],
+    textures: [],
+    vertexCount,
     sourceTriangleCount: sourceTriangles,
     usedTriangleCount: usedTriangles,
   };
