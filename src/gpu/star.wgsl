@@ -6,7 +6,7 @@
 //
 // Binding 2: selectedStar (16 bytes)
 //   xyz = world-space position of selected star, w = 1.0 if active else 0.0
-//   When a star matches, its size is boosted 20× so it fills the view.
+//   When a star matches, it switches to a close spherical LOD.
 
 struct Camera {
   viewProj:    mat4x4<f32>,
@@ -33,6 +33,7 @@ struct VertexOut {
   @location(3)       selected: f32,
   @location(4)       intensity: f32,
   @location(5)       effects: f32,
+  @location(6)       pixel_radius: f32,
 };
 
 var<private> quad: array<vec2<f32>, 6> = array<vec2<f32>, 6>(
@@ -77,6 +78,7 @@ fn vs_main(
   out.alpha    = star.color_alpha.w;
   out.selected = 0.0;
   out.effects   = clamp(lodFade.z, 0.0, 1.0);
+  out.pixel_radius = 0.0;
   let distanceFlux = camera_distance_flux(center);
   let distanceIntensity = clamp(pow(distanceFlux, 0.72), 0.08, 96.0);
   let distanceAlpha = clamp(pow(distanceFlux, 0.18), 0.22, 2.4);
@@ -129,7 +131,9 @@ fn vs_main(
     let physRadius = 0.005;
     let physNdcR   = physRadius * focalY / clip_c.w;
     // Never shrink below 3× the base minimum so the star stays visible at range.
-    let worldR = max(physNdcR, camera.rightAndMNR.w * 3.0) * clip_c.w / focalY;
+    let selectedNdcRadius = max(physNdcR, camera.rightAndMNR.w * 3.0);
+    out.pixel_radius = selectedNdcRadius * 2.5 / max(camera.rightAndMNR.w, 0.000001);
+    let worldR = selectedNdcRadius * clip_c.w / focalY;
 
     out.clip_pos = camera.viewProj * vec4(
       center + uv.x * camera.rightAndMNR.xyz * worldR
@@ -141,6 +145,7 @@ fn vs_main(
 
   // Normal (non-selected) stars: enforce minimum pixel radius (fixed-NDC billboard).
   let pxRadius    = billboardNdcRadius;
+  out.pixel_radius = pxRadius * 2.5 / max(camera.rightAndMNR.w, 0.000001);
   let worldRadius = pxRadius * clip_c.w / focalY;
   let world_pos   = center
     + uv.x * camera.rightAndMNR.xyz * worldRadius
@@ -154,6 +159,9 @@ fn vs_main(
 fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   let d = length(in.uv);
   if d > 1.0 { discard; }
+  let edgeAa = clamp(max(fwidth(d), 0.85 / max(in.pixel_radius, 1.0)), 0.0015, 0.085);
+  let silhouette = 1.0 - smoothstep(1.0 - edgeAa, 1.0, d);
+  if silhouette <= 0.001 { discard; }
 
   // ── Physically realistic stellar PSF ─────────────────────────────────────
   // Real stars have a Lorentzian (power-law) halo, not a smoothstep.
@@ -173,15 +181,29 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   col = mix(spectral, coreWhite, bleach);
 
   let psf = mix(core, core * 1.20 + wings * 0.62, in.effects);
-  var alpha = clamp(psf * in.alpha * mix(1.0, 1.35, in.effects), 0.0, 1.0);
-  var hdr = col * psf * in.intensity * in.alpha;
+  var alpha = clamp(psf * in.alpha * mix(1.0, 1.35, in.effects) * silhouette, 0.0, 1.0);
+  var hdr = col * psf * in.intensity * in.alpha * silhouette;
 
-  // ── Selected star: glowing physical sphere ────────────────────────────────
-  if in.selected > 0.5 && in.effects > 0.001 {
-    let glow  = exp(-d2 * 4.0);
-    let bloom = max(0.0, 1.0 - d);
-    hdr  += (spectral + vec3<f32>(glow * 0.42)) * (glow * 120.0 + bloom * bloom * 60.0);
-    alpha = clamp(glow * 0.9 + bloom * bloom * 0.35, 0.0, 1.0);
+  // ── Close LOD: implicit spherical photosphere ─────────────────────────────
+  // Large star billboards expose the underlying quad/PSF approximation. Blend
+  // them into a shaded sphere with an anti-aliased silhouette when close.
+  let sphereLod = max(in.selected, smoothstep(24.0, 86.0, in.pixel_radius) * in.effects);
+  if sphereLod > 0.001 {
+    let z = sqrt(max(0.0, 1.0 - d2));
+    let normal = normalize(vec3<f32>(in.uv.x, in.uv.y, z));
+    let lightDir = normalize(vec3<f32>(-0.38, 0.32, 0.87));
+    let diffuse = max(dot(normal, lightDir), 0.0);
+    let limb = pow(max(z, 0.0), 0.45);
+    let hotSpot = pow(max(diffuse, 0.0), 18.0);
+    let sphereCol = mix(spectral * (0.50 + diffuse * 0.36 + limb * 0.32), vec3<f32>(1.0, 0.985, 0.94), hotSpot * 0.34);
+    let sphereAlpha = clamp(silhouette * mix(in.alpha * (0.45 + limb * 0.55), 1.0, in.selected), 0.0, 1.0);
+    let corona = exp(-d2 * 4.8) * mix(0.28, 0.52, in.selected);
+    let sphereHdr = (
+      sphereCol * in.intensity * mix(in.alpha, 1.0, in.selected) * (0.38 + limb * 0.74 + hotSpot * 0.60) +
+      (spectral + vec3<f32>(corona * 0.28)) * in.intensity * corona
+    ) * silhouette;
+    hdr = mix(hdr, sphereHdr, sphereLod);
+    alpha = mix(alpha, max(alpha, sphereAlpha), sphereLod);
   }
 
   let objectBrightness = max(camera.eyeAndFlags.w, 0.0);
