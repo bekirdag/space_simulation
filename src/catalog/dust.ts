@@ -5,10 +5,10 @@ import { NEBULA_FLOATS } from "./nebulas";
 //
 // Each dust instance reuses the nebula billboard buffer layout so the renderer
 // can draw the clouds as batched procedural cloud models. The source map is a
-// 2D total line-of-sight reddening product: we use those measured directions
-// and weights, then project samples through a Milky Way disk/spiral density
-// model so the rendered cloud positions form a galaxy-scale dust map instead
-// of a Sun-centered shell.
+// 2D total line-of-sight reddening product: it has angular density, not true
+// distances. We therefore sample cloud positions in a Milky Way-centered
+// galactocentric disk/spiral model, then use the measured all-sky map only as
+// an angular density weight seen from the Sun.
 
 export const DUST_CLOUD_FLOATS = NEBULA_FLOATS;
 export const DUST_CLOUD_COUNT = 96_000;
@@ -29,9 +29,10 @@ const DUST_MAP_META_URL = "/data/dust-map-mf2015.meta.json";
 const DUST_MAP_MIN_ALPHA = 0.006;
 const DUST_MAP_ALPHA_RANGE = 0.080;
 const DUST_CLOUD_MIN_RADIUS_AU = 12;
-const DUST_MIN_LINE_OF_SIGHT_KPC = 0.75;
 const DUST_DISK_SAMPLE_HALF_HEIGHT_KPC = 0.52;
 const DUST_VERTICAL_SCALE_KPC = 0.12;
+const DUST_DIRECTION_LON_BINS = 360;
+const DUST_DIRECTION_LAT_BINS = 160;
 
 const TAU = Math.PI * 2;
 const GAL_TO_ECL = [
@@ -139,30 +140,6 @@ function armBoost(radiusKpc: number, theta: number): number {
   return boost;
 }
 
-function rayMaxDistanceInMilkyWayDiskKpc(dir: readonly [number, number, number]): number {
-  const sx = -DUST_SUN_GALACTIC_RADIUS_KPC;
-  const sy = 0;
-  const a = dir[0] * dir[0] + dir[1] * dir[1];
-  const b = 2 * (sx * dir[0] + sy * dir[1]);
-  const c = sx * sx + sy * sy - DUST_GALAXY_RADIUS_KPC * DUST_GALAXY_RADIUS_KPC;
-  let maxDistance = DUST_GALAXY_RADIUS_KPC * 2;
-
-  if (a > 1e-8) {
-    const disc = b * b - 4 * a * c;
-    if (disc <= 0) return 0;
-    const root = Math.sqrt(disc);
-    const t0 = (-b - root) / (2 * a);
-    const t1 = (-b + root) / (2 * a);
-    maxDistance = Math.max(t0, t1);
-  }
-
-  if (Math.abs(dir[2]) > 1e-5) {
-    maxDistance = Math.min(maxDistance, DUST_DISK_SAMPLE_HALF_HEIGHT_KPC / Math.abs(dir[2]));
-  }
-
-  return Math.max(0, maxDistance);
-}
-
 function galacticDustDensity(xgc: number, ygc: number, zgc: number, mapDensity: number): number {
   const radius = Math.hypot(xgc, ygc);
   if (radius > DUST_GALAXY_RADIUS_KPC || Math.abs(zgc) > DUST_DISK_SAMPLE_HALF_HEIGHT_KPC) return 0;
@@ -233,55 +210,111 @@ function dustMapCellDensity(dustMap: Float32Array, offset: number): number {
   return clamp((alpha - DUST_MAP_MIN_ALPHA) / DUST_MAP_ALPHA_RANGE, 0.04, 1);
 }
 
-function chooseDustMapCell(dustMap: Float32Array, dustCellCount: number, rand: () => number): number {
-  let bestOffset = 0;
-  let bestDensity = 0;
-  for (let attempt = 0; attempt < 32; attempt++) {
-    const offset = Math.floor(rand() * dustCellCount) * DUST_MAP_FLOATS;
-    const density = dustMapCellDensity(dustMap, offset);
-    if (density > bestDensity) {
-      bestDensity = density;
-      bestOffset = offset;
-    }
-    if (rand() < Math.pow(density, 0.62)) return offset;
-  }
-  return bestOffset;
+interface DustDirectionGrid {
+  lonBins: number;
+  latBins: number;
+  values: Float32Array;
 }
 
-function dustSeedFromMap(dustMap: Float32Array, dustCellCount: number, rand: () => number): DustSeed {
-  const offset = chooseDustMapCell(dustMap, dustCellCount, rand);
-  const x = dustMap[offset + 0] ?? 0;
-  const y = dustMap[offset + 1] ?? 0;
-  const z = dustMap[offset + 2] ?? 0;
-  const mapDensity = dustMapCellDensity(dustMap, offset);
-  const dir = eclipticToGalacticDirection(x, y, z);
-  const maxDistanceKpc = rayMaxDistanceInMilkyWayDiskKpc(dir);
-  if (maxDistanceKpc <= DUST_MIN_LINE_OF_SIGHT_KPC) {
-    return fallbackDustPosition(rand);
+function directionGridIndex(lonBins: number, latBins: number, lon: number, lat: number): number {
+  const lonUnit = (lon + Math.PI) / TAU;
+  const latUnit = (lat + Math.PI * 0.5) / Math.PI;
+  const lonIndex = ((Math.floor(lonUnit * lonBins) % lonBins) + lonBins) % lonBins;
+  const latIndex = clamp(Math.floor(latUnit * latBins), 0, latBins - 1);
+  return latIndex * lonBins + lonIndex;
+}
+
+function buildDustDirectionGrid(dustMap: Float32Array, dustCellCount: number): DustDirectionGrid {
+  const lonBins = DUST_DIRECTION_LON_BINS;
+  const latBins = DUST_DIRECTION_LAT_BINS;
+  const values = new Float32Array(lonBins * latBins);
+
+  for (let i = 0; i < dustCellCount; i++) {
+    const offset = i * DUST_MAP_FLOATS;
+    const dir = eclipticToGalacticDirection(
+      dustMap[offset + 0] ?? 0,
+      dustMap[offset + 1] ?? 0,
+      dustMap[offset + 2] ?? 0,
+    );
+    const lon = Math.atan2(dir[1], dir[0]);
+    const lat = Math.asin(clamp(dir[2], -1, 1));
+    const gridIndex = directionGridIndex(lonBins, latBins, lon, lat);
+    values[gridIndex] = Math.max(values[gridIndex] ?? 0, dustMapCellDensity(dustMap, offset));
   }
 
+  return { lonBins, latBins, values };
+}
+
+function lookupDustDirectionDensity(
+  grid: DustDirectionGrid,
+  dir: readonly [number, number, number],
+): number {
+  const lon = Math.atan2(dir[1], dir[0]);
+  const lat = Math.asin(clamp(dir[2], -1, 1));
+  const lonUnit = (lon + Math.PI) / TAU;
+  const latUnit = (lat + Math.PI * 0.5) / Math.PI;
+  const lonCenter = ((Math.floor(lonUnit * grid.lonBins) % grid.lonBins) + grid.lonBins) % grid.lonBins;
+  const latCenter = clamp(Math.floor(latUnit * grid.latBins), 0, grid.latBins - 1);
+  let weighted = 0;
+  let weightSum = 0;
+
+  for (let dy = -1; dy <= 1; dy++) {
+    const latIndex = clamp(latCenter + dy, 0, grid.latBins - 1);
+    for (let dx = -1; dx <= 1; dx++) {
+      const lonIndex = (lonCenter + dx + grid.lonBins) % grid.lonBins;
+      const value = grid.values[latIndex * grid.lonBins + lonIndex] ?? 0;
+      if (value <= 0) continue;
+      const weight = dx === 0 && dy === 0 ? 1 : 0.45;
+      weighted += value * weight;
+      weightSum += weight;
+    }
+  }
+
+  return weightSum > 0 ? clamp(weighted / weightSum, 0.04, 1) : 0.04;
+}
+
+function spiralArmCandidate(rand: () => number): [number, number] {
+  const arm = ARMS[Math.floor(rand() * ARMS.length)] ?? ARMS[0]!;
+  const radius = 1.2 + Math.pow(rand(), 0.72) * (DUST_GALAXY_RADIUS_KPC - 1.2);
+  const winding = Math.floor(rand() * 3) - 1;
+  const thetaArm = arm.theta0 + Math.log(radius / arm.r0) / arm.tanp + winding * TAU;
+  const theta = thetaArm + randn(rand) * (arm.width / Math.max(1.2, radius)) * 0.82;
+  return [radius, theta];
+}
+
+function diskCandidate(rand: () => number): [number, number] {
+  const radius = DUST_GALAXY_RADIUS_KPC * Math.sqrt(rand());
+  return [radius, rand() * TAU];
+}
+
+function dustSeedFromDirectionGrid(grid: DustDirectionGrid, rand: () => number): DustSeed {
   let best: DustSeed | null = null;
   let bestDensity = 0;
-  for (let attempt = 0; attempt < 24; attempt++) {
-    const pathT = Math.pow(rand(), 0.62);
-    const distanceKpc = DUST_MIN_LINE_OF_SIGHT_KPC +
-      (maxDistanceKpc - DUST_MIN_LINE_OF_SIGHT_KPC) * pathT;
-    const xgc = -DUST_SUN_GALACTIC_RADIUS_KPC + dir[0] * distanceKpc;
-    const ygc = dir[1] * distanceKpc;
-    const zgc = dir[2] * distanceKpc + randn(rand) * 0.018;
+
+  for (let attempt = 0; attempt < 44; attempt++) {
+    const [radius, theta] = rand() < 0.68 ? spiralArmCandidate(rand) : diskCandidate(rand);
+    const zgc = clamp(randn(rand) * 0.105, -DUST_DISK_SAMPLE_HALF_HEIGHT_KPC, DUST_DISK_SAMPLE_HALF_HEIGHT_KPC);
+    const xgc = radius * Math.cos(theta);
+    const ygc = radius * Math.sin(theta);
+    const sunDir = normalize3(xgc + DUST_SUN_GALACTIC_RADIUS_KPC, ygc, zgc);
+    const mapDensity = lookupDustDirectionDensity(grid, sunDir);
     const density = galacticDustDensity(xgc, ygc, zgc, mapDensity);
+
     if (density > bestDensity) {
-      const [ex, ey, ez] = galacticCartesianToEclipticAU(xgc, ygc, zgc);
+      const [x, y, z] = galacticCartesianToEclipticAU(xgc, ygc, zgc);
       best = {
-        x: ex,
-        y: ey,
-        z: ez,
+        x,
+        y,
+        z,
         density,
         sizeAU: (0.10 + density * 0.16) * DUST_MILKY_WAY_KPC_TO_AU,
       };
       bestDensity = density;
     }
-    if (rand() < density * 2.1 + 0.015 && best) return best;
+
+    if (best && rand() < density * 2.35 + 0.012) {
+      return best;
+    }
   }
 
   return best ?? fallbackDustPosition(rand);
@@ -290,12 +323,15 @@ function dustSeedFromMap(dustMap: Float32Array, dustCellCount: number, rand: () 
 export function buildDustCloudBuffer(dustMap?: Float32Array, count = DUST_CLOUD_COUNT): Float32Array {
   const rand = createRand();
   const dustCellCount = dustMap ? Math.floor(dustMap.length / DUST_MAP_FLOATS) : 0;
+  const directionGrid = dustMap && dustCellCount > 0
+    ? buildDustDirectionGrid(dustMap, dustCellCount)
+    : null;
   const n = clamp(Math.floor(count), 0, DUST_CLOUD_CAPACITY);
   const buf = new Float32Array(n * DUST_CLOUD_FLOATS);
 
   for (let i = 0; i < n; i++) {
-    const seed = dustCellCount > 0 && dustMap
-      ? dustSeedFromMap(dustMap, dustCellCount, rand)
+    const seed = directionGrid
+      ? dustSeedFromDirectionGrid(directionGrid, rand)
       : fallbackDustPosition(rand);
     const stretch = 1.1 + rand() * 2.65;
     const squash = 0.48 + rand() * 0.82;
