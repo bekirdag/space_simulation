@@ -244,7 +244,7 @@
       #viewport-controls {
         position: fixed;
         top: 16px;
-        right: 246px;
+        right: 306px;
         z-index: 11;
         display: flex;
         gap: 8px;
@@ -557,10 +557,10 @@
         border: 1px solid rgba(255,255,255,0.1);
         border-radius: 0 0 0 8px;
         backdrop-filter: blur(10px);
-        width: 210px;
+        width: 270px;
         max-height: calc(100vh - 24px);
         display: flex;
-        flex-direction: column;
+        flex-direction: row;
         overflow: hidden;
         transition: width 0.2s ease, opacity 0.2s ease;
         font-family: system-ui, -apple-system, sans-serif;
@@ -571,6 +571,65 @@
         pointer-events: none;
         border-color: transparent;
       }
+
+      .nav-tabs {
+        width: 42px;
+        flex-shrink: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        padding: 7px 4px;
+        border-right: 1px solid rgba(255,255,255,0.075);
+        background: rgba(4,6,15,0.38);
+      }
+      .nav-tab {
+        width: 32px;
+        height: 32px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid rgba(255,255,255,0.10);
+        border-radius: 6px;
+        background: rgba(255,255,255,0.045);
+        color: rgba(235,240,255,0.52);
+        cursor: pointer;
+        padding: 0;
+        transition: background 0.14s, border-color 0.14s, color 0.14s;
+      }
+      .nav-tab:hover {
+        background: rgba(255,255,255,0.095);
+        border-color: rgba(255,255,255,0.18);
+        color: rgba(255,255,255,0.86);
+      }
+      .nav-tab.active {
+        background: rgba(136,170,255,0.18);
+        border-color: rgba(136,170,255,0.38);
+        color: rgba(255,255,255,0.95);
+      }
+      .nav-tab svg {
+        width: 17px;
+        height: 17px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .nav-tab-spacer { flex: 1; }
+      .nav-content {
+        width: 228px;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      .nav-tab-panel {
+        min-width: 0;
+        min-height: 0;
+        flex: 1;
+        display: none;
+        flex-direction: column;
+      }
+      .nav-tab-panel.active { display: flex; }
 
       /* Search bar — sticky at top */
       #nav-search-box {
@@ -654,15 +713,20 @@
       }
 
       /* Scrollable body of the nav */
-      #nav-scroll {
+      #nav-scroll,
+      .nav-tab-scroll {
         overflow-y: auto;
         flex: 1;
+        min-height: 0;
         scrollbar-width: thin;
         scrollbar-color: rgba(255,255,255,0.12) transparent;
       }
-      #nav-scroll::-webkit-scrollbar { width: 4px; }
-      #nav-scroll::-webkit-scrollbar-track { background: transparent; }
-      #nav-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 2px; }
+      #nav-scroll::-webkit-scrollbar,
+      .nav-tab-scroll::-webkit-scrollbar { width: 4px; }
+      #nav-scroll::-webkit-scrollbar-track,
+      .nav-tab-scroll::-webkit-scrollbar-track { background: transparent; }
+      #nav-scroll::-webkit-scrollbar-thumb,
+      .nav-tab-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 2px; }
 
       .nav-section-title {
         color: rgba(255,255,255,0.35);
@@ -773,6 +837,9 @@
       }
 
       .nav-bottom-pad { height: 8px; }
+      .nav-utility-section {
+        padding-bottom: 8px;
+      }
 
       /* ── Utility links at bottom of nav ── */
       .nav-footer {
@@ -1746,14 +1813,35 @@
     <div id="nav-wrapper">
       <button id="nav-toggle" title="Toggle navigation">›</button>
       <div id="nav-panel">
-        <!-- Sticky search bar -->
-        <div id="nav-search-box">
-          <input type="text" id="nav-search" placeholder="Search bodies / stars..." autocomplete="off" spellcheck="false" />
-          <div id="catalog-search-results" class="catalog-search-results" hidden></div>
+        <div class="nav-tabs" role="tablist" aria-label="Navigation sections">
+          <button type="button" class="nav-tab active" data-nav-tab="explore" title="Search and bodies" aria-label="Search and bodies" aria-selected="true">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"></circle><path d="m16 16 4 4"></path></svg>
+          </button>
+          <button type="button" class="nav-tab" data-nav-tab="constellations" title="Constellations" aria-label="Constellations" aria-selected="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 1.7 5.2H19l-4.3 3.1 1.6 5.2-4.3-3.2-4.3 3.2 1.6-5.2L5 8.2h5.3L12 3Z"></path><path d="M4 20h16"></path></svg>
+          </button>
+          <button type="button" class="nav-tab" data-nav-tab="models" title="Milky Way 3D models" aria-label="Milky Way 3D models" aria-selected="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4.5 7.2 12 11.4l7.5-4.2L12 3Z"></path><path d="M4.5 7.2v8.5L12 20l7.5-4.3V7.2"></path><path d="M12 11.4V20"></path></svg>
+          </button>
+          <div class="nav-tab-spacer"></div>
+          <button type="button" class="nav-tab" data-nav-tab="info" title="About and limits" aria-label="About and limits" aria-selected="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"></circle><path d="M12 11v5"></path><path d="M12 8h.01"></path></svg>
+          </button>
+          <button type="button" class="nav-tab" data-nav-tab="settings" title="Settings" aria-label="Settings" aria-selected="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10"></path><path d="M18 7h2"></path><circle cx="16" cy="7" r="2"></circle><path d="M4 17h2"></path><path d="M10 17h10"></path><circle cx="8" cy="17" r="2"></circle></svg>
+          </button>
         </div>
 
-        <!-- Scrollable content -->
-        <div id="nav-scroll">
+        <div class="nav-content">
+          <section id="nav-tab-explore" class="nav-tab-panel active" data-nav-panel="explore" role="tabpanel">
+            <!-- Sticky search bar -->
+            <div id="nav-search-box">
+              <input type="text" id="nav-search" placeholder="Search bodies / stars..." autocomplete="off" spellcheck="false" />
+              <div id="catalog-search-results" class="catalog-search-results" hidden></div>
+            </div>
+
+            <!-- Scrollable content -->
+            <div id="nav-scroll">
 
           <div class="nav-section-block">
             <div class="nav-section-title">Presets</div>
@@ -1815,27 +1903,50 @@
             <div class="nav-item nav-moon" data-travel="Triton">   <span class="nav-dot" style="background:#b8c8e6"></span>Triton    <span class="nav-parent">Neptune</span></div>
           </div>
 
-          <div class="nav-section-block">
-            <div class="nav-divider"></div>
-            <div class="nav-section-title">Constellations</div>
-            <div id="constellation-list" class="nav-model-list"></div>
-            <div id="constellation-pagination" class="nav-model-pagination"></div>
-          </div>
-
-          <div class="nav-section-block">
-            <div class="nav-divider"></div>
-            <div class="nav-section-title">Milky Way 3D Models</div>
-            <div id="mw-model-list" class="nav-model-list"></div>
-            <div id="mw-model-pagination" class="nav-model-pagination"></div>
-          </div>
-
           <div class="nav-bottom-pad"></div>
-        </div><!-- #nav-scroll -->
+            </div><!-- #nav-scroll -->
+          </section>
 
-        <div class="nav-footer">
-          <button id="nav-limits-btn" class="nav-footer-btn">Limits &amp; Assumptions</button>
-          <button id="nav-about-btn" class="nav-footer-btn">About</button>
-          <button id="nav-settings-btn" class="nav-footer-btn">⚙ Settings</button>
+          <section id="nav-tab-constellations" class="nav-tab-panel" data-nav-panel="constellations" role="tabpanel">
+            <div class="nav-tab-scroll">
+              <div class="nav-section-block">
+                <div class="nav-section-title">Constellations</div>
+                <div id="constellation-list" class="nav-model-list"></div>
+                <div id="constellation-pagination" class="nav-model-pagination"></div>
+              </div>
+              <div class="nav-bottom-pad"></div>
+            </div>
+          </section>
+
+          <section id="nav-tab-models" class="nav-tab-panel" data-nav-panel="models" role="tabpanel">
+            <div class="nav-tab-scroll">
+              <div class="nav-section-block">
+                <div class="nav-section-title">Milky Way 3D Models</div>
+                <div id="mw-model-list" class="nav-model-list"></div>
+                <div id="mw-model-pagination" class="nav-model-pagination"></div>
+              </div>
+              <div class="nav-bottom-pad"></div>
+            </div>
+          </section>
+
+          <section id="nav-tab-info" class="nav-tab-panel" data-nav-panel="info" role="tabpanel">
+            <div class="nav-tab-scroll">
+              <div class="nav-section-block nav-utility-section">
+                <div class="nav-section-title">Info</div>
+                <button id="nav-limits-btn" class="nav-footer-btn">Limits &amp; Assumptions</button>
+                <button id="nav-about-btn" class="nav-footer-btn">About</button>
+              </div>
+            </div>
+          </section>
+
+          <section id="nav-tab-settings" class="nav-tab-panel" data-nav-panel="settings" role="tabpanel">
+            <div class="nav-tab-scroll">
+              <div class="nav-section-block nav-utility-section">
+                <div class="nav-section-title">Settings</div>
+                <button id="nav-settings-btn" class="nav-footer-btn">Open Settings</button>
+              </div>
+            </div>
+          </section>
         </div>
       </div>
     </div>

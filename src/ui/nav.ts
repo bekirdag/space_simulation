@@ -36,6 +36,8 @@ export class NavPanel {
   private modelPager: HTMLElement | null = null;
   private constellationList: HTMLElement | null = null;
   private constellationPager: HTMLElement | null = null;
+  private tabs: HTMLElement[] = [];
+  private tabPanels: HTMLElement[] = [];
   private _focusedBodyName: string | null = null;
   private focusedSystemCenterName: string | null = null;
   private _selectedCatalogStar: StarSearchResult | null = null;
@@ -46,6 +48,7 @@ export class NavPanel {
   private constellationPage = 0;
   private readonly modelPageSize = 10;
   private readonly constellationPageSize = 10;
+  private activeTab = "explore";
   private open     = true;
 
   /** The catalog/map object most recently selected from search results or map labels. */
@@ -100,14 +103,44 @@ export class NavPanel {
     this.modelPager = document.getElementById("mw-model-pagination");
     this.constellationList = document.getElementById("constellation-list");
     this.constellationPager = document.getElementById("constellation-pagination");
+    this.tabs = Array.from(this.panel.querySelectorAll<HTMLElement>("[data-nav-tab]"));
+    this.tabPanels = Array.from(this.panel.querySelectorAll<HTMLElement>("[data-nav-panel]"));
 
     this.toggle.addEventListener("click", () => this.setOpen(!this.open));
     this.search.addEventListener("input",  () => this.filter());
     this.search.addEventListener("click",  e => e.stopPropagation()); // don't bubble to canvas
     this.catalogResults.addEventListener("click", e => e.stopPropagation());
 
+    this.bindTabs();
     this.bindLinks();
     this.renderCatalogLists();
+  }
+
+  private bindTabs(): void {
+    this.tabs.forEach(tab => {
+      tab.addEventListener("click", e => {
+        e.stopPropagation();
+        const tabId = tab.dataset["navTab"];
+        if (!tabId) return;
+        this.setActiveTab(tabId, tabId === "explore");
+      });
+    });
+    this.setActiveTab(this.activeTab);
+  }
+
+  private setActiveTab(tabId: string, focusSearch = false): void {
+    this.activeTab = tabId;
+    this.tabs.forEach(tab => {
+      const isActive = tab.dataset["navTab"] === tabId;
+      tab.classList.toggle("active", isActive);
+      tab.setAttribute("aria-selected", isActive ? "true" : "false");
+    });
+    this.tabPanels.forEach(panel => {
+      const isActive = panel.dataset["navPanel"] === tabId;
+      panel.classList.toggle("active", isActive);
+      panel.hidden = !isActive;
+    });
+    if (focusSearch) requestAnimationFrame(() => this.search.focus({ preventScroll: true }));
   }
 
   private bindLinks(): void {
@@ -325,34 +358,25 @@ export class NavPanel {
   private filter(): void {
     const q = this.search.value.trim().toLowerCase();
     const searchingCatalog = q.length >= 2;
+    const explorePanel = this.panel.querySelector<HTMLElement>("[data-nav-panel='explore']") ?? this.panel;
 
     // Show/hide individual travel items
-    this.panel.querySelectorAll<HTMLElement>("[data-travel]").forEach(el => {
+    explorePanel.querySelectorAll<HTMLElement>("[data-travel]").forEach(el => {
       const name = (el.dataset["travel"] ?? "").toLowerCase();
       const text = (el.textContent ?? "").toLowerCase();
       el.style.display = (!q || name.includes(q) || text.includes(q)) ? "" : "none";
     });
 
     // Show/hide preset items
-    this.panel.querySelectorAll<HTMLElement>("[data-preset]").forEach(el => {
-      const text = (el.textContent ?? "").toLowerCase();
-      el.style.display = (!q || text.includes(q)) ? "" : "none";
-    });
-
-    this.panel.querySelectorAll<HTMLElement>("[data-catalog-model]").forEach(el => {
-      const text = (el.textContent ?? "").toLowerCase();
-      el.style.display = (!q || text.includes(q)) ? "" : "none";
-    });
-
-    this.panel.querySelectorAll<HTMLElement>("[data-constellation]").forEach(el => {
+    explorePanel.querySelectorAll<HTMLElement>("[data-preset]").forEach(el => {
       const text = (el.textContent ?? "").toLowerCase();
       el.style.display = (!q || text.includes(q)) ? "" : "none";
     });
 
     // Hide section headers + dividers when all their items are hidden
-    this.panel.querySelectorAll<HTMLElement>(".nav-section-block").forEach(block => {
+    explorePanel.querySelectorAll<HTMLElement>(".nav-section-block").forEach(block => {
       const hasVisible = Array.from(
-        block.querySelectorAll<HTMLElement>("[data-travel],[data-preset],[data-catalog-model],[data-constellation]"),
+        block.querySelectorAll<HTMLElement>("[data-travel],[data-preset]"),
       ).some(el => el.style.display !== "none");
       block.style.display = hasVisible ? "" : "none";
     });
