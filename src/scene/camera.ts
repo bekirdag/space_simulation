@@ -10,6 +10,8 @@ const MIN_DISTANCE = 1e-7; // AU
 const MAX_DISTANCE = FAR;
 const CLOSEUP_VIEW_FILL = 0.88;
 const ORBIT_POLE_MARGIN = 0.02;
+const CINEMATIC_TRAVEL_ACCEL_MS = 500;
+const CINEMATIC_TRAVEL_DECEL_MS = 500;
 
 interface CameraTravelAnimation {
   fromTarget: Vec3;
@@ -38,6 +40,38 @@ function aspectLimitedNdcRadius(fill: number): number {
   if (typeof window === "undefined" || window.innerHeight <= 0) return fill;
   const aspect = window.innerWidth / window.innerHeight;
   return Math.max(0.25, Math.min(fill, fill * aspect));
+}
+
+function cinematicTravelProgress(elapsedMs: number, durationMs: number): number {
+  if (!Number.isFinite(elapsedMs) || !Number.isFinite(durationMs) || durationMs <= 0) return 1;
+
+  const elapsed = clamp(elapsedMs, 0, durationMs);
+  const accelMs = Math.min(CINEMATIC_TRAVEL_ACCEL_MS, durationMs * 0.25);
+  const decelMs = Math.min(CINEMATIC_TRAVEL_DECEL_MS, durationMs * 0.25);
+  const cruiseMs = Math.max(0, durationMs - accelMs - decelMs);
+  const travelArea = cruiseMs + (accelMs + decelMs) * 0.5;
+  if (travelArea <= 0) {
+    const linearT = elapsed / durationMs;
+    return linearT * linearT * (3 - 2 * linearT);
+  }
+
+  const cruiseVelocity = 1 / travelArea;
+  if (elapsed <= accelMs) {
+    return 0.5 * cruiseVelocity * elapsed * elapsed / Math.max(accelMs, 1);
+  }
+
+  const accelDistance = 0.5 * cruiseVelocity * accelMs;
+  const cruiseEndMs = accelMs + cruiseMs;
+  if (elapsed <= cruiseEndMs) {
+    return accelDistance + cruiseVelocity * (elapsed - accelMs);
+  }
+
+  const decelElapsed = elapsed - cruiseEndMs;
+  const cruiseDistance = cruiseVelocity * cruiseMs;
+  const decelDistance =
+    cruiseVelocity * decelElapsed -
+    0.5 * cruiseVelocity * decelElapsed * decelElapsed / Math.max(decelMs, 1);
+  return clamp(accelDistance + cruiseDistance + decelDistance, 0, 1);
 }
 
 export interface CameraUniforms {
@@ -279,8 +313,9 @@ export class Camera {
     const anim = this.travelAnimation;
     if (!anim) return;
 
-    const linearT = Math.min(1, Math.max(0, (nowMs - anim.startMs) / anim.durationMs));
-    const t = linearT * linearT * (3 - 2 * linearT);
+    const elapsedMs = nowMs - anim.startMs;
+    const linearT = Math.min(1, Math.max(0, elapsedMs / anim.durationMs));
+    const t = cinematicTravelProgress(elapsedMs, anim.durationMs);
     this.target = [
       anim.fromTarget[0] + (anim.toTarget[0] - anim.fromTarget[0]) * t,
       anim.fromTarget[1] + (anim.toTarget[1] - anim.fromTarget[1]) * t,
