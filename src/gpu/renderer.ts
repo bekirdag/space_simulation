@@ -43,8 +43,6 @@ const SCENE_DEPTH_DISABLED: GPUDepthStencilState = {
 };
 const TEXTURED_GALAXY_MODEL_CAPACITY = 32;
 const DUST_CLOUD_UNIFORM_BYTES = 16;
-const DUST_RENDER_FADE_START_AU = 4_000;
-const DUST_RENDER_FADE_END_AU = 16_000;
 const DUST_DEFAULT_TRANSPARENCY = 0.55;
 const MILKY_WAY_MODEL_RETRY_MS = 120_000;
 const MILKY_WAY_MODEL_BACKEND_RETRY_MS = 120_000;
@@ -120,11 +118,6 @@ interface MilkyWayModelPartEntry {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
-}
-
-function smoother01(value: number): number {
-  const t = clamp(value, 0, 1);
-  return t * t * t * (t * (t * 6 - 15) + 10);
 }
 
 function bodyDistanceAU(a: Body, b: Body): number {
@@ -1308,10 +1301,9 @@ export class Renderer {
 
   private writeDustUniform(): void {
     if (!this.dustUniformBuffer) return;
-    const dustVisibility = this.dustVisibility();
     const data = new Float32Array(DUST_CLOUD_UNIFORM_BYTES / 4);
     data[0] = this.dustOpacity();
-    data[1] = dustVisibility;
+    data[1] = 1;
     data[2] = this._dustTransparency;
     data[3] = 0;
     this.ctx.device.queue.writeBuffer(this.dustUniformBuffer, 0, data);
@@ -1490,13 +1482,6 @@ export class Renderer {
     data[10] = model.color[2];
     data[11] = 0;
     this.ctx.device.queue.writeBuffer(entry.uniformBuffer, 0, data);
-  }
-
-  private dustVisibility(): number {
-    return smoother01(
-      (this._cameraDistanceFromSun - DUST_RENDER_FADE_START_AU) /
-      (DUST_RENDER_FADE_END_AU - DUST_RENDER_FADE_START_AU),
-    );
   }
 
   private dustOpacity(): number {
@@ -1716,7 +1701,6 @@ export class Renderer {
     if (
       this._showDust &&
       this.dustCloudCount > 0 &&
-      this.dustVisibility() > 0.01 &&
       this.dustOpacity() > 0.001
     ) {
       pass.setPipeline(this.dustPipeline);
