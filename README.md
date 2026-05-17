@@ -27,7 +27,7 @@ help from Claude and Codex 5.5.
   These stars can be searched and focused without being listed in the right nav.
 - 200,000 Milky Way background stars and a 100,000-entry galaxy layer.
 - NASA SVS constellation lines and titles.
-- 96,000 procedural Galactic dust clouds seeded from the NASA/GSFC LAMBDA
+- 24,000 procedural Galactic dust clouds seeded from the NASA/GSFC LAMBDA
   Meisner-Finkbeiner 2015 E(B-V) all-sky dust map. The renderer uses
   the public reddening directions as weights, then projects cloud samples
   through a Milky Way disk/spiral model instead of rendering a Sun-centered
