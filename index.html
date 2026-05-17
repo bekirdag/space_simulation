@@ -832,6 +832,10 @@
         background: rgba(80,140,255,0.15);
         border-color: rgba(80,140,255,0.40);
       }
+      .s-chips input[type=radio]:disabled + .s-chip {
+        opacity: 0.35;
+        cursor: default;
+      }
       .s-chips label:hover .s-chip { border-color: rgba(255,255,255,0.22); color: rgba(255,255,255,0.65); }
 
       /* Moon sub-items */
@@ -1726,6 +1730,15 @@
               <span id="set-dust-transparency-value" class="settings-value">55%</span>
             </div>
             <input class="s-range" type="range" id="set-dust-transparency" min="0" max="100" step="1" value="55" aria-label="Dust transparency">
+          </div>
+          <div class="settings-row">
+            <span class="settings-row-label">Dust count</span>
+            <div class="s-chips">
+              <label><input type="radio" name="dust-clouds" value="6000"><span class="s-chip">6k</span></label>
+              <label><input type="radio" name="dust-clouds" value="12000"><span class="s-chip">12k</span></label>
+              <label><input type="radio" name="dust-clouds" value="24000" checked><span class="s-chip">24k</span></label>
+              <label><input type="radio" name="dust-clouds" value="48000"><span class="s-chip">48k</span></label>
+            </div>
           </div>
           <div class="settings-row">
             <span class="settings-row-label">Sgr A* lensing</span>

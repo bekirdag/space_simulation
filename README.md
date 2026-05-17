@@ -27,11 +27,11 @@ help from Claude and Codex 5.5.
   These stars can be searched and focused without being listed in the right nav.
 - 200,000 Milky Way background stars and a 100,000-entry galaxy layer.
 - NASA SVS constellation lines and titles.
-- 24,000 procedural Galactic dust clouds seeded from the NASA/GSFC LAMBDA
-  Meisner-Finkbeiner 2015 E(B-V) all-sky dust map. The renderer uses
-  the public reddening directions as weights, then projects cloud samples
-  through a Milky Way disk/spiral model instead of rendering a Sun-centered
-  shell.
+- Up to 48,000 procedural Galactic dust clouds seeded from the NASA/GSFC
+  LAMBDA Meisner-Finkbeiner 2015 E(B-V) all-sky dust map, with 24,000 drawn
+  by default and 6k/12k/24k/48k selectable in Settings. The renderer uses the
+  public reddening directions as weights, then projects cloud samples through
+  a Milky Way disk/spiral model instead of rendering a Sun-centered shell.
 - Visual Sagittarius A* black-hole lensing approximation using the physical
   event-horizon radius derived from a 4.3-million-solar-mass black hole.
 - Camera-distance adjusted apparent brightness mode for bodies, Milky Way

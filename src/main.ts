@@ -62,7 +62,13 @@ import {
   searchMilkyWayModels,
 } from "./catalog/milkyway-models";
 import { loadMilkywayStars } from "./catalog/milkyway";
-import { buildDustCloudBuffer, DUST_CLOUD_FLOATS, DUST_CLOUD_SOURCE, loadDustMap } from "./catalog/dust";
+import {
+  buildDustCloudBuffer,
+  DUST_CLOUD_DEFAULT_DRAW_COUNT,
+  DUST_CLOUD_FLOATS,
+  DUST_CLOUD_SOURCE,
+  loadDustMap,
+} from "./catalog/dust";
 import { NEARBY_STAR_LABELS, SGR_A_STAR_POS, type NearbyStarLabel } from "./catalog/nearby-stars";
 import { sortIntoOctants } from "./gpu/sky-cull";
 import { loadConstellationLines, type ConstellationLabel } from "./catalog/constellations";
@@ -812,6 +818,14 @@ async function main(): Promise<void> {
     const dustTransparency = Math.max(0, Math.min(1, Number(dustTransparencyInput.value) / 100));
     dustTransparencyInput.disabled = !showDust;
     dustTransparencyValue.textContent = `${Math.round(dustTransparency * 100)}%`;
+    const dustDrawLimit = parseInt(
+      (document.querySelector('input[name="dust-clouds"]:checked') as HTMLInputElement)?.value ??
+      String(DUST_CLOUD_DEFAULT_DRAW_COUNT),
+      10,
+    );
+    for (const input of document.querySelectorAll<HTMLInputElement>('input[name="dust-clouds"]')) {
+      input.disabled = !showDust;
+    }
     const showBlackHole = (document.getElementById("set-black-hole") as HTMLInputElement).checked;
     const actualBodyBrightness = (document.getElementById("set-body-brightness") as HTMLInputElement).checked;
     showGalaxies    = (document.getElementById("set-galaxies") as HTMLInputElement).checked;
@@ -835,6 +849,7 @@ async function main(): Promise<void> {
       showConstellations,
       showDust,
       dustTransparency,
+      dustDrawLimit,
       showBlackHole,
       showTrails,
       mwStarLimit:  mwVal,

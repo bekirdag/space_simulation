@@ -11,7 +11,8 @@ import { NEBULA_FLOATS } from "./nebulas";
 // an angular density weight seen from the Sun.
 
 export const DUST_CLOUD_FLOATS = NEBULA_FLOATS;
-export const DUST_CLOUD_COUNT = 24_000;
+export const DUST_CLOUD_COUNT = 48_000;
+export const DUST_CLOUD_DEFAULT_DRAW_COUNT = 24_000;
 export const DUST_CLOUD_CAPACITY = DUST_CLOUD_COUNT;
 export const DUST_MAP_FLOATS = 8;
 export const DUST_MILKY_WAY_KPC_TO_AU = 8_000;
@@ -20,7 +21,8 @@ export const DUST_GALAXY_RADIUS_KPC = 16.5;
 export const DUST_GALAXY_HALF_HEIGHT_KPC = 1.6;
 export const DUST_GALAXY_HALF_HEIGHT_AU = DUST_GALAXY_HALF_HEIGHT_KPC * DUST_MILKY_WAY_KPC_TO_AU;
 export const DUST_CLOUD_SOURCE =
-  `${DUST_CLOUD_COUNT.toLocaleString()} MF2015 reddening-weighted Milky Way disk dust clouds`;
+  `${DUST_CLOUD_COUNT.toLocaleString()} MF2015 reddening-weighted Milky Way disk dust clouds ` +
+  `(${DUST_CLOUD_DEFAULT_DRAW_COUNT.toLocaleString()} drawn by default)`;
 
 const DUST_MAP_DATA_URL = "/data/dust-map-mf2015.bin";
 const DUST_MAP_META_URL = "/data/dust-map-mf2015.meta.json";

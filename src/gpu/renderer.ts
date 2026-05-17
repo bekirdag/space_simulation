@@ -21,6 +21,7 @@ import { type MilkyWayModelObject } from "../catalog/milkyway-models";
 import { NEBULA_FLOATS } from "../catalog/nebulas";
 import {
   DUST_CLOUD_CAPACITY,
+  DUST_CLOUD_DEFAULT_DRAW_COUNT,
   DUST_CLOUD_FLOATS,
 } from "../catalog/dust";
 import { CONSTELLATION_FLOATS } from "../catalog/constellations";
@@ -279,6 +280,7 @@ export class Renderer {
   private _cameraDistanceFromSun = 0;
   private _showDust = true;
   private _dustTransparency = DUST_DEFAULT_TRANSPARENCY;
+  private _dustDrawLimit = DUST_CLOUD_DEFAULT_DRAW_COUNT;
   private _showBlackHole = true;
   private _blackHoleUniform = new Float32Array([
     0, 0, 0, 0,
@@ -295,6 +297,7 @@ export class Renderer {
     actualBodyBrightness?: boolean;
     showDust?: boolean;
     dustTransparency?: number;
+    dustDrawLimit?: number;
     showBlackHole?: boolean;
   }): void {
     if (s.starLimit   !== undefined) this._starLimit   = s.starLimit;
@@ -309,6 +312,9 @@ export class Renderer {
     }
     if (s.showDust !== undefined) this._showDust = s.showDust;
     if (s.dustTransparency !== undefined) this._dustTransparency = clamp(s.dustTransparency, 0, 1);
+    if (s.dustDrawLimit !== undefined) {
+      this._dustDrawLimit = clamp(Math.floor(s.dustDrawLimit), 0, DUST_CLOUD_CAPACITY);
+    }
     if (s.showBlackHole !== undefined) this._showBlackHole = s.showBlackHole;
   }
 
@@ -1698,14 +1704,15 @@ export class Renderer {
 
     // ── Partial galactic dust clouds — between background and foreground stars.
     // Positions are sampled from the MF2015 E(B-V) map; nearby catalog stars draw over dust.
+    const dustDrawCount = Math.min(this.dustCloudCount, this._dustDrawLimit);
     if (
       this._showDust &&
-      this.dustCloudCount > 0 &&
+      dustDrawCount > 0 &&
       this.dustOpacity() > 0.001
     ) {
       pass.setPipeline(this.dustPipeline);
       pass.setBindGroup(0, this.dustBindGroup);
-      pass.draw(6, this.dustCloudCount, 0, 0);
+      pass.draw(6, dustDrawCount, 0, 0);
     }
 
     // ── Static catalog stars (nearby HYG) ─────────────────────────────────
