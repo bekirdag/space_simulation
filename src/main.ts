@@ -1507,7 +1507,9 @@ async function main(): Promise<void> {
   }
 
   function constellationEarthFocus(figure: ConstellationFigure): {
-    target: [number, number, number];
+    eye: [number, number, number];
+    lookTarget: [number, number, number];
+    surfaceTarget: [number, number, number];
     direction: [number, number, number];
     surfaceRadius: number;
     earthRadius: number;
@@ -1535,13 +1537,21 @@ async function main(): Promise<void> {
     const uy = dy / len;
     const uz = dz / len;
     const surfaceRadius = Math.max(earth.radius * 1.04, earth.radius + 1e-7);
+    const cameraRadius = Math.max(earth.radius * 1.14, earth.radius + 5e-7);
     const surfaceTarget: [number, number, number] = [
       earth.x + ux * surfaceRadius,
       earth.y + uy * surfaceRadius,
       earth.z + uz * surfaceRadius,
     ];
+    const eye: [number, number, number] = [
+      earth.x + ux * cameraRadius,
+      earth.y + uy * cameraRadius,
+      earth.z + uz * cameraRadius,
+    ];
     return {
-      target: surfaceTarget,
+      eye,
+      lookTarget: constellationPoint,
+      surfaceTarget,
       direction: [ux, uy, uz],
       surfaceRadius,
       earthRadius: earth.radius,
@@ -1552,23 +1562,24 @@ async function main(): Promise<void> {
     const focus = constellationEarthFocus(figure);
     if (!focus) return;
 
-    const viewDistance = Math.max(
-      camera.closeDistanceForRadius(focus.earthRadius),
-      focus.surfaceRadius * 2.2,
-    );
-    const eye: [number, number, number] = [
-      focus.target[0] - focus.direction[0] * viewDistance,
-      focus.target[1] - focus.direction[1] * viewDistance,
-      focus.target[2] - focus.direction[2] * viewDistance,
-    ];
-    camera.lookFromEyeToTarget(eye, focus.target);
+    camera.lookFromEyeToTarget(focus.eye, focus.lookTarget);
+    camera.lockTarget = false;
   }
 
   function updateConstellationEarthFocus(): void {
-    if (!selectedConstellation || !camera.lockTarget) return;
+    if (!selectedConstellation) return;
     const focus = constellationEarthFocus(selectedConstellation);
     if (!focus) return;
-    camera.target = focus.target;
+    const snapshot = camera.snapshot();
+    const dx = focus.eye[0] - snapshot.eye[0];
+    const dy = focus.eye[1] - snapshot.eye[1];
+    const dz = focus.eye[2] - snapshot.eye[2];
+    camera.lookFromEyeToTarget(focus.eye, [
+      camera.target[0] + dx,
+      camera.target[1] + dy,
+      camera.target[2] + dz,
+    ]);
+    camera.lockTarget = false;
   }
 
   function selectConstellation(id: string): void {
