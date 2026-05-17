@@ -21,11 +21,14 @@ struct BlackHole {
 const SHADOW_RADIUS_PER_HORIZON: f32 = 2.6;
 const PI: f32 = 3.14159265359;
 const HDR_EXPOSURE: f32 = 0.92;
+const BLOOM_STRENGTH: f32 = 0.72;
 
 @group(0) @binding(0) var<uniform> camera:    Camera;
 @group(0) @binding(1) var<uniform> blackHole: BlackHole;
 @group(0) @binding(2) var sceneTex: texture_2d<f32>;
 @group(0) @binding(3) var sceneSampler: sampler;
+@group(0) @binding(4) var bloomTex: texture_2d<f32>;
+@group(0) @binding(5) var bloomSampler: sampler;
 
 struct VertexOut {
   @builtin(position) clip_pos: vec4<f32>,
@@ -58,11 +61,22 @@ fn sample_scene(uv: vec2<f32>) -> vec3<f32> {
   return textureSampleLevel(sceneTex, sceneSampler, uv, 0.0).rgb;
 }
 
+fn sample_bloom(uv: vec2<f32>) -> vec3<f32> {
+  if uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 {
+    return vec3<f32>(0.0);
+  }
+  return textureSampleLevel(bloomTex, bloomSampler, uv, 0.0).rgb * BLOOM_STRENGTH;
+}
+
 fn aces_tonemap(color: vec3<f32>) -> vec3<f32> {
   let x = max(color * HDR_EXPOSURE, vec3<f32>(0.0));
   let mapped = (x * (2.51 * x + vec3<f32>(0.03))) /
     (x * (2.43 * x + vec3<f32>(0.59)) + vec3<f32>(0.14));
   return clamp(pow(clamp(mapped, vec3<f32>(0.0), vec3<f32>(1.0)), vec3<f32>(1.0 / 2.2)), vec3<f32>(0.0), vec3<f32>(1.0));
+}
+
+fn present_color(hdrColor: vec3<f32>, uv: vec2<f32>) -> vec4<f32> {
+  return vec4<f32>(aces_tonemap(hdrColor + sample_bloom(uv)), 1.0);
 }
 
 fn hash1(x: f32) -> f32 {
@@ -83,7 +97,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   let raw = sample_scene(in.uv);
   let clip = camera.viewProj * vec4<f32>(blackHole.pos_size.xyz, 1.0);
   if clip.w <= 0.0 || blackHole.pos_size.w <= 0.0 || blackHole.params.w <= 0.0 {
-    return vec4<f32>(aces_tonemap(raw), 1.0);
+    return present_color(raw, in.uv);
   }
 
   let centerNdc = clip.xy / clip.w;
@@ -96,12 +110,12 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   let horizonUvR = max(0.5 * blackHole.pos_size.w * camera.upAndFocal.w / clip.w, 0.0);
   let shadowR = horizonUvR * SHADOW_RADIUS_PER_HORIZON;
   if shadowR < 0.75 / viewport.y {
-    return vec4<f32>(aces_tonemap(raw), 1.0);
+    return present_color(raw, in.uv);
   }
 
   if centerUv.x < -shadowR * 8.0 || centerUv.x > 1.0 + shadowR * 8.0 ||
      centerUv.y < -shadowR * 8.0 || centerUv.y > 1.0 + shadowR * 8.0 {
-    return vec4<f32>(aces_tonemap(raw), 1.0);
+    return present_color(raw, in.uv);
   }
 
   let deltaUv = in.uv - centerUv;
@@ -210,5 +224,5 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   col = mix(col, vec3<f32>(0.0), finalFeather * 0.35);
   col = mix(col, vec3<f32>(0.0), finalCore * 0.998);
 
-  return vec4<f32>(aces_tonemap(col), 1.0);
+  return present_color(col, in.uv);
 }

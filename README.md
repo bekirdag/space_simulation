@@ -38,6 +38,9 @@ help from Claude and Codex 5.5.
   stars, and galaxies.
 - HDR `rgba16float` scene rendering with ACES-style tone mapping so high
   star intensities can glow without flattening immediately to white.
+- Quarter-resolution HDR bloom: bright star pixels are extracted, blurred with
+  a separable Gaussian pass, and composited before tone mapping so hotter,
+  larger, and nearer stars form stronger halos.
 
 ## Requirements
 

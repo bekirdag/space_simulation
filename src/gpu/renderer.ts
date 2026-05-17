@@ -7,6 +7,8 @@ import nebulaWGSL         from "./nebula.wgsl?raw";
 import nebulaTexturedWGSL from "./nebula-textured.wgsl?raw";
 import milkyWayModelWGSL  from "./milkyway-model.wgsl?raw";
 import dustWGSL     from "./dust.wgsl?raw";
+import bloomExtractWGSL from "./bloom-extract.wgsl?raw";
+import bloomBlurWGSL from "./bloom-blur.wgsl?raw";
 import blackholeWGSL from "./blackhole.wgsl?raw";
 import constellationWGSL from "./constellation.wgsl?raw";
 import trailWGSL    from "./trail.wgsl?raw";
@@ -38,6 +40,8 @@ const MILKY_WAY_MODEL_UNIFORM_BYTES = 64;
 const MILKY_WAY_MODEL_MATERIAL_BYTES = 48;
 const MODEL_DEPTH_FORMAT: GPUTextureFormat = "depth24plus";
 const SCENE_COLOR_FORMAT: GPUTextureFormat = "rgba16float";
+const BLOOM_SCALE = 4;
+const BLOOM_BLUR_BYTES = 16;
 const SCENE_DEPTH_DISABLED: GPUDepthStencilState = {
   format: MODEL_DEPTH_FORMAT,
   depthWriteEnabled: false,
@@ -172,6 +176,8 @@ export class Renderer {
   private nebulaTexturedPipeline!:  GPURenderPipeline;
   private milkyWayModelPipeline!:   GPURenderPipeline;
   private dustPipeline!:    GPURenderPipeline;
+  private bloomExtractPipeline!: GPURenderPipeline;
+  private bloomBlurPipeline!: GPURenderPipeline;
   private blackHolePipeline!: GPURenderPipeline;
   private constellationPipeline!: GPURenderPipeline;
   private trailPipeline!:   GPURenderPipeline;
@@ -212,7 +218,10 @@ export class Renderer {
   private milkyWayModelBackendRetryAt = 0;
   private activeMilkyWayModelId: string | null = null;
   private dustBindGroup!:   GPUBindGroup;
-  private blackHoleBindGroup!: GPUBindGroup;
+  private bloomExtractBindGroup: GPUBindGroup | null = null;
+  private bloomBlurHBindGroup:   GPUBindGroup | null = null;
+  private bloomBlurVBindGroup:   GPUBindGroup | null = null;
+  private blackHoleBindGroup: GPUBindGroup | null = null;
   private constellationBindGroup!: GPUBindGroup;
   private trailBindGroup!:  GPUBindGroup;
   private starBGL!:         GPUBindGroupLayout;
@@ -220,13 +229,24 @@ export class Renderer {
   private galaxyBGL!:       GPUBindGroupLayout;
   private nebulaBGL!:       GPUBindGroupLayout;
   private dustBGL!:         GPUBindGroupLayout;
+  private bloomExtractBGL!: GPUBindGroupLayout;
+  private bloomBlurBGL!:    GPUBindGroupLayout;
   private blackHoleBGL!:    GPUBindGroupLayout;
   private constellationBGL!: GPUBindGroupLayout;
   private sceneSampler!:    GPUSampler;
+  private bloomSampler!:    GPUSampler;
   private sceneTexture:     GPUTexture | null = null;
   private sceneTextureView: GPUTextureView | null = null;
   private sceneTextureWidth = 0;
   private sceneTextureHeight = 0;
+  private bloomExtractTexture:     GPUTexture | null = null;
+  private bloomExtractTextureView: GPUTextureView | null = null;
+  private bloomPingTexture:        GPUTexture | null = null;
+  private bloomPingTextureView:    GPUTextureView | null = null;
+  private bloomPongTexture:        GPUTexture | null = null;
+  private bloomPongTextureView:    GPUTextureView | null = null;
+  private bloomWidth = 0;
+  private bloomHeight = 0;
   private depthTexture:     GPUTexture | null = null;
   private depthTextureView: GPUTextureView | null = null;
   private depthTextureWidth = 0;
@@ -237,6 +257,8 @@ export class Renderer {
   private starLodBuffer!:   GPUBuffer;  // x=legacy fade, y=camera radius
   private mwLodBuffer!:     GPUBuffer;  // x=fade, y=actual brightness
   private galaxyLodBuffer!: GPUBuffer;  // x=actual brightness
+  private bloomBlurHBuffer!: GPUBuffer;
+  private bloomBlurVBuffer!: GPUBuffer;
 
   private bodyCount    = 0;
   private starCount    = 0;
@@ -413,6 +435,23 @@ export class Renderer {
       minFilter: "linear",
       addressModeU: "clamp-to-edge",
       addressModeV: "clamp-to-edge",
+    });
+    this.bloomSampler = device.createSampler({
+      label: "hdr-bloom-sampler",
+      magFilter: "linear",
+      minFilter: "linear",
+      addressModeU: "clamp-to-edge",
+      addressModeV: "clamp-to-edge",
+    });
+    this.bloomBlurHBuffer = device.createBuffer({
+      label: "hdr-bloom-blur-horizontal",
+      size: BLOOM_BLUR_BYTES,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    this.bloomBlurVBuffer = device.createBuffer({
+      label: "hdr-bloom-blur-vertical",
+      size: BLOOM_BLUR_BYTES,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
     this.constellationCapacity = 1;
@@ -822,6 +861,48 @@ export class Renderer {
       depthStencil: SCENE_DEPTH_DISABLED,
     });
 
+    // ── HDR bloom post-process: bright-pass + separable blur ──────────────
+    this.bloomExtractBGL = device.createBindGroupLayout({
+      label: "hdr-bloom-extract-bgl",
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float" } },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "filtering" } },
+      ],
+    });
+    const bloomExtractShader = device.createShaderModule({ code: bloomExtractWGSL });
+    this.bloomExtractPipeline = device.createRenderPipeline({
+      label: "hdr-bloom-extract-pipeline",
+      layout: device.createPipelineLayout({ bindGroupLayouts: [this.bloomExtractBGL] }),
+      vertex:   { module: bloomExtractShader, entryPoint: "vs_main" },
+      fragment: {
+        module: bloomExtractShader,
+        entryPoint: "fs_main",
+        targets: [{ format: SCENE_COLOR_FORMAT }],
+      },
+      primitive: { topology: "triangle-list" },
+    });
+
+    this.bloomBlurBGL = device.createBindGroupLayout({
+      label: "hdr-bloom-blur-bgl",
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float" } },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "filtering" } },
+        { binding: 2, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
+      ],
+    });
+    const bloomBlurShader = device.createShaderModule({ code: bloomBlurWGSL });
+    this.bloomBlurPipeline = device.createRenderPipeline({
+      label: "hdr-bloom-blur-pipeline",
+      layout: device.createPipelineLayout({ bindGroupLayouts: [this.bloomBlurBGL] }),
+      vertex:   { module: bloomBlurShader, entryPoint: "vs_main" },
+      fragment: {
+        module: bloomBlurShader,
+        entryPoint: "fs_main",
+        targets: [{ format: SCENE_COLOR_FORMAT }],
+      },
+      primitive: { topology: "triangle-list" },
+    });
+
     // ── Sagittarius A* black-hole lensing post-process ────────────────────
     this.blackHoleBGL = device.createBindGroupLayout({
       label: "black-hole-bgl",
@@ -830,6 +911,8 @@ export class Renderer {
         { binding: 1, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
         { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float" } },
         { binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "filtering" } },
+        { binding: 4, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float" } },
+        { binding: 5, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "filtering" } },
       ],
     });
     const blackHoleShader = device.createShaderModule({ code: blackholeWGSL });
@@ -1517,16 +1600,168 @@ export class Renderer {
       usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
     });
     this.sceneTextureView = this.sceneTexture.createView();
-    this.blackHoleBindGroup = device.createBindGroup({
-      label: "black-hole-bg",
-      layout: this.blackHoleBGL,
-      entries: [
-        { binding: 0, resource: { buffer: this.cameraBuffer } },
-        { binding: 1, resource: { buffer: this.blackHoleBuffer } },
-        { binding: 2, resource: this.sceneTextureView },
-        { binding: 3, resource: this.sceneSampler },
-      ],
+    this.bloomExtractBindGroup = null;
+    this.blackHoleBindGroup = null;
+  }
+
+  private ensureBloomTextures(): void {
+    if (!this.sceneTextureView) {
+      throw new Error("HDR scene texture must exist before bloom textures");
+    }
+
+    const width = Math.max(1, Math.ceil(this.sceneTextureWidth / BLOOM_SCALE));
+    const height = Math.max(1, Math.ceil(this.sceneTextureHeight / BLOOM_SCALE));
+    const resized =
+      !this.bloomExtractTexture ||
+      !this.bloomExtractTextureView ||
+      !this.bloomPingTexture ||
+      !this.bloomPingTextureView ||
+      !this.bloomPongTexture ||
+      !this.bloomPongTextureView ||
+      this.bloomWidth !== width ||
+      this.bloomHeight !== height;
+
+    const { device } = this.ctx;
+    if (resized) {
+      this.bloomExtractTexture?.destroy();
+      this.bloomPingTexture?.destroy();
+      this.bloomPongTexture?.destroy();
+      this.bloomWidth = width;
+      this.bloomHeight = height;
+
+      const usage = GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING;
+      this.bloomExtractTexture = device.createTexture({
+        label: "hdr-bloom-extract",
+        size: { width, height },
+        format: SCENE_COLOR_FORMAT,
+        usage,
+      });
+      this.bloomPingTexture = device.createTexture({
+        label: "hdr-bloom-ping",
+        size: { width, height },
+        format: SCENE_COLOR_FORMAT,
+        usage,
+      });
+      this.bloomPongTexture = device.createTexture({
+        label: "hdr-bloom-pong",
+        size: { width, height },
+        format: SCENE_COLOR_FORMAT,
+        usage,
+      });
+      this.bloomExtractTextureView = this.bloomExtractTexture.createView();
+      this.bloomPingTextureView = this.bloomPingTexture.createView();
+      this.bloomPongTextureView = this.bloomPongTexture.createView();
+
+      device.queue.writeBuffer(this.bloomBlurHBuffer, 0, new Float32Array([1 / width, 0, 0, 0]));
+      device.queue.writeBuffer(this.bloomBlurVBuffer, 0, new Float32Array([0, 1 / height, 0, 0]));
+      this.bloomExtractBindGroup = null;
+      this.bloomBlurHBindGroup = null;
+      this.bloomBlurVBindGroup = null;
+      this.blackHoleBindGroup = null;
+    }
+
+    if (!this.bloomExtractTextureView || !this.bloomPingTextureView || !this.bloomPongTextureView) {
+      throw new Error("HDR bloom textures were not created");
+    }
+    if (!this.bloomExtractBindGroup) {
+      this.bloomExtractBindGroup = device.createBindGroup({
+        label: "hdr-bloom-extract-bg",
+        layout: this.bloomExtractBGL,
+        entries: [
+          { binding: 0, resource: this.sceneTextureView },
+          { binding: 1, resource: this.bloomSampler },
+        ],
+      });
+    }
+    if (!this.bloomBlurHBindGroup) {
+      this.bloomBlurHBindGroup = device.createBindGroup({
+        label: "hdr-bloom-blur-horizontal-bg",
+        layout: this.bloomBlurBGL,
+        entries: [
+          { binding: 0, resource: this.bloomExtractTextureView },
+          { binding: 1, resource: this.bloomSampler },
+          { binding: 2, resource: { buffer: this.bloomBlurHBuffer } },
+        ],
+      });
+    }
+    if (!this.bloomBlurVBindGroup) {
+      this.bloomBlurVBindGroup = device.createBindGroup({
+        label: "hdr-bloom-blur-vertical-bg",
+        layout: this.bloomBlurBGL,
+        entries: [
+          { binding: 0, resource: this.bloomPingTextureView },
+          { binding: 1, resource: this.bloomSampler },
+          { binding: 2, resource: { buffer: this.bloomBlurVBuffer } },
+        ],
+      });
+    }
+    if (!this.blackHoleBindGroup) {
+      this.blackHoleBindGroup = device.createBindGroup({
+        label: "black-hole-bg",
+        layout: this.blackHoleBGL,
+        entries: [
+          { binding: 0, resource: { buffer: this.cameraBuffer } },
+          { binding: 1, resource: { buffer: this.blackHoleBuffer } },
+          { binding: 2, resource: this.sceneTextureView },
+          { binding: 3, resource: this.sceneSampler },
+          { binding: 4, resource: this.bloomPongTextureView },
+          { binding: 5, resource: this.bloomSampler },
+        ],
+      });
+    }
+  }
+
+  private runBloomPasses(encoder: GPUCommandEncoder): void {
+    if (
+      !this.bloomExtractTextureView ||
+      !this.bloomPingTextureView ||
+      !this.bloomPongTextureView ||
+      !this.bloomExtractBindGroup ||
+      !this.bloomBlurHBindGroup ||
+      !this.bloomBlurVBindGroup
+    ) return;
+
+    const extractPass = encoder.beginRenderPass({
+      label: "hdr-bloom-extract-pass",
+      colorAttachments: [{
+        view: this.bloomExtractTextureView,
+        clearValue: { r: 0, g: 0, b: 0, a: 1 },
+        loadOp: "clear",
+        storeOp: "store",
+      }],
     });
+    extractPass.setPipeline(this.bloomExtractPipeline);
+    extractPass.setBindGroup(0, this.bloomExtractBindGroup);
+    extractPass.draw(6, 1, 0, 0);
+    extractPass.end();
+
+    const blurHPass = encoder.beginRenderPass({
+      label: "hdr-bloom-blur-horizontal-pass",
+      colorAttachments: [{
+        view: this.bloomPingTextureView,
+        clearValue: { r: 0, g: 0, b: 0, a: 1 },
+        loadOp: "clear",
+        storeOp: "store",
+      }],
+    });
+    blurHPass.setPipeline(this.bloomBlurPipeline);
+    blurHPass.setBindGroup(0, this.bloomBlurHBindGroup);
+    blurHPass.draw(6, 1, 0, 0);
+    blurHPass.end();
+
+    const blurVPass = encoder.beginRenderPass({
+      label: "hdr-bloom-blur-vertical-pass",
+      colorAttachments: [{
+        view: this.bloomPongTextureView,
+        clearValue: { r: 0, g: 0, b: 0, a: 1 },
+        loadOp: "clear",
+        storeOp: "store",
+      }],
+    });
+    blurVPass.setPipeline(this.bloomBlurPipeline);
+    blurVPass.setBindGroup(0, this.bloomBlurVBindGroup);
+    blurVPass.draw(6, 1, 0, 0);
+    blurVPass.end();
   }
 
   private ensureDepthTexture(): GPUTextureView {
@@ -1780,7 +2015,9 @@ export class Renderer {
     };
 
     this.ensureSceneTexture();
+    this.ensureBloomTextures();
     drawScene(this.sceneTextureView!);
+    this.runBloomPasses(encoder);
 
     const blackHoleRadius = this._blackHoleUniform[3] ?? 0;
     const blackHoleStrength = this._blackHoleUniform[7] ?? 0;
@@ -1803,7 +2040,7 @@ export class Renderer {
       }],
     });
     pass.setPipeline(this.blackHolePipeline);
-    pass.setBindGroup(0, this.blackHoleBindGroup);
+    pass.setBindGroup(0, this.blackHoleBindGroup!);
     pass.draw(6, 1, 0, 0);
     pass.end();
 
