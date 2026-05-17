@@ -35,6 +35,8 @@ import { BackendUnavailableError, backendFetch } from "../services/backend";
 
 // Camera uniform: mat4 (64) + right/min vec4 + up/focal vec4 + eye vec4 = 112 bytes
 const CAMERA_BYTES = 112;
+const CAMERA_NEAR = 1e-8;
+const CAMERA_FAR = 50_000_000;
 const BLACK_HOLE_BYTES = 48;
 const MILKY_WAY_MODEL_UNIFORM_BYTES = 64;
 const MILKY_WAY_MODEL_MATERIAL_BYTES = 48;
@@ -82,6 +84,21 @@ interface MilkyWayModelPartEntry {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
+}
+
+function projectionOnlyMatrix(focalY: number, aspect: number): Float32Array {
+  const safeAspect = Math.max(1e-6, aspect);
+  const nf = 1 / (CAMERA_NEAR - CAMERA_FAR);
+  return new Float32Array([
+    focalY / safeAspect, 0, 0, 0,
+    0, focalY, 0, 0,
+    0, 0, CAMERA_FAR * nf, -1,
+    0, 0, CAMERA_FAR * CAMERA_NEAR * nf, 0,
+  ]);
+}
+
+function dot3(ax: number, ay: number, az: number, bx: number, by: number, bz: number): number {
+  return ax * bx + ay * by + az * bz;
 }
 
 function isHtmlResponse(buffer: ArrayBuffer): boolean {
@@ -138,6 +155,7 @@ export class Renderer {
   private trailPipeline!:   GPURenderPipeline;
 
   private cameraBuffer!:      GPUBuffer;
+  private bodyCameraBuffer!:  GPUBuffer;
   private bodyBuffer!:        GPUBuffer;
   private starBuffer!:        GPUBuffer;
   private mwStarBuffer!:      GPUBuffer;
@@ -261,6 +279,7 @@ export class Renderer {
   private _actualBrightness = true;
   private _objectBrightness = 1;
   private _cameraDistanceFromSun = 0;
+  private cameraUniforms: CameraUniforms | null = null;
   private _showDust = true;
   private _dustTransparency = DUST_DEFAULT_TRANSPARENCY;
   private _dustDrawLimit = DUST_CLOUD_DEFAULT_DRAW_COUNT;
@@ -326,6 +345,11 @@ export class Renderer {
 
     this.cameraBuffer = device.createBuffer({
       label: "camera-uniform",
+      size:  CAMERA_BYTES,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    this.bodyCameraBuffer = device.createBuffer({
+      label: "body-camera-uniform",
       size:  CAMERA_BYTES,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
@@ -448,7 +472,7 @@ export class Renderer {
     this.bodyBindGroup = device.createBindGroup({
       label: "body-bg", layout: bodyBGL,
       entries: [
-        { binding: 0, resource: { buffer: this.cameraBuffer } },
+        { binding: 0, resource: { buffer: this.bodyCameraBuffer } },
         { binding: 1, resource: { buffer: this.bodyBuffer } },
       ],
     });
@@ -1436,12 +1460,34 @@ export class Renderer {
   uploadBodies(bodies: Body[], visibility: ReadonlyMap<number, number> = new Map()): void {
     this.bodyCount = bodies.length;
     const data = new Float32Array(bodies.length * BODY_FLOATS);
+    const cam = this.cameraUniforms;
+    const right = cam?.camRight;
+    const up = cam?.camUp;
+    const eye = cam?.eye;
+    const back: [number, number, number] | null = right && up
+      ? [
+          right[1] * up[2] - right[2] * up[1],
+          right[2] * up[0] - right[0] * up[2],
+          right[0] * up[1] - right[1] * up[0],
+        ]
+      : null;
     for (let i = 0; i < bodies.length; i++) {
       const b = bodies[i]!;
       const o = i * BODY_FLOATS;
       const brightness = this.bodyBrightnessFactor();
+      let x = b.x;
+      let y = b.y;
+      let z = b.z;
+      if (right && up && eye && back) {
+        const rx = b.x - eye[0];
+        const ry = b.y - eye[1];
+        const rz = b.z - eye[2];
+        x = dot3(rx, ry, rz, right[0], right[1], right[2]);
+        y = dot3(rx, ry, rz, up[0], up[1], up[2]);
+        z = dot3(rx, ry, rz, back[0], back[1], back[2]);
+      }
       // vec4 pos_mass
-      data[o+0]=b.x;  data[o+1]=b.y;  data[o+2]=b.z;  data[o+3]=b.mass;
+      data[o+0]=x;    data[o+1]=y;    data[o+2]=z;    data[o+3]=b.mass;
       // vec4 vel_rad
       data[o+4]=b.vx; data[o+5]=b.vy; data[o+6]=b.vz; data[o+7]=b.radius;
       // vec4 acc_type (x=brightness; y=reference observer distance AU; z=render visibility; w=type)
@@ -1773,6 +1819,7 @@ export class Renderer {
     const minNDCRadius = (MIN_PX * 2) / canvasHeight;
     this.viewportWidth = Math.max(1, canvasWidth);
     this.viewportHeight = Math.max(1, canvasHeight);
+    this.cameraUniforms = uniforms;
 
     // 112-byte layout:
     //   [0–63]  viewProj (mat4x4, 16 floats)
@@ -1789,6 +1836,17 @@ export class Renderer {
     data[27] = this._objectBrightness;
     this._blackHoleUniform[8] = clamp(uniforms.flightEffect, 0, 1);
     this.ctx.device.queue.writeBuffer(this.cameraBuffer, 0, data);
+
+    const bodyData = new Float32Array(CAMERA_BYTES / 4);
+    bodyData.set(projectionOnlyMatrix(uniforms.focalY, this.viewportWidth / this.viewportHeight), 0);
+    bodyData[16] = 1; bodyData[17] = 0; bodyData[18] = 0;
+    bodyData[19] = minNDCRadius;
+    bodyData[20] = 0; bodyData[21] = 1; bodyData[22] = 0;
+    bodyData[23] = uniforms.focalY;
+    bodyData[24] = 0; bodyData[25] = 0; bodyData[26] = 0;
+    bodyData[27] = this._objectBrightness;
+    this.ctx.device.queue.writeBuffer(this.bodyCameraBuffer, 0, bodyData);
+
     this.ctx.device.queue.writeBuffer(this.trailScreenBuffer, 0, new Float32Array([
       2 / this.viewportWidth,
       2 / this.viewportHeight,

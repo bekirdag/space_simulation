@@ -2250,7 +2250,7 @@ async function main(): Promise<void> {
     labels.update(bodies, camUniforms.viewProj, focusedMembers, camUniforms.eye, bodyVisibility, (body) => {
       if (body.type === BodyType.Exoplanet) nav.travelToClose(body.name);
       else nav.travelToSystem(body.name);
-    });
+    }, camUniforms);
     const selectedNearbyStarName = nav.selectedCatalogStar?.id.startsWith("nearby:")
       ? nav.selectedCatalogStar.label
       : null;

@@ -104,6 +104,13 @@ function pinToViewport(nx: number, ny: number, cssW: number, cssH: number): Proj
 
 interface ProjectedPoint { x: number; y: number; pinned: boolean }
 
+export interface BodyLabelCameraFrame {
+  eye: Vec3;
+  camRight: Vec3;
+  camUp: Vec3;
+  focalY: number;
+}
+
 function project(
   x: number, y: number, z: number,
   vp: Mat4, cssW: number, cssH: number,
@@ -126,6 +133,48 @@ function project(
   const nx = cx / cw, ny = cy / cw, nz = cz / cw;
   const visibleBounds = pin ? 0.98 : 1.4;
   if (nz >= 0 && nz <= 1.02 && nx >= -visibleBounds && nx <= visibleBounds && ny >= -visibleBounds && ny <= visibleBounds) {
+    return { x: (nx + 1) * 0.5 * cssW, y: (1 - ny) * 0.5 * cssH, pinned: false };
+  }
+  if (!pin) return null;
+  return pinToViewport(nx, ny, cssW, cssH);
+}
+
+function projectCameraRelative(
+  x: number, y: number, z: number,
+  camera: BodyLabelCameraFrame,
+  cssW: number, cssH: number,
+  pin = false,
+): ProjectedPoint | null {
+  const right = camera.camRight;
+  const up = camera.camUp;
+  const back: Vec3 = [
+    right[1] * up[2] - right[2] * up[1],
+    right[2] * up[0] - right[0] * up[2],
+    right[0] * up[1] - right[1] * up[0],
+  ];
+  const rx = x - camera.eye[0];
+  const ry = y - camera.eye[1];
+  const rz = z - camera.eye[2];
+  const vx = rx * right[0] + ry * right[1] + rz * right[2];
+  const vy = rx * up[0] + ry * up[1] + rz * up[2];
+  const vz = rx * back[0] + ry * back[1] + rz * back[2];
+  const w = -vz;
+  const projX = camera.focalY / Math.max(cssW / Math.max(cssH, 1), 1e-6);
+  const projY = camera.focalY;
+
+  if (w <= 0) {
+    if (!pin) return null;
+    const scale = Math.max(Math.abs(w), 1e-6);
+    const behindX = -(vx * projX) / scale;
+    const behindY = -(vy * projY) / scale;
+    if (Math.hypot(behindX, behindY) < BEHIND_CAMERA_PIN_DEADZONE) return null;
+    return pinToViewport(behindX, behindY, cssW, cssH);
+  }
+
+  const nx = (vx * projX) / w;
+  const ny = (vy * projY) / w;
+  const visibleBounds = pin ? 0.98 : 1.4;
+  if (nx >= -visibleBounds && nx <= visibleBounds && ny >= -visibleBounds && ny <= visibleBounds) {
     return { x: (nx + 1) * 0.5 * cssW, y: (1 - ny) * 0.5 * cssH, pinned: false };
   }
   if (!pin) return null;
@@ -243,6 +292,7 @@ export class LabelManager {
     cameraEye: Vec3 = [0, 0, 0],
     bodyVisibility: ReadonlyMap<number, number> = new Map(),
     onBodyLabelClick: BodyLabelClickHandler | null = null,
+    cameraFrame: BodyLabelCameraFrame | null = null,
   ): boolean /* solarSystemClustered */ {
     if (!this._visible) return false;
     this.bodyLabelClickHandler = onBodyLabelClick;
@@ -250,6 +300,12 @@ export class LabelManager {
     const cssH = window.innerHeight;
 
     this.positions.clear();
+    const projectBodyPoint = (
+      x: number, y: number, z: number,
+      pin = false,
+    ): ProjectedPoint | null => cameraFrame
+      ? projectCameraRelative(x, y, z, cameraFrame, cssW, cssH, pin)
+      : project(x, y, z, viewProj, cssW, cssH, pin);
 
     // Remove spans for departed bodies
     const ids = new Set(bodies.map(b => b.id));
@@ -278,8 +334,8 @@ export class LabelManager {
       );
       solarSystemClustered = cameraDistanceFromSun > SOLAR_SYSTEM_LABEL_COLLAPSE_DISTANCE_AU;
       if (!solarSystemClustered) {
-        const sunPt = project(sun.x, sun.y, sun.z, viewProj, cssW, cssH, false);
-        const refPt = project(sun.x + 30, sun.y, sun.z, viewProj, cssW, cssH, false);
+        const sunPt = projectBodyPoint(sun.x, sun.y, sun.z, false);
+        const refPt = projectBodyPoint(sun.x + 30, sun.y, sun.z, false);
         if (sunPt && refPt) {
           const spread = Math.hypot(sunPt.x - refPt.x, sunPt.y - refPt.y);
           solarSystemClustered = spread < CLUSTER_THRESHOLD_PX;
@@ -369,9 +425,8 @@ export class LabelManager {
         }
       }
 
-      const pos = project(
+      const pos = projectBodyPoint(
         b.x, b.y, b.z,
-        viewProj, cssW, cssH,
         ALWAYS_VISIBLE_BODY_NAMES.has(b.name) || isFocusedSystemMember,
       );
 

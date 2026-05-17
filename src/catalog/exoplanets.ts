@@ -49,6 +49,20 @@ function hostKey(value: string): string {
   return HOST_KEY_ALIASES[normalized] ?? normalized;
 }
 
+function searchableText(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[’`]/g, "'")
+    .replace(/[^a-z0-9']+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function compactSearchableText(value: string): string {
+  return searchableText(value).replace(/[^a-z0-9]+/g, "");
+}
+
 export function canonicalHostKey(value: string): string {
   return hostKey(value);
 }
@@ -249,6 +263,8 @@ function rebuildIndexes(planets: ExoplanetData[]): void {
     list.push(p);
     BY_HOST.set(key, list);
     BY_NAME.set(p.name.toLowerCase(), p);
+    BY_NAME.set(searchableText(p.name), p);
+    BY_NAME.set(compactSearchableText(p.name), p);
   }
 }
 
@@ -275,7 +291,11 @@ export function planetsForHost(hostName: string): ExoplanetData[] {
 }
 
 export function planetByName(name: string): ExoplanetData | undefined {
-  return BY_NAME.get(name.toLowerCase());
+  return (
+    BY_NAME.get(name.toLowerCase()) ??
+    BY_NAME.get(searchableText(name)) ??
+    BY_NAME.get(compactSearchableText(name))
+  );
 }
 
 export interface ExoplanetSearchResult {
@@ -293,21 +313,31 @@ export function searchExoplanets(
   simYears:    number,
   limit = 8,
 ): ExoplanetSearchResult[] {
-  const q = query.trim().toLowerCase();
-  if (q.length < 2) return [];
+  const q = searchableText(query);
+  const qCompact = compactSearchableText(query);
+  if (q.length < 2 && qCompact.length < 2) return [];
   const qHost = hostKey(query);
+  const qHostCompact = compactSearchableText(qHost);
 
   const results: Array<{ planet: ExoplanetData; score: number }> = [];
 
   for (const planet of activeExoplanetCatalog) {
-    const n = planet.name.toLowerCase();
-    const h = planet.hostName.toLowerCase();
+    const n = searchableText(planet.name);
+    const nCompact = compactSearchableText(planet.name);
+    const h = searchableText(planet.hostName);
+    const hCompact = compactSearchableText(planet.hostName);
     const hk = hostKey(planet.hostName);
+    const hkCompact = compactSearchableText(hk);
     let score = 0;
-    if (n === q)                  score += 100;
-    if (n.startsWith(q))          score += 65;
-    if (n.includes(q))            score += 35;
-    if (h.includes(q) || hk.includes(qHost)) score += 15;
+    if (n === q || nCompact === qCompact) score += 100;
+    if (n.startsWith(q) || nCompact.startsWith(qCompact)) score += 65;
+    if (n.includes(q) || nCompact.includes(qCompact)) score += 35;
+    if (
+      h.includes(q) ||
+      hCompact.includes(qCompact) ||
+      hk.includes(qHost) ||
+      hkCompact.includes(qHostCompact)
+    ) score += 15;
     if (score === 0) continue;
     results.push({ planet, score });
   }
