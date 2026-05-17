@@ -285,18 +285,35 @@ function buildBodyRenderVisibility(
 const loadingEl  = document.getElementById("loading-overlay")!;
 const loadProgEl = document.getElementById("loading-progress")!;
 const loadTextEl = document.getElementById("loading-text")!;
+const loadBarEl  = document.getElementById("loading-bar-fill") as HTMLElement;
+const loadPctEl  = document.getElementById("loading-percent")!;
+type LoadingUnit = "assets" | "bodies";
+let loadingHideTimer: number | null = null;
 
-function showLoading(msg: string) {
+function showLoading(msg: string, total = TOTAL_BODIES, unit: LoadingUnit = "bodies") {
+  if (loadingHideTimer !== null) {
+    window.clearTimeout(loadingHideTimer);
+    loadingHideTimer = null;
+  }
   loadTextEl.textContent = msg;
-  loadProgEl.textContent = `0 / ${TOTAL_BODIES} bodies`;
+  setLoadProg(0, total, unit);
   loadingEl.classList.remove("hidden", "gone");
 }
-function setLoadProg(n: number, t: number) {
-  loadProgEl.textContent = `${n} / ${t}`;
+function setLoadProg(n: number, t: number, unit?: LoadingUnit) {
+  const total = Math.max(1, t);
+  const current = Math.max(0, Math.min(n, total));
+  const suffix = unit ? ` ${unit}` : "";
+  const pct = Math.round((current / total) * 100);
+  loadProgEl.textContent = `${current} / ${total}${suffix}`;
+  loadBarEl.style.width = `${pct}%`;
+  loadPctEl.textContent = `${pct}%`;
 }
 function hideLoading() {
   loadingEl.classList.add("hidden");
-  setTimeout(() => loadingEl.classList.add("gone"), 450);
+  loadingHideTimer = window.setTimeout(() => {
+    loadingEl.classList.add("gone");
+    loadingHideTimer = null;
+  }, 450);
 }
 
 function horizonsSourceLabel(result: HorizonsResult, dateStr: string): string {
@@ -889,6 +906,39 @@ async function main(): Promise<void> {
   const scaleBar = new ScaleBar();
   const labels = new LabelManager();
   applySettings();
+
+  const STARTUP_ASSET_TOTAL = 11;
+  let startupLoading = true;
+  let startupAssetsReady = 0;
+  const startupAssetPromises: Promise<void>[] = [];
+
+  function setStartupStatus(message: string): void {
+    if (!startupLoading) return;
+    loadTextEl.textContent = message;
+    setLoadProg(startupAssetsReady, STARTUP_ASSET_TOTAL, "assets");
+  }
+
+  function completeStartupAsset(message: string): void {
+    if (!startupLoading) return;
+    startupAssetsReady = Math.min(STARTUP_ASSET_TOTAL, startupAssetsReady + 1);
+    loadTextEl.textContent = message;
+    setLoadProg(startupAssetsReady, STARTUP_ASSET_TOTAL, "assets");
+  }
+
+  function trackStartupAsset(label: string, install: () => Promise<void> | void): Promise<void> {
+    setStartupStatus(`Installing ${label}...`);
+    return Promise.resolve()
+      .then(install)
+      .then(
+        () => completeStartupAsset(`${label} ready`),
+        err => {
+          console.warn(`${label} failed:`, err);
+          completeStartupAsset(`${label} unavailable`);
+        },
+      );
+  }
+
+  showLoading("Installing CosmosMap assets...", STARTUP_ASSET_TOTAL, "assets");
   // Start with empty buffers — real data loads from binary within milliseconds.
   // Avoid the 100k-star placeholder allocation that can fail on low-memory devices.
   let visibleStarBuffer: StarBuffer = new Float32Array(0);
@@ -911,84 +961,93 @@ async function main(): Promise<void> {
 
   // Upload the tiny named-star anchor buffer immediately. The larger catalogs
   // stream in shortly after without allocating a synthetic 100k-star fallback.
+  setStartupStatus("Installing known nearby star anchors...");
   refreshStarCatalog();
+  completeStartupAsset("Known nearby star anchors ready");
 
-  void loadVisibleStarField().then(({ data, source }) => {
+  startupAssetPromises.push(trackStartupAsset("visible star catalog", async () => {
+    const { data, source } = await loadVisibleStarField();
     visibleStarBuffer = data;
     refreshStarCatalog();
     console.info(`Loaded ${data.length / STAR_FLOATS} visible stars from ${source}.`);
-  }).catch(err => {
-    console.warn("Visible star catalog failed:", err);
-  });
+  }));
 
-  void loadExoplanetHostStars().then(({ stars, source }) => {
-    exoplanetHosts = stars;
-    catalogStatus = `${stars.length.toLocaleString()} host stars loaded`;
-    exoplanetHostBuffer = catalogStarsToRenderBuffer(stars);
-    refreshStarCatalog();
-    console.info(`Loaded ${stars.length} exoplanet host stars from ${source}.`);
-  }).catch(err => {
-    catalogStatus = "Star catalog unavailable";
-    console.warn("Exoplanet host catalog failed:", err);
-  });
+  startupAssetPromises.push(trackStartupAsset("exoplanet host catalog", async () => {
+    try {
+      const { stars, source } = await loadExoplanetHostStars();
+      exoplanetHosts = stars;
+      catalogStatus = `${stars.length.toLocaleString()} host stars loaded`;
+      exoplanetHostBuffer = catalogStarsToRenderBuffer(stars);
+      refreshStarCatalog();
+      console.info(`Loaded ${stars.length} exoplanet host stars from ${source}.`);
+    } catch (err) {
+      catalogStatus = "Star catalog unavailable";
+      throw err;
+    }
+  }));
 
   // ── Galaxy catalog ─────────────────────────────────────────────────────────
   let galaxyBuffer: GalaxyBuffer = new Float32Array(0);
   let galaxyNames:  NamedGalaxy[] = [];
 
-  void loadGalaxyCatalog().then(({ data, names, source }) => {
+  startupAssetPromises.push(trackStartupAsset("galaxy catalog", async () => {
+    const { data, names, source } = await loadGalaxyCatalog();
     galaxyBuffer = data;
     galaxyNames  = names;
     renderer.setGalaxyOctants(sortIntoOctants(data));
     renderer.uploadGalaxies(data);
     console.info(`Loaded ${data.length / GALAXY_FLOATS} galaxies from ${source}`);
-  }).catch(err => {
-    console.warn("Galaxy catalog failed:", err);
-  });
-  void renderer.loadGalaxyTextureModels(galaxyTextureModels());
+  }));
+  startupAssetPromises.push(trackStartupAsset("textured galaxy LODs", () => (
+    renderer.loadGalaxyTextureModels(galaxyTextureModels())
+  )));
 
   // ── Milky Way background star catalog (galaxy-scale LOD layer) ───────────
-  void loadMilkywayStars().then(({ data, source }) => {
+  startupAssetPromises.push(trackStartupAsset("Milky Way star field", async () => {
+    const { data, source } = await loadMilkywayStars();
     renderer.setMwOctants(sortIntoOctants(data));
     renderer.uploadMilkywayStars(data);
     console.info(`Loaded ${data.length / 8} Milky Way background stars from ${source}`);
-  }).catch(err => {
-    console.warn("Milky Way star catalog failed:", err);
-  });
+  }));
 
   // ── Galactic dust clouds seeded from MF2015 all-sky reddening map ────────
-  void loadDustMap().then(({ data, source }) => {
-    const dustClouds = buildDustCloudBuffer(data);
-    renderer.uploadDustClouds(dustClouds);
-    console.info(
-      `Loaded ${dustClouds.length / DUST_CLOUD_FLOATS} Milky Way dust clouds from ${source} via ${DUST_CLOUD_SOURCE}`,
-    );
-  }).catch(err => {
-    console.warn("Galactic dust map failed; using procedural fallback:", err);
-    const dustClouds = buildDustCloudBuffer();
-    renderer.uploadDustClouds(dustClouds);
-    console.info(`Loaded ${dustClouds.length / DUST_CLOUD_FLOATS} fallback Milky Way dust clouds from ${DUST_CLOUD_SOURCE}`);
-  });
+  startupAssetPromises.push(trackStartupAsset("Galactic dust map", async () => {
+    try {
+      const { data, source } = await loadDustMap();
+      const dustClouds = buildDustCloudBuffer(data);
+      renderer.uploadDustClouds(dustClouds);
+      console.info(
+        `Loaded ${dustClouds.length / DUST_CLOUD_FLOATS} Milky Way dust clouds from ${source} via ${DUST_CLOUD_SOURCE}`,
+      );
+    } catch (err) {
+      console.warn("Galactic dust map failed; using procedural fallback:", err);
+      const dustClouds = buildDustCloudBuffer();
+      renderer.uploadDustClouds(dustClouds);
+      console.info(`Loaded ${dustClouds.length / DUST_CLOUD_FLOATS} fallback Milky Way dust clouds from ${DUST_CLOUD_SOURCE}`);
+    }
+  }));
 
   // ── Nebula catalog (Milky Way gas clouds) ─────────────────────────────────
-  const modelNebulaExclusions = milkyWayModelNebulaExclusionSlugs();
-  const nebulaBuf = buildNebulaBuffer(modelNebulaExclusions);
-  renderer.uploadNebulas(nebulaBuf);
-  const nebulaDets: NebulaDet[] = nebulaPositions(modelNebulaExclusions);
-  console.info(`Loaded ${nebulaDets.length} Milky Way nebulas`);
+  let nebulaDets: NebulaDet[] = [];
+  startupAssetPromises.push(trackStartupAsset("nebula catalog", () => {
+    const modelNebulaExclusions = milkyWayModelNebulaExclusionSlugs();
+    const nebulaBuf = buildNebulaBuffer(modelNebulaExclusions);
+    renderer.uploadNebulas(nebulaBuf);
+    nebulaDets = nebulaPositions(modelNebulaExclusions);
+    console.info(`Loaded ${nebulaDets.length} Milky Way nebulas`);
+  }));
 
   // ── Constellation lines snapped to real visible-star positions ───────────
   let constellationLabels: ConstellationLabel[] = [];
-  void loadConstellationLines().then(({ data, labels: loadedLabels, source, featureCount, segmentCount, snappedEndpointCount, looseEndpointCount }) => {
+  startupAssetPromises.push(trackStartupAsset("constellation lines", async () => {
+    const { data, labels: loadedLabels, source, featureCount, segmentCount, snappedEndpointCount, looseEndpointCount } = await loadConstellationLines();
     constellationLabels = loadedLabels;
     renderer.uploadConstellations(data);
     console.info(
       `Loaded ${segmentCount} constellation star-to-star segments across ${featureCount} figures ` +
       `(${snappedEndpointCount} snapped endpoints, ${looseEndpointCount} loose) from ${source}.`,
     );
-  }).catch(err => {
-    console.warn("Constellation line catalog failed:", err);
-  });
+  }));
 
   // ── Exoplanet visual bodies ───────────────────────────────────────────────
   // These are NOT in the physics simulation. They are added to `bodies` for
@@ -1048,15 +1107,14 @@ async function main(): Promise<void> {
     }
   }
 
-  void loadExoplanetCatalog().then(({ planets, source }) => {
+  startupAssetPromises.push(trackStartupAsset("exoplanet orbit catalog", async () => {
+    const { planets, source } = await loadExoplanetCatalog();
     console.info(`Loaded ${planets.length} exoplanets from ${source}.`);
     if (activeExoplanetHostName) {
       setExoplanetBodies(activeExoplanetHostName, activeExoplanetHostPos ?? undefined);
       renderer.uploadBodies(bodies);
     }
-  }).catch(err => {
-    console.warn("Exoplanet planet catalog failed:", err);
-  });
+  }));
 
   // ── Simulation state ──────────────────────────────────────────────────────
   let bodies: Body[] = solarSystem();
@@ -1067,16 +1125,16 @@ async function main(): Promise<void> {
   let galacticOrigin = createGalacticOriginState();
 
   // ── Load ephemeris from Horizons (or fall back to J2000.0) ────────────────
-  async function loadEphemeris(dateStr: string, msg: string): Promise<boolean> {
+  async function loadEphemeris(dateStr: string, msg: string, hideWhenDone = true): Promise<boolean> {
     showLoading(msg);
     try {
-      const result = await fetchStatesForDate(dateStr, (n, t) => setLoadProg(n, t));
+      const result = await fetchStatesForDate(dateStr, (n, t) => setLoadProg(n, t, "bodies"));
       applyHorizons(bodies, result);
       hud.epochMs = result.epochMs;
       galacticOrigin = createGalacticOriginState(result.epochMs);
       simYears = 0;
       loadTextEl.textContent = `Calculating ${STARTUP_TRAIL_YEARS} years of starter trails...`;
-      loadProgEl.textContent = `${STARTUP_TRAIL_BODIES.size} tracked bodies`;
+      setLoadProg(STARTUP_TRAIL_BODIES.size, STARTUP_TRAIL_BODIES.size, "bodies");
       renderer.resetTrailSlots();
       seedStartupTrails(trails, bodies, galacticOrigin);
 
@@ -1110,7 +1168,7 @@ async function main(): Promise<void> {
           horizonsSource: result.source,
         });
       }
-      hideLoading();
+      if (hideWhenDone) hideLoading();
       return true;
     } catch (err) {
       console.error("Horizons fetch failed:", err);
@@ -1121,14 +1179,21 @@ async function main(): Promise<void> {
       seedStartupTrails(trails, bodies, galacticOrigin);
       renderer.uploadBodies(bodies);
       sourceEl.textContent = `J2000.0 preset (offline)`;
-      hideLoading();
+      if (hideWhenDone) hideLoading();
       return false;
     }
   }
 
   // Initial load — today's date
   const todayStr = utcDateStr(new Date());
-  await loadEphemeris(todayStr, "Fetching real-time planetary positions from NASA JPL Horizons…");
+  await trackStartupAsset("planetary ephemeris and starter trails", async () => {
+    await loadEphemeris(todayStr, "Fetching real-time planetary positions from NASA JPL Horizons…", false);
+  });
+  setStartupStatus("Waiting for remaining startup assets...");
+  await Promise.allSettled(startupAssetPromises);
+  startupAssetsReady = STARTUP_ASSET_TOTAL;
+  setLoadProg(STARTUP_ASSET_TOTAL, STARTUP_ASSET_TOTAL, "assets");
+  loadTextEl.textContent = "Rendering first frame...";
 
   // ── Nav panel ──────────────────────────────────────────────────────────────
   function loadPreset(name: string) {
@@ -1831,6 +1896,12 @@ async function main(): Promise<void> {
   }
 
   requestAnimationFrame(frame);
+  if (startupLoading) {
+    requestAnimationFrame(() => {
+      startupLoading = false;
+      hideLoading();
+    });
+  }
 }
 
 main().catch(console.error);

@@ -73,6 +73,36 @@
         color: #88aaff;
         letter-spacing: 0.05em;
       }
+      .loading-bar {
+        width: min(340px, calc(100vw - 48px));
+        height: 6px;
+        overflow: hidden;
+        border: 1px solid rgba(136,170,255,0.28);
+        border-radius: 999px;
+        background: rgba(255,255,255,0.06);
+      }
+      #loading-bar-fill {
+        width: 0%;
+        height: 100%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, #528cff, #c8d0ff);
+        box-shadow: 0 0 18px rgba(136,170,255,0.35);
+        transition: width 0.22s ease;
+      }
+      .loading-progress-row {
+        width: min(340px, calc(100vw - 48px));
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+      }
+      #loading-percent {
+        min-width: 4ch;
+        text-align: right;
+        font-size: 10px;
+        color: rgba(200,208,255,0.68);
+        letter-spacing: 0.05em;
+      }
 
       /* ── Error overlay ── */
       #error-overlay {
@@ -1569,7 +1599,11 @@
       </div>
       <div id="loading-title">COSMOSMAP</div>
       <div id="loading-text">Fetching real-time planetary positions from NASA JPL Horizons…</div>
-      <div id="loading-progress">0 / 9 bodies</div>
+      <div class="loading-bar" aria-hidden="true"><div id="loading-bar-fill"></div></div>
+      <div class="loading-progress-row">
+        <div id="loading-progress">0 / 9 bodies</div>
+        <div id="loading-percent">0%</div>
+      </div>
     </div>
 
     <div id="error-overlay">
