@@ -135,31 +135,33 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   let p = in.uv * 3.2 + vec2<f32>(seed, seed * 1.271);
   let base = (fbm(p, 5) + 1.0) * 0.5;
   let detail = (fbm(p * 2.4 + vec2<f32>(2.7, 1.3), 4) + 1.0) * 0.5;
-  let falloff = 1.0 - smoothstep(0.18, 1.0, d);
+  // Keep each cloud as a defined translucent object instead of a broad soft veil.
+  let edgeMask = 1.0 - smoothstep(0.72, 0.98, d);
+  let edge = select(0.0, edgeMask, edgeMask > 0.05);
 
-  var shape = base * falloff;
+  var shape = base * edge;
   if (in.style < 0.5) {
-    shape = smoothstep(0.25, 0.86, base * 0.72 + detail * 0.42) * falloff;
+    shape = smoothstep(0.48, 0.68, base * 0.72 + detail * 0.42) * edge;
   } else if (in.style < 1.5) {
     let lane = 1.0 - smoothstep(0.04, 0.42, abs(in.uv.y + fbm(p * 1.6, 3) * 0.28));
-    shape = smoothstep(0.16, 0.82, base * 0.58 + lane * 0.46) * falloff;
+    shape = smoothstep(0.44, 0.66, base * 0.58 + lane * 0.46) * edge;
   } else if (in.style < 2.5) {
     let pocket = 1.0 - smoothstep(0.20, 0.88, detail);
-    shape = smoothstep(0.18, 0.76, base * 0.55 + pocket * 0.55) * falloff;
+    shape = smoothstep(0.42, 0.64, base * 0.55 + pocket * 0.55) * edge;
   } else if (in.style < 3.5) {
     let ragged = abs(fbm(p * 3.4 + vec2<f32>(7.1, 5.4), 4));
-    shape = smoothstep(0.22, 0.78, base * 0.50 + ragged * 0.62) * falloff;
+    shape = smoothstep(0.46, 0.67, base * 0.50 + ragged * 0.62) * edge;
   } else {
     let shell = 1.0 - abs(d - 0.48) * 1.8;
-    shape = smoothstep(0.20, 0.80, base * 0.62 + max(shell, 0.0) * 0.36) * falloff;
+    shape = smoothstep(0.43, 0.66, base * 0.62 + max(shell, 0.0) * 0.36) * edge;
   }
 
-  if (shape < 0.018) {
+  if (shape < 0.075) {
     discard;
   }
 
   let densityBoost = 0.72 + clamp(in.density, 0.0, 1.0) * 0.42;
-  let alpha = clamp(shape * in.alpha * densityBoost, 0.0, 0.86);
+  let alpha = clamp(shape * in.alpha * densityBoost, 0.0, 0.62);
   if (alpha < 0.004) {
     discard;
   }
