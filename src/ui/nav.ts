@@ -12,7 +12,7 @@ import { type StarSearchResult } from "../catalog/stars";
 const DEFAULT_TRAVEL_DIST = 0.5;
 const MOON_SYSTEM_PADDING = 1.15;
 const MOON_SYSTEM_VIEW_FILL = 0.82;
-const CLOSE_TRAVEL_SECONDS = 2;
+const CLOSE_TRAVEL_SECONDS = 2.5;
 
 type TravelMode = "system" | "close";
 

@@ -11,7 +11,8 @@ const MAX_DISTANCE = FAR;
 const CLOSEUP_VIEW_FILL = 0.88;
 const ORBIT_POLE_MARGIN = 0.02;
 const CINEMATIC_TRAVEL_ACCEL_MS = 500;
-const CINEMATIC_TRAVEL_DECEL_MS = 500;
+const CINEMATIC_TRAVEL_DECEL_MS = 1000;
+const TARGET_APPROACH_TRAVEL_MIN_MS = 1000;
 
 interface CameraTravelAnimation {
   fromTarget: Vec3;
@@ -29,6 +30,7 @@ interface CameraTravelAnimation {
   decelMs: number;
   motionBlur: boolean;
   spaceWarp: boolean;
+  approachTarget: boolean;
 }
 
 interface WheelZoomGoal {
@@ -55,13 +57,55 @@ function shortestAngleDelta(from: number, to: number): number {
   return Math.atan2(Math.sin(to - from), Math.cos(to - from));
 }
 
+function orbitAnglesFromDirection(direction: Vec3): { azimuth: number; elevation: number } {
+  const length = Math.hypot(direction[0], direction[1], direction[2]);
+  if (!Number.isFinite(length) || length <= 0) {
+    return { azimuth: 0, elevation: 0 };
+  }
+
+  return {
+    azimuth: Math.atan2(direction[1], direction[0]),
+    elevation: clamp(
+      Math.asin(clamp(direction[2] / length, -1, 1)),
+      -Math.PI / 2 + ORBIT_POLE_MARGIN,
+      Math.PI / 2 - ORBIT_POLE_MARGIN,
+    ),
+  };
+}
+
+function interpolateTravelDistance(fromDistance: number, toDistance: number, t: number, logarithmic: boolean): number {
+  const from = clampDistance(fromDistance);
+  const to = clampDistance(toDistance);
+  if (!logarithmic || from <= 0 || to <= 0) {
+    return clampDistance(from + (to - from) * t);
+  }
+
+  const fromLog = Math.log(from);
+  const toLog = Math.log(to);
+  if (!Number.isFinite(fromLog) || !Number.isFinite(toLog) || Math.abs(fromLog - toLog) < 1e-6) {
+    return clampDistance(from + (to - from) * t);
+  }
+
+  return clampDistance(Math.exp(fromLog + (toLog - fromLog) * t));
+}
+
 function defaultTravelTiming(durationMs: number): { accelMs: number; cruiseMs: number; decelMs: number } {
   const total = Math.max(1, durationMs);
-  const accelMs = Math.min(CINEMATIC_TRAVEL_ACCEL_MS, total * 0.25);
-  const decelMs = Math.min(CINEMATIC_TRAVEL_DECEL_MS, total * 0.25);
+  const edgeMs = CINEMATIC_TRAVEL_ACCEL_MS + CINEMATIC_TRAVEL_DECEL_MS;
+  if (total <= edgeMs) {
+    const scale = total / edgeMs;
+    return {
+      accelMs: CINEMATIC_TRAVEL_ACCEL_MS * scale,
+      cruiseMs: 0,
+      decelMs: CINEMATIC_TRAVEL_DECEL_MS * scale,
+    };
+  }
+
+  const accelMs = CINEMATIC_TRAVEL_ACCEL_MS;
+  const decelMs = CINEMATIC_TRAVEL_DECEL_MS;
   return {
     accelMs,
-    cruiseMs: Math.max(0, total - accelMs - decelMs),
+    cruiseMs: total - accelMs - decelMs,
     decelMs,
   };
 }
@@ -434,12 +478,14 @@ export class Camera {
     this.flightSpaceWarp = anim.spaceWarp ? effect : 0;
     this.flightMotionBlur = anim.motionBlur ? effect : 0;
     this.flightEffect = Math.max(this.flightSpaceWarp, this.flightMotionBlur);
-    this.target = [
-      anim.fromTarget[0] + (anim.toTarget[0] - anim.fromTarget[0]) * t,
-      anim.fromTarget[1] + (anim.toTarget[1] - anim.fromTarget[1]) * t,
-      anim.fromTarget[2] + (anim.toTarget[2] - anim.fromTarget[2]) * t,
-    ];
-    this.distance = clampDistance(anim.fromDistance + (anim.toDistance - anim.fromDistance) * t);
+    this.target = anim.approachTarget
+      ? [...anim.toTarget]
+      : [
+          anim.fromTarget[0] + (anim.toTarget[0] - anim.fromTarget[0]) * t,
+          anim.fromTarget[1] + (anim.toTarget[1] - anim.fromTarget[1]) * t,
+          anim.fromTarget[2] + (anim.toTarget[2] - anim.fromTarget[2]) * t,
+        ];
+    this.distance = interpolateTravelDistance(anim.fromDistance, anim.toDistance, t, anim.approachTarget);
     this.azimuth = anim.fromAzimuth + shortestAngleDelta(anim.fromAzimuth, anim.toAzimuth) * t;
     this.elevation = clamp(
       anim.fromElevation + (anim.toElevation - anim.fromElevation) * t,
@@ -475,20 +521,32 @@ export class Camera {
 
     const durationMs = Math.max(1, durationSeconds * 1000);
     const timing = defaultTravelTiming(durationMs);
+    const eye = this._uniforms?.eye ?? this.currentEye();
+    const dx = eye[0] - toTarget[0];
+    const dy = eye[1] - toTarget[1];
+    const dz = eye[2] - toTarget[2];
+    const cameraToTargetDistance = Math.hypot(dx, dy, dz);
+    const approachTarget = durationMs >= TARGET_APPROACH_TRAVEL_MIN_MS &&
+      Number.isFinite(cameraToTargetDistance) &&
+      cameraToTargetDistance > MIN_DISTANCE;
+    const approachAngles = approachTarget
+      ? orbitAnglesFromDirection([dx, dy, dz])
+      : { azimuth: this.azimuth, elevation: this.elevation };
     this.travelAnimation = {
       fromTarget: [...this.target],
       toTarget,
-      fromDistance: this.distance,
+      fromDistance: approachTarget ? cameraToTargetDistance : this.distance,
       toDistance,
-      fromAzimuth: this.azimuth,
-      toAzimuth: this.azimuth,
-      fromElevation: this.elevation,
-      toElevation: this.elevation,
+      fromAzimuth: approachAngles.azimuth,
+      toAzimuth: approachAngles.azimuth,
+      fromElevation: approachAngles.elevation,
+      toElevation: approachAngles.elevation,
       startMs: performance.now(),
       durationMs,
       ...timing,
       motionBlur: true,
       spaceWarp: true,
+      approachTarget,
     };
   }
 
@@ -519,6 +577,7 @@ export class Camera {
       decelMs,
       motionBlur: options.motionBlur,
       spaceWarp: options.spaceWarp,
+      approachTarget: false,
     };
   }
 

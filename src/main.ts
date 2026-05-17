@@ -147,7 +147,7 @@ const CAMERA_FOV_Y = Math.PI / 4; // keep in sync with src/scene/camera.ts
 const CAMERA_NEAR_AU = 1e-8; // keep in sync with src/scene/camera.ts
 const CAMERA_FAR_AU = 50_000_000; // keep in sync with src/scene/camera.ts
 const MAP_WHEEL_ZOOM_STEPS = 10;
-const MAP_DOUBLE_CLICK_TRAVEL_SECONDS = 2;
+const MAP_DOUBLE_CLICK_TRAVEL_SECONDS = 2.5;
 // Active substep size (yr) — changed via Settings panel.
 // Larger steps = faster simulation but reduced moon accuracy.
 let simSubstepYr = MAX_SUBSTEP_YR; // default: 15 min (precise)
