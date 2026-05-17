@@ -1291,6 +1291,34 @@ async function main(): Promise<void> {
     onFocusTitleChange: setFocusTitle,
   });
 
+  function shouldIgnoreLockedObjectEnter(event: KeyboardEvent): boolean {
+    if (
+      settingsModal.classList.contains("open") ||
+      infoModal.classList.contains("open") ||
+      objectInfoModal.classList.contains("open")
+    ) {
+      return true;
+    }
+
+    const activeTarget =
+      event.target instanceof HTMLElement
+        ? event.target
+        : document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : null;
+    if (!activeTarget) return false;
+    if (activeTarget.isContentEditable) return true;
+    return !!activeTarget.closest("input, textarea, select, button, a, [role='button']");
+  }
+
+  document.addEventListener("keydown", event => {
+    if (event.key !== "Enter" || event.repeat) return;
+    if (shouldIgnoreLockedObjectEnter(event)) return;
+    if (!nav.handleLockedObjectEnter()) return;
+    event.preventDefault();
+    event.stopPropagation();
+  });
+
   function nearbyStarId(star: NearbyStarLabel): string {
     return `nearby:${star.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
   }

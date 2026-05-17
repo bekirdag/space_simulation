@@ -38,6 +38,7 @@ export class NavPanel {
   private _selectedCatalogStar: StarSearchResult | null = null;
   private focusedBodyTracksCamera = false;
   private selectedCatalogTracksCamera = false;
+  private enterKeyCenteredLock = false;
   private modelPage = 0;
   private readonly modelPageSize = 10;
   private open     = true;
@@ -49,6 +50,7 @@ export class NavPanel {
   /** Select a catalog/map object externally (e.g. from search or the map). */
   selectCatalogStar(hit: StarSearchResult, durationSeconds = 0): void {
     this.clearFocusedBody();
+    this.resetEnterKeyNavigation();
     this._selectedCatalogStar = hit;
     this.selectedCatalogTracksCamera = true;
     this.catalogSearch?.onFocusTitleChange?.(hit.label, hit.subtitle, this.catalogObjectType(hit));
@@ -58,6 +60,7 @@ export class NavPanel {
 
   selectCatalogStarForWheelZoom(hit: StarSearchResult, wheelSteps = 10): void {
     this.clearFocusedBody();
+    this.resetEnterKeyNavigation();
     this._selectedCatalogStar = hit;
     this.selectedCatalogTracksCamera = false;
     this.catalogSearch?.onFocusTitleChange?.(hit.label, hit.subtitle, this.catalogObjectType(hit));
@@ -178,6 +181,7 @@ export class NavPanel {
 
   private setFocusedBody(name: string, trackCamera = true): void {
     const body = this.bodyByName(name);
+    this.resetEnterKeyNavigation();
     this._focusedBodyName = name;
     this._selectedCatalogStar = null; // simulation body takes over; dismiss star selection
     this.focusedBodyTracksCamera = trackCamera;
@@ -195,6 +199,7 @@ export class NavPanel {
   }
 
   clearFocusedBody(): void {
+    this.resetEnterKeyNavigation();
     this._focusedBodyName = null;
     this._selectedCatalogStar = null; // clear star selection when focusing a body
     this.focusedBodyTracksCamera = false;
@@ -247,6 +252,51 @@ export class NavPanel {
     if (!body) return;
     this.setFocusedBody(name, false);
     this.camera.setWheelZoomPointGoal(body.x, body.y, body.z, this.closeDistanceFor(body), wheelSteps);
+  }
+
+  private resetEnterKeyNavigation(): void {
+    this.enterKeyCenteredLock = false;
+  }
+
+  /** First Enter centers the locked object; the next Enter flies close in 2 seconds. */
+  handleLockedObjectEnter(): boolean {
+    if (this._focusedBodyName) {
+      const body = this.bodyByName(this._focusedBodyName);
+      if (!body) {
+        this.clearFocusedBody();
+        return false;
+      }
+
+      if (!this.enterKeyCenteredLock) {
+        this.travelToSystem(body.name);
+        this.enterKeyCenteredLock = true;
+        return true;
+      }
+
+      this.travelToClose(body.name);
+      this.enterKeyCenteredLock = true;
+      return true;
+    }
+
+    const selected = this._selectedCatalogStar;
+    if (!selected) return false;
+
+    if (!this.enterKeyCenteredLock) {
+      this.selectedCatalogTracksCamera = true;
+      this.camera.focusFromCurrentView(
+        selected.x,
+        selected.y,
+        selected.z,
+        selected.focusDistance,
+      );
+      this.camera.lockTarget = true;
+      this.enterKeyCenteredLock = true;
+      return true;
+    }
+
+    this.selectCatalogStar(selected, CLOSE_TRAVEL_SECONDS);
+    this.enterKeyCenteredLock = true;
+    return true;
   }
 
   private filter(): void {
