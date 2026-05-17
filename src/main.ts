@@ -1401,6 +1401,8 @@ async function main(): Promise<void> {
     select: (mode: MapObjectClickMode) => void;
   }
 
+  const MAP_HIT_CLICK_PRIORITY_PX = 8;
+
   function projectMapPoint(x: number, y: number, z: number): ProjectedMapPoint | null {
     if (!lastViewProj) return null;
     const vp = lastViewProj;
@@ -1434,6 +1436,18 @@ async function main(): Promise<void> {
     const focalY = 1 / Math.tan(CAMERA_FOV_Y / 2);
     const radiusPx = body.radius * focalY / Math.max(projected.w, 1e-9) * window.innerHeight * 0.5;
     return clamp(radiusPx * 1.35 + 8, 12, 52);
+  }
+
+  function compareMapObjectHits(a: MapObjectHit, b: MapObjectHit): number {
+    const scoreDelta = a.score - b.score;
+    if (Math.abs(scoreDelta) > MAP_HIT_CLICK_PRIORITY_PX) return scoreDelta;
+    return (a.cameraDistance - b.cameraDistance) || scoreDelta;
+  }
+
+  function closestMapObjectHit(hits: Array<MapObjectHit | null>): MapObjectHit | null {
+    const candidates = hits.filter((hit): hit is MapObjectHit => hit !== null);
+    candidates.sort(compareMapObjectHits);
+    return candidates[0] ?? null;
   }
 
   function catalogHitFromStar(star: CatalogStar): StarSearchResult {
@@ -1575,14 +1589,9 @@ async function main(): Promise<void> {
         cameraDistance: cameraDistanceTo(x, y, z),
         select: (mode) => selectMapCatalogObject(hit, mode, () => setExoplanetBodies(null)),
       };
-      if (
-        !bestVisibleStar ||
-        candidate.cameraDistance < bestVisibleStar.cameraDistance ||
-        (
-          candidate.cameraDistance === bestVisibleStar.cameraDistance &&
-          candidate.score < bestVisibleStar.score
-        )
-      ) bestVisibleStar = candidate;
+      if (!bestVisibleStar || compareMapObjectHits(candidate, bestVisibleStar) < 0) {
+        bestVisibleStar = candidate;
+      }
     }
     addCandidate(bestVisibleStar);
 
@@ -1612,14 +1621,9 @@ async function main(): Promise<void> {
           cameraDistance: cameraDistanceTo(x, y, z),
           select: (mode) => selectMapCatalogObject(hit, mode, () => setExoplanetBodies(null)),
         };
-        if (
-          !bestGalaxy ||
-          candidate.cameraDistance < bestGalaxy.cameraDistance ||
-          (
-            candidate.cameraDistance === bestGalaxy.cameraDistance &&
-            candidate.score < bestGalaxy.score
-          )
-        ) bestGalaxy = candidate;
+        if (!bestGalaxy || compareMapObjectHits(candidate, bestGalaxy) < 0) {
+          bestGalaxy = candidate;
+        }
       }
       addCandidate(bestGalaxy);
     }
@@ -1647,18 +1651,13 @@ async function main(): Promise<void> {
         cameraDistance: cameraDistanceTo(neb.x, neb.y, neb.z),
         select: (mode) => selectMapCatalogObject(hit, mode, () => setExoplanetBodies(null)),
       };
-      if (
-        !bestNebula ||
-        candidate.cameraDistance < bestNebula.cameraDistance ||
-        (
-          candidate.cameraDistance === bestNebula.cameraDistance &&
-          candidate.score < bestNebula.score
-        )
-      ) bestNebula = candidate;
+      if (!bestNebula || compareMapObjectHits(candidate, bestNebula) < 0) {
+        bestNebula = candidate;
+      }
     }
     addCandidate(bestNebula);
 
-    candidates.sort((a, b) => (a.cameraDistance - b.cameraDistance) || (a.score - b.score));
+    candidates.sort(compareMapObjectHits);
     return candidates[0] ?? null;
   }
 
@@ -1671,7 +1670,6 @@ async function main(): Promise<void> {
   let rightDownAt      = { x: 0, y: 0 };
   let lastClickMs      = 0;
   let lastClickAt      = { x: 0, y: 0 };
-  let lastClickedMapHit: MapObjectHit | null = null;
   // Flag set during mousemove while right button is held; cleared on next
   // right-mousedown. Used to suppress the context menu after a drag.
   let rightDragHappened = false;
@@ -1701,12 +1699,12 @@ async function main(): Promise<void> {
 
     const now = Date.now();
     const clickGap = Math.hypot(e.clientX - lastClickAt.x, e.clientY - lastClickAt.y);
-    const isDbl = now - lastClickMs < 300 && clickGap < 12 && lastClickedMapHit !== null;
+    const isDbl = now - lastClickMs < 300 && clickGap < 12;
 
-    const labelBody = isDbl ? null : labels.findBodyAtScreen(e.clientX, e.clientY);
+    const labelBody = labels.findBodyAtScreen(e.clientX, e.clientY);
     const labelHit = labelBody
       ? {
-          score: 0,
+          score: -8,
           cameraDistance: cameraDistanceTo(labelBody.x, labelBody.y, labelBody.z),
           select: (mode: MapObjectClickMode) => {
             if (mode === "double") nav.travelToClose(labelBody.name);
@@ -1714,20 +1712,16 @@ async function main(): Promise<void> {
           },
         } satisfies MapObjectHit
       : null;
-    const mapHit = isDbl ? null : findMapObjectAtScreen(e.clientX, e.clientY);
-    const hit = isDbl && lastClickedMapHit
-      ? lastClickedMapHit
-      : mapHit ?? labelHit;
+    const mapHit = findMapObjectAtScreen(e.clientX, e.clientY);
+    const hit = closestMapObjectHit([mapHit, labelHit]);
     lastClickMs = now;
     lastClickAt = { x: e.clientX, y: e.clientY };
     if (!hit) {
-      lastClickedMapHit = null;
       nav.clearFocusedBody();
       return;
     }
 
     hit.select(isDbl ? "double" : "single");
-    lastClickedMapHit = hit;
   });
 
   // ── Right-click: context menu ─────────────────────────────────────────────
