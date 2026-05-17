@@ -161,10 +161,12 @@ export class NavPanel {
       el.addEventListener("click", () => {
         const name = el.dataset["travel"]!;
         this.travelTo(name, "system");
+        this.prepareRightMenuEnterFly(el);
       });
       el.addEventListener("dblclick", () => {
         const name = el.dataset["travel"]!;
         this.travelTo(name, "close");
+        this.prepareRightMenuEnterFly(el);
       });
     });
 
@@ -372,6 +374,11 @@ export class NavPanel {
 
   private resetEnterKeyNavigation(): void {
     this.enterKeyCenteredLock = false;
+  }
+
+  private prepareRightMenuEnterFly(control?: HTMLElement): void {
+    this.enterKeyCenteredLock = true;
+    control?.blur();
   }
 
   /** First Enter centers the locked object; the next Enter flies close. */
@@ -634,6 +641,7 @@ export class NavPanel {
       btn.addEventListener("click", () => {
         this.selectCatalogStar(hit);
         this.catalogSearch?.onCatalogItemClick?.(hit.id);
+        this.prepareRightMenuEnterFly(btn);
       });
       this.modelList.appendChild(btn);
     }
@@ -713,12 +721,14 @@ export class NavPanel {
       copy.append(label, subtitle);
       btn.append(swatch, copy);
       btn.addEventListener("click", () => {
-        if (hit.id.startsWith("constellation:")) this.selectCatalogItem(hit);
+        const isConstellation = hit.id.startsWith("constellation:");
+        if (isConstellation) this.selectCatalogItem(hit);
         else this.selectCatalogStar(hit);
         this.search.value = hit.label;
         this.renderCatalogResults("", []);
         // Notify main.ts so it can load exoplanet bodies for this star/planet
         this.catalogSearch?.onCatalogItemClick?.(hit.id);
+        if (!isConstellation) this.prepareRightMenuEnterFly(btn);
       });
 
       this.catalogResults.appendChild(btn);
