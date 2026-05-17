@@ -62,7 +62,7 @@ import {
   searchMilkyWayModels,
 } from "./catalog/milkyway-models";
 import { loadMilkywayStars } from "./catalog/milkyway";
-import { buildDustCloudBuffer, DUST_CLOUD_FLOATS, DUST_CLOUD_SOURCE } from "./catalog/dust";
+import { buildDustCloudBuffer, DUST_CLOUD_FLOATS, DUST_CLOUD_SOURCE, loadDustMap } from "./catalog/dust";
 import { NEARBY_STAR_LABELS, SGR_A_STAR_POS, type NearbyStarLabel } from "./catalog/nearby-stars";
 import { sortIntoOctants } from "./gpu/sky-cull";
 import { loadConstellationLines, type ConstellationLabel } from "./catalog/constellations";
@@ -932,11 +932,19 @@ async function main(): Promise<void> {
     renderer.setMwOctants(sortIntoOctants(data));
     renderer.uploadMilkywayStars(data);
     console.info(`Loaded ${data.length / 8} Milky Way background stars from ${source}`);
-    const dustClouds = buildDustCloudBuffer(data);
-    renderer.uploadDustClouds(dustClouds);
-    console.info(`Loaded ${dustClouds.length / DUST_CLOUD_FLOATS} Milky Way dust clouds from ${DUST_CLOUD_SOURCE}`);
   }).catch(err => {
     console.warn("Milky Way star catalog failed:", err);
+  });
+
+  // ── Galactic dust clouds seeded from MF2015 all-sky reddening map ────────
+  void loadDustMap().then(({ data, source }) => {
+    const dustClouds = buildDustCloudBuffer(data);
+    renderer.uploadDustClouds(dustClouds);
+    console.info(
+      `Loaded ${dustClouds.length / DUST_CLOUD_FLOATS} Milky Way dust clouds from ${source} via ${DUST_CLOUD_SOURCE}`,
+    );
+  }).catch(err => {
+    console.warn("Galactic dust map failed; using procedural fallback:", err);
     const dustClouds = buildDustCloudBuffer();
     renderer.uploadDustClouds(dustClouds);
     console.info(`Loaded ${dustClouds.length / DUST_CLOUD_FLOATS} fallback Milky Way dust clouds from ${DUST_CLOUD_SOURCE}`);

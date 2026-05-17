@@ -1,0 +1,48 @@
+{
+  "schema": "physics_sim.dust-map.v1",
+  "sourceName": "NASA/GSFC LAMBDA Meisner-Finkbeiner 2015 E(B-V) dust map",
+  "sourceUrl": "https://lambda.gsfc.nasa.gov/product/foreground/fg_meisner_finkbeiner_2015_info.html",
+  "downloadUrl": "https://lambda.gsfc.nasa.gov/product/foreground/fg_meisner_finkbeiner_2015_get.html",
+  "fitsUrl": "https://lambda.gsfc.nasa.gov/data/foregrounds/EBV/lambda_mollweide_mf2015_dust_map_v2.fits",
+  "ipacDustServiceUrl": "https://irsa.ipac.caltech.edu/applications/DUST/",
+  "generatedAt": "2026-05-15T13:34:48.564Z",
+  "projection": "Mollweide all-sky source, converted to world-anchored render-space Galactic shell billboards",
+  "anchoring": {
+    "type": "sun-observed all-sky shell",
+    "note": "Galactic longitude 0 and latitude 0 are placed on the simulation Milky Way center / Sagittarius A* position.",
+    "milkyWayScaleAUPerKpc": 8000,
+    "sunGalacticRadiusKpc": 8.5,
+    "galacticCenterWorldAU": {
+      "x": -3731.568,
+      "y": -67585.948,
+      "z": -6554.52
+    }
+  },
+  "sourceGrid": {
+    "width": 4096,
+    "height": 2048
+  },
+  "downsampleGrid": {
+    "width": 512,
+    "height": 256,
+    "baseWidth": 256,
+    "baseHeight": 128,
+    "scale": 2
+  },
+  "sourcePixelsPerDustCell": {
+    "width": 8,
+    "height": 8
+  },
+  "strideFloat32": 8,
+  "shellRadiusAU": 68000,
+  "cellCount": 84281,
+  "ebvPercentiles": {
+    "p95": 1.3135239835828543,
+    "p99": 3.5564041174948215
+  },
+  "notes": [
+    "This is a 2D total line-of-sight Galactic reddening visualization, not a 3D dust volume.",
+    "The runtime layer is fixed in world space so the map center tracks the Milky Way center instead of the camera.",
+    "Raw FITS is cached locally under public/cache/nasa and ignored by git; generated binary is the runtime asset."
+  ]
+}
