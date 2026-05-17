@@ -86,6 +86,14 @@ interface MilkyWayModelEntry {
   vertexCount: number;
 }
 
+interface GalaxyTypeModelEntry {
+  id: string;
+  morphology: string;
+  uniformBuffer: GPUBuffer;
+  parts: MilkyWayModelPartEntry[];
+  vertexCount: number;
+}
+
 interface SolarSystemModelEntry {
   id: string;
   bodyName: string;
@@ -112,8 +120,328 @@ export interface SelectedStarModel {
   alpha?: number;
 }
 
+interface GalaxyMeshBuild {
+  vertices: Float32Array;
+  vertexCount: number;
+}
+
+type Vec3 = [number, number, number];
+
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
+}
+
+function normalizeVec3(v: readonly [number, number, number]): Vec3 {
+  const len = Math.hypot(v[0], v[1], v[2]);
+  if (len <= 1e-8) return [0, 0, 1];
+  return [v[0] / len, v[1] / len, v[2] / len];
+}
+
+function crossVec3(
+  a: readonly [number, number, number],
+  b: readonly [number, number, number],
+): Vec3 {
+  return [
+    a[1] * b[2] - a[2] * b[1],
+    a[2] * b[0] - a[0] * b[2],
+    a[0] * b[1] - a[1] * b[0],
+  ];
+}
+
+function galaxyNormal(model: GalaxyTextureModel): Vec3 {
+  return normalizeVec3(crossVec3(model.right, model.up));
+}
+
+function galaxyLocalPoint(
+  model: GalaxyTextureModel,
+  u: number,
+  v: number,
+  w: number,
+  normal = galaxyNormal(model),
+): Vec3 {
+  return [
+    model.right[0] * u + model.up[0] * v + normal[0] * w,
+    model.right[1] * u + model.up[1] * v + normal[1] * w,
+    model.right[2] * u + model.up[2] * v + normal[2] * w,
+  ];
+}
+
+function pushGalaxyMeshVertex(
+  out: number[],
+  pos: Vec3,
+  normal: Vec3,
+  uv: readonly [number, number],
+  color: readonly [number, number, number, number],
+): void {
+  out.push(
+    pos[0], pos[1], pos[2],
+    normal[0], normal[1], normal[2],
+    uv[0], uv[1],
+    color[0], color[1], color[2], color[3],
+  );
+}
+
+function pushGalaxyMeshTriangle(
+  out: number[],
+  a: ReturnType<typeof galaxyDiskVertex>,
+  b: ReturnType<typeof galaxyDiskVertex>,
+  c: ReturnType<typeof galaxyDiskVertex>,
+): void {
+  pushGalaxyMeshVertex(out, a.pos, a.normal, a.uv, a.color);
+  pushGalaxyMeshVertex(out, b.pos, b.normal, b.uv, b.color);
+  pushGalaxyMeshVertex(out, c.pos, c.normal, c.uv, c.color);
+}
+
+function galaxyDiskVertex(
+  model: GalaxyTextureModel,
+  radius: number,
+  angle: number,
+  options: {
+    aspect?: number;
+    radiusScale?: number;
+    armCount?: number;
+    twist?: number;
+    thickness?: number;
+    offsetU?: number;
+    offsetV?: number;
+    angleOffset?: number;
+    alphaScale?: number;
+    color?: readonly [number, number, number];
+  },
+) {
+  const aspect = options.aspect ?? model.aspect;
+  const radiusScale = options.radiusScale ?? 1;
+  const armCount = options.armCount ?? 2;
+  const twist = options.twist ?? 5.4;
+  const theta = angle + (options.angleOffset ?? 0);
+  const c = Math.cos(theta);
+  const s = Math.sin(theta);
+  const arm = 0.5 + 0.5 * Math.cos(theta * armCount - radius * twist);
+  const warp = Math.sin(theta * 2.0 + radius * 4.4) * radius * 0.018;
+  const dustRuffle = Math.sin(theta * 5.0 + radius * 9.0) * radius * 0.007;
+  const halfThickness = (options.thickness ?? 0.03) * (0.2 + (1 - radius) * 0.8);
+  const u = (options.offsetU ?? 0) + c * radius * aspect * radiusScale;
+  const v = (options.offsetV ?? 0) + s * radius * radiusScale;
+  const w = warp + dustRuffle + (arm - 0.5) * halfThickness;
+  const normal = galaxyNormal(model);
+  const pos = galaxyLocalPoint(model, u, v, w, normal);
+  const edgeFade = Math.pow(clamp(1 - radius, 0, 1), 0.7);
+  const armLift = 0.72 + arm * 0.32;
+  const alpha = clamp((options.alphaScale ?? 1) * (0.16 + edgeFade * 0.9) * armLift, 0, 1);
+  const base = options.color ?? [1, 1, 1];
+  return {
+    pos,
+    normal,
+    uv: [0.5 + c * radius * 0.5, 0.5 - s * radius * 0.5] as const,
+    color: [base[0], base[1], base[2], alpha] as const,
+  };
+}
+
+function addGalaxyDiskMesh(
+  out: number[],
+  model: GalaxyTextureModel,
+  options: Parameters<typeof galaxyDiskVertex>[3] & { rings?: number; segments?: number } = {},
+): void {
+  const rings = Math.max(8, options.rings ?? 28);
+  const segments = Math.max(24, options.segments ?? 96);
+  for (let ring = 0; ring < rings; ring++) {
+    const r0 = ring / rings;
+    const r1 = (ring + 1) / rings;
+    for (let seg = 0; seg < segments; seg++) {
+      const a0 = seg / segments * Math.PI * 2;
+      const a1 = (seg + 1) / segments * Math.PI * 2;
+      const p00 = galaxyDiskVertex(model, r0, a0, options);
+      const p10 = galaxyDiskVertex(model, r1, a0, options);
+      const p01 = galaxyDiskVertex(model, r0, a1, options);
+      const p11 = galaxyDiskVertex(model, r1, a1, options);
+      pushGalaxyMeshTriangle(out, p00, p10, p01);
+      pushGalaxyMeshTriangle(out, p01, p10, p11);
+    }
+  }
+}
+
+function addGalaxyBarMesh(out: number[], model: GalaxyTextureModel): void {
+  addGalaxyDiskMesh(out, model, {
+    aspect: Math.max(2.4, model.aspect * 1.8),
+    radiusScale: 0.32,
+    armCount: 1,
+    twist: 0.5,
+    thickness: 0.055,
+    alphaScale: 0.82,
+    color: [1.0, 0.92, 0.74],
+    rings: 14,
+    segments: 48,
+  });
+}
+
+function addGalaxyEllipsoidMesh(
+  out: number[],
+  model: GalaxyTextureModel,
+  options: { xScale: number; yScale: number; zScale: number; alphaScale: number; color?: readonly [number, number, number] },
+): void {
+  const normal = galaxyNormal(model);
+  const latBands = 20;
+  const lonBands = 48;
+  const color = options.color ?? [1.0, 0.9, 0.72];
+  const vertex = (lat: number, lon: number) => {
+    const v = lat / latBands;
+    const u = lon / lonBands;
+    const theta = v * Math.PI;
+    const phi = (1 - u) * Math.PI * 2;
+    const sinTheta = Math.sin(theta);
+    const lx = Math.cos(phi) * sinTheta * options.xScale;
+    const ly = Math.cos(theta) * options.zScale;
+    const lz = Math.sin(phi) * sinTheta * options.yScale;
+    const pos = galaxyLocalPoint(model, lx, lz, ly, normal);
+    const n = normalizeVec3(galaxyLocalPoint(model, lx / options.xScale, lz / options.yScale, ly / options.zScale, normal));
+    const edge = Math.sqrt(lx * lx + lz * lz);
+    const alpha = clamp(options.alphaScale * (0.35 + (1 - edge) * 0.55), 0, 1);
+    return {
+      pos,
+      normal: n,
+      uv: [u, v] as const,
+      color: [color[0], color[1], color[2], alpha] as const,
+    };
+  };
+
+  for (let lat = 0; lat < latBands; lat++) {
+    for (let lon = 0; lon < lonBands; lon++) {
+      const p00 = vertex(lat, lon);
+      const p10 = vertex(lat + 1, lon);
+      const p01 = vertex(lat, lon + 1);
+      const p11 = vertex(lat + 1, lon + 1);
+      pushGalaxyMeshTriangle(out, p00, p10, p01);
+      pushGalaxyMeshTriangle(out, p01, p10, p11);
+    }
+  }
+}
+
+function buildGalaxyTypeMesh(model: GalaxyTextureModel): GalaxyMeshBuild {
+  const packed: number[] = [];
+  switch (model.morphology) {
+    case "barred-spiral":
+      addGalaxyDiskMesh(packed, model, { armCount: 2, twist: 7.2, thickness: 0.038, alphaScale: 0.92 });
+      addGalaxyBarMesh(packed, model);
+      break;
+    case "lenticular":
+      addGalaxyDiskMesh(packed, model, {
+        armCount: 1,
+        twist: 1.2,
+        thickness: 0.024,
+        alphaScale: 0.72,
+        color: [1.0, 0.92, 0.72],
+      });
+      addGalaxyEllipsoidMesh(packed, model, {
+        xScale: 0.38,
+        yScale: 0.38,
+        zScale: 0.18,
+        alphaScale: 0.82,
+        color: [1.0, 0.87, 0.62],
+      });
+      break;
+    case "elliptical":
+      addGalaxyEllipsoidMesh(packed, model, {
+        xScale: Math.max(1.1, model.aspect * 0.9),
+        yScale: 0.88,
+        zScale: 0.55,
+        alphaScale: 0.92,
+        color: [1.0, 0.86, 0.62],
+      });
+      break;
+    case "irregular":
+      addGalaxyDiskMesh(packed, model, {
+        aspect: Math.max(1.05, model.aspect * 0.95),
+        armCount: 3,
+        twist: 3.2,
+        thickness: 0.085,
+        alphaScale: 0.55,
+        color: [0.78, 0.86, 1.0],
+        rings: 20,
+        segments: 64,
+      });
+      addGalaxyDiskMesh(packed, model, {
+        aspect: Math.max(0.85, model.aspect * 0.7),
+        radiusScale: 0.58,
+        armCount: 2,
+        twist: -4.0,
+        thickness: 0.14,
+        offsetU: 0.18,
+        offsetV: -0.08,
+        angleOffset: 0.7,
+        alphaScale: 0.44,
+        color: [1.0, 0.72, 0.45],
+        rings: 14,
+        segments: 48,
+      });
+      break;
+    case "edge-on-starburst":
+      addGalaxyDiskMesh(packed, model, {
+        aspect: Math.max(4.5, model.aspect * 3.5),
+        radiusScale: 0.58,
+        armCount: 1,
+        twist: 0.8,
+        thickness: 0.018,
+        alphaScale: 0.72,
+        color: [1.0, 0.78, 0.55],
+        rings: 18,
+        segments: 72,
+      });
+      addGalaxyEllipsoidMesh(packed, model, {
+        xScale: 0.24,
+        yScale: 0.08,
+        zScale: 0.18,
+        alphaScale: 0.88,
+        color: [1.0, 0.58, 0.34],
+      });
+      break;
+    case "interacting":
+      addGalaxyDiskMesh(packed, model, {
+        armCount: 2,
+        twist: 6.8,
+        thickness: 0.04,
+        offsetU: -0.18,
+        alphaScale: 0.75,
+        rings: 24,
+        segments: 72,
+      });
+      addGalaxyDiskMesh(packed, model, {
+        aspect: Math.max(1.0, model.aspect * 0.78),
+        radiusScale: 0.44,
+        armCount: 2,
+        twist: -4.8,
+        thickness: 0.042,
+        offsetU: 0.64,
+        offsetV: 0.28,
+        angleOffset: 0.9,
+        alphaScale: 0.62,
+        color: [0.8, 0.9, 1.0],
+        rings: 18,
+        segments: 56,
+      });
+      break;
+    case "spiral":
+    default:
+      addGalaxyDiskMesh(packed, model, {
+        armCount: 2,
+        twist: 7.0,
+        thickness: 0.036,
+        alphaScale: 0.86,
+      });
+      addGalaxyEllipsoidMesh(packed, model, {
+        xScale: 0.22,
+        yScale: 0.22,
+        zScale: 0.12,
+        alphaScale: 0.78,
+        color: [1.0, 0.88, 0.65],
+      });
+      break;
+  }
+
+  const vertices = new Float32Array(packed);
+  return {
+    vertices,
+    vertexCount: vertices.length / MILKY_WAY_MODEL_VERTEX_FLOATS,
+  };
 }
 
 function projectionOnlyMatrix(focalY: number, aspect: number): Float32Array {
@@ -219,6 +547,7 @@ export class Renderer {
   private galaxyModelSampler!: GPUSampler;
   private galaxyModelDraws: Array<{ bindGroup: GPUBindGroup; index: number }> = [];
   private galaxyModelTextures: GPUTexture[] = [];
+  private galaxyTypeModelEntries = new Map<string, GalaxyTypeModelEntry>();
   private nebulaBindGroup!:          GPUBindGroup;
   private homunculusBindGroup:       GPUBindGroup | null = null;
   private homunculusBGL!:            GPUBindGroupLayout;
@@ -1259,8 +1588,8 @@ export class Renderer {
       data[o + 11] = model.opacity;
       data[o + 12] = model.fadeNearAU;
       data[o + 13] = model.fadeFarAU;
-      data[o + 14] = 0;
-      data[o + 15] = 0;
+      data[o + 14] = model.billboardFadeInNearAU;
+      data[o + 15] = model.billboardFadeInFarAU;
     }
 
     if (data.length > 0) {
@@ -1270,6 +1599,14 @@ export class Renderer {
     for (const texture of this.galaxyModelTextures) texture.destroy();
     this.galaxyModelTextures = [];
     this.galaxyModelDraws = [];
+    for (const entry of this.galaxyTypeModelEntries.values()) {
+      entry.uniformBuffer.destroy();
+      for (const part of entry.parts) {
+        part.vertexBuffer.destroy();
+        part.materialBuffer.destroy();
+      }
+    }
+    this.galaxyTypeModelEntries.clear();
 
     for (let i = 0; i < usable.length; i++) {
       const model = usable[i]!;
@@ -1308,12 +1645,16 @@ export class Renderer {
         });
         this.galaxyModelTextures.push(texture);
         this.galaxyModelDraws.push({ bindGroup, index: i });
+        this.createGalaxyTypeModelEntry(model, texture);
       } catch (e) {
         console.warn(`Failed to load galaxy texture for ${model.name}:`, e);
       }
     }
 
-    console.info(`Loaded ${this.galaxyModelDraws.length} textured galaxy LOD models.`);
+    console.info(
+      `Loaded ${this.galaxyModelDraws.length} textured galaxy LOD models and ` +
+      `${this.galaxyTypeModelEntries.size} morphology mesh LODs.`,
+    );
   }
 
   uploadNebulas(nebulas: Float32Array): void {
@@ -1624,6 +1965,76 @@ export class Renderer {
     return texture;
   }
 
+  private createGalaxyTypeModelEntry(model: GalaxyTextureModel, texture: GPUTexture): void {
+    const mesh = buildGalaxyTypeMesh(model);
+    if (mesh.vertexCount <= 0) return;
+
+    const { device } = this.ctx;
+    const uniformBuffer = device.createBuffer({
+      label: `galaxy-type-model-uniform-${model.id}`,
+      size: MILKY_WAY_MODEL_UNIFORM_BYTES,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    const vertexBuffer = device.createBuffer({
+      label: `galaxy-type-model-vertices-${model.id}`,
+      size: mesh.vertices.byteLength,
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+    });
+    device.queue.writeBuffer(vertexBuffer, 0, mesh.vertices as GPUAllowSharedBufferSource);
+
+    const materialBuffer = this.createGalaxyTypeModelMaterialBuffer(model);
+    const bindGroup = device.createBindGroup({
+      label: `galaxy-type-model-bg-${model.id}`,
+      layout: this.milkyWayModelBGL,
+      entries: [
+        { binding: 0, resource: { buffer: this.cameraBuffer } },
+        { binding: 1, resource: { buffer: uniformBuffer } },
+        { binding: 2, resource: { buffer: materialBuffer } },
+        { binding: 3, resource: texture.createView() },
+        { binding: 4, resource: this.milkyWayModelSampler },
+      ],
+    });
+
+    const entry: GalaxyTypeModelEntry = {
+      id: model.id,
+      morphology: model.morphology,
+      uniformBuffer,
+      vertexCount: mesh.vertexCount,
+      parts: [{
+        vertexBuffer,
+        materialBuffer,
+        bindGroup,
+        vertexCount: mesh.vertexCount,
+      }],
+    };
+    this.galaxyTypeModelEntries.set(model.id, entry);
+    this.writeGalaxyTypeModelUniform(entry, model);
+  }
+
+  private createGalaxyTypeModelMaterialBuffer(model: GalaxyTextureModel): GPUBuffer {
+    const { device } = this.ctx;
+    const buffer = device.createBuffer({
+      label: `galaxy-type-model-material-${model.id}`,
+      size: MILKY_WAY_MODEL_MATERIAL_BYTES,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    const data = new Float32Array(MILKY_WAY_MODEL_MATERIAL_BYTES / 4);
+    data[0] = 1;
+    data[1] = 1;
+    data[2] = 1;
+    data[3] = 1;
+    data[4] = model.morphology === "edge-on-starburst" ? 0.15 : 0.06;
+    data[5] = model.morphology === "irregular" ? 0.09 : 0.07;
+    data[6] = model.morphology === "spiral" || model.morphology === "interacting" ? 0.12 : 0.06;
+    data[7] = 0.28;
+    data[8] = 1;
+    data[9] = 0.08;
+    data[10] = 1;
+    data[11] = 0.42;
+    device.queue.writeBuffer(buffer, 0, data);
+    return buffer;
+  }
+
   private createMilkyWayModelMaterialBuffer(
     model: MilkyWayModelObject,
     material: ParsedMilkyWayMaterial,
@@ -1907,6 +2318,30 @@ export class Renderer {
     data[8] = model.color[0];
     data[9] = model.color[1];
     data[10] = model.color[2];
+    data[11] = 0;
+    this.ctx.device.queue.writeBuffer(entry.uniformBuffer, 0, data);
+  }
+
+  private writeGalaxyTypeModelUniform(entry: GalaxyTypeModelEntry, model: GalaxyTextureModel): void {
+    const color: [number, number, number] = model.morphology === "irregular"
+      ? [0.55, 0.70, 1.0]
+      : model.morphology === "edge-on-starburst"
+        ? [1.0, 0.58, 0.34]
+        : model.morphology === "elliptical" || model.morphology === "lenticular"
+          ? [1.0, 0.82, 0.56]
+          : [0.72, 0.82, 1.0];
+    const data = new Float32Array(MILKY_WAY_MODEL_UNIFORM_BYTES / 4);
+    data[0] = model.x;
+    data[1] = model.y;
+    data[2] = model.z;
+    data[3] = model.meshRadiusAU;
+    data[4] = model.meshFadeNearAU;
+    data[5] = model.meshFadeFarAU;
+    data[6] = model.meshOpacity;
+    data[7] = 0;
+    data[8] = color[0];
+    data[9] = color[1];
+    data[10] = color[2];
     data[11] = 0;
     this.ctx.device.queue.writeBuffer(entry.uniformBuffer, 0, data);
   }
@@ -2299,6 +2734,17 @@ export class Renderer {
         for (const draw of this.galaxyModelDraws) {
           pass.setBindGroup(0, draw.bindGroup);
           pass.draw(6, 1, 0, draw.index);
+        }
+      }
+
+      if (this.galaxyTypeModelEntries.size > 0) {
+        pass.setPipeline(this.milkyWayModelPipeline);
+        for (const entry of this.galaxyTypeModelEntries.values()) {
+          for (const part of entry.parts) {
+            pass.setBindGroup(0, part.bindGroup);
+            pass.setVertexBuffer(0, part.vertexBuffer);
+            pass.draw(part.vertexCount);
+          }
         }
       }
     }

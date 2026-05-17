@@ -86,8 +86,9 @@ fn vs_main(
   let radius = model.pos_radius.w;
   let aspect = max(model.right_aspect.w, 0.1);
   let camDist = camera_distance(center);
-  let fade = 1.0 - smoother01((camDist - model.lod.x) / max(model.lod.y - model.lod.x, 1.0));
-  let alpha = model.up_alpha.w * fade;
+  let farFade = 1.0 - smoother01((camDist - model.lod.x) / max(model.lod.y - model.lod.x, 1.0));
+  let closeFade = smoother01((camDist - model.lod.z) / max(model.lod.w - model.lod.z, 1.0));
+  let alpha = model.up_alpha.w * farFade * closeFade;
 
   var out: VertexOut;
   out.uv = uv;

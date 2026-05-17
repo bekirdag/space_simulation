@@ -8,9 +8,51 @@ export const GALAXY_MODEL_FLOATS = 16;
 const GALAXY_MODEL_FOCUS_RADIUS_MULTIPLIER = 0.55;
 const GALAXY_MODEL_LOD_RADIUS_MULTIPLIER = 1.15;
 
+export const GALAXY_MORPHOLOGY_TYPES = [
+  {
+    id: "spiral",
+    label: "Spiral galaxy",
+    description: "A rotating disk with spiral-arm structure and a central bulge.",
+  },
+  {
+    id: "barred-spiral",
+    label: "Barred spiral galaxy",
+    description: "A spiral galaxy with a bright stellar bar crossing the center.",
+  },
+  {
+    id: "lenticular",
+    label: "Lenticular galaxy",
+    description: "A lens-shaped disk galaxy with a prominent bulge and weak arm structure.",
+  },
+  {
+    id: "elliptical",
+    label: "Elliptical galaxy",
+    description: "A smooth spheroidal galaxy dominated by an old stellar population.",
+  },
+  {
+    id: "irregular",
+    label: "Irregular galaxy",
+    description: "A disturbed or asymmetric galaxy without clean spiral or elliptical structure.",
+  },
+  {
+    id: "edge-on-starburst",
+    label: "Edge-on starburst galaxy",
+    description: "A thin, edge-on galaxy with a compact bright star-forming core.",
+  },
+  {
+    id: "interacting",
+    label: "Interacting galaxy pair",
+    description: "A close galaxy pair with tidal distortion and bridge-like structure.",
+  },
+] as const;
+
+export type GalaxyMorphologyType = typeof GALAXY_MORPHOLOGY_TYPES[number]["id"];
+
 export interface GalaxyTextureModel {
   id: string;
   name: string;
+  morphology: GalaxyMorphologyType;
+  morphologyLabel: string;
   textureUrl: string;
   sourceUrl: string;
   credit: string;
@@ -24,23 +66,32 @@ export interface GalaxyTextureModel {
   opacity: number;
   fadeNearAU: number;
   fadeFarAU: number;
+  billboardFadeInNearAU: number;
+  billboardFadeInFarAU: number;
+  meshRadiusAU: number;
+  meshOpacity: number;
+  meshFadeNearAU: number;
+  meshFadeFarAU: number;
   focusDistance: number;
 }
 
 interface GalaxyTextureModelDef {
   id: string;
+  morphology: GalaxyMorphologyType;
   textureUrl: string;
   sourceUrl: string;
   credit: string;
   diameterKpc: number;
   aspect: number;
   opacity: number;
+  meshOpacity?: number;
   rotationDeg?: number;
 }
 
 const TEXTURED_GALAXY_DEFS: GalaxyTextureModelDef[] = [
   {
     id: "lmc",
+    morphology: "irregular",
     textureUrl: "/textures/galaxies/lmc.jpg",
     sourceUrl: "https://esahubble.org/images/opo9933i/",
     credit: "Anglo-Australian Observatory/Royal Observatory, Edinburgh and David Malin",
@@ -51,6 +102,7 @@ const TEXTURED_GALAXY_DEFS: GalaxyTextureModelDef[] = [
   },
   {
     id: "smc",
+    morphology: "irregular",
     textureUrl: "/textures/galaxies/smc.jpg",
     sourceUrl: "https://esahubble.org/images/heic0603d/",
     credit: "ESA/Hubble and Digitized Sky Survey 2",
@@ -61,6 +113,7 @@ const TEXTURED_GALAXY_DEFS: GalaxyTextureModelDef[] = [
   },
   {
     id: "andromeda",
+    morphology: "spiral",
     textureUrl: "/textures/galaxies/andromeda-m31.jpg",
     sourceUrl: "https://esahubble.org/images/heic2501a/",
     credit: "NASA, ESA, B. Williams (University of Washington)",
@@ -71,6 +124,7 @@ const TEXTURED_GALAXY_DEFS: GalaxyTextureModelDef[] = [
   },
   {
     id: "triangulum",
+    morphology: "spiral",
     textureUrl: "/textures/galaxies/triangulum-m33.jpg",
     sourceUrl: "https://esahubble.org/images/heic1901a/",
     credit: "NASA, ESA, M. Durbin, J. Dalcanton, and B. F. Williams (University of Washington)",
@@ -81,6 +135,7 @@ const TEXTURED_GALAXY_DEFS: GalaxyTextureModelDef[] = [
   },
   {
     id: "ngc-253",
+    morphology: "edge-on-starburst",
     textureUrl: "/textures/galaxies/ngc-253.jpg",
     sourceUrl: "https://esahubble.org/images/opo9510b/",
     credit: "Jay Gallagher, Alan Watson, and NASA/ESA",
@@ -91,6 +146,7 @@ const TEXTURED_GALAXY_DEFS: GalaxyTextureModelDef[] = [
   },
   {
     id: "m81",
+    morphology: "spiral",
     textureUrl: "/textures/galaxies/m81.jpg",
     sourceUrl: "https://esahubble.org/images/heic0710a/",
     credit: "NASA, ESA and the Hubble Heritage Team (STScI/AURA)",
@@ -101,6 +157,7 @@ const TEXTURED_GALAXY_DEFS: GalaxyTextureModelDef[] = [
   },
   {
     id: "m82",
+    morphology: "edge-on-starburst",
     textureUrl: "/textures/galaxies/m82.jpg",
     sourceUrl: "https://esahubble.org/images/heic0604a/",
     credit: "NASA, ESA and the Hubble Heritage Team (STScI/AURA)",
@@ -111,6 +168,7 @@ const TEXTURED_GALAXY_DEFS: GalaxyTextureModelDef[] = [
   },
   {
     id: "m101",
+    morphology: "spiral",
     textureUrl: "/textures/galaxies/m101.jpg",
     sourceUrl: "https://esahubble.org/images/heic0602a/",
     credit: "European Space Agency and NASA",
@@ -120,7 +178,19 @@ const TEXTURED_GALAXY_DEFS: GalaxyTextureModelDef[] = [
     rotationDeg: 9,
   },
   {
+    id: "m83",
+    morphology: "barred-spiral",
+    textureUrl: "/textures/galaxies/m83.jpg",
+    sourceUrl: "https://science.nasa.gov/asset/hubble/spiral-galaxy-m83/",
+    credit: "NASA, ESA and The Hubble Heritage Team (STScI/AURA)",
+    diameterKpc: 15.3,
+    aspect: 1.25,
+    opacity: 0.74,
+    rotationDeg: 12,
+  },
+  {
     id: "m51",
+    morphology: "interacting",
     textureUrl: "/textures/galaxies/m51.jpg",
     sourceUrl: "https://esahubble.org/images/opo0110a/",
     credit: "NASA/ESA and The Hubble Heritage Team (STScI/AURA)",
@@ -131,6 +201,7 @@ const TEXTURED_GALAXY_DEFS: GalaxyTextureModelDef[] = [
   },
   {
     id: "m104",
+    morphology: "lenticular",
     textureUrl: "/textures/galaxies/m104-sombrero.jpg",
     sourceUrl: "https://esahubble.org/images/opo0328a/",
     credit: "NASA/ESA and The Hubble Heritage Team (STScI/AURA)",
@@ -139,7 +210,23 @@ const TEXTURED_GALAXY_DEFS: GalaxyTextureModelDef[] = [
     opacity: 0.78,
     rotationDeg: 0,
   },
+  {
+    id: "m87",
+    morphology: "elliptical",
+    textureUrl: "/textures/galaxies/m87.jpg",
+    sourceUrl: "https://esahubble.org/images/heic2411b/",
+    credit: "NASA, ESA and STScI",
+    diameterKpc: 40.0,
+    aspect: 1.15,
+    opacity: 0.70,
+    meshOpacity: 0.78,
+    rotationDeg: -4,
+  },
 ];
+
+function morphologyLabel(id: GalaxyMorphologyType): string {
+  return GALAXY_MORPHOLOGY_TYPES.find(type => type.id === id)?.label ?? id;
+}
 
 function normalize(v: readonly [number, number, number]): [number, number, number] {
   const len = Math.hypot(v[0], v[1], v[2]);
@@ -197,11 +284,17 @@ export function galaxyTextureModels(): GalaxyTextureModel[] {
     const radiusAU = majorRadiusAU / Math.max(0.2, def.aspect);
     const focusDistance = Math.max(900, majorRadiusAU * GALAXY_MODEL_FOCUS_RADIUS_MULTIPLIER);
     const lodDistance = Math.max(900, majorRadiusAU * GALAXY_MODEL_LOD_RADIUS_MULTIPLIER);
+    const meshFadeNearAU = Math.max(focusDistance * 2.7, majorRadiusAU * 1.5);
+    const meshFadeFarAU = Math.max(focusDistance * 5.8, majorRadiusAU * 3.3);
+    const billboardFadeInNearAU = Math.max(focusDistance * 1.25, majorRadiusAU * 0.7);
+    const billboardFadeInFarAU = Math.max(focusDistance * 2.9, majorRadiusAU * 1.65);
     const { right, up } = basisForLabel(label, def.rotationDeg ?? 0);
 
     return [{
       id: def.id,
       name: label.name,
+      morphology: def.morphology,
+      morphologyLabel: morphologyLabel(def.morphology),
       textureUrl: def.textureUrl,
       sourceUrl: def.sourceUrl,
       credit: def.credit,
@@ -215,6 +308,12 @@ export function galaxyTextureModels(): GalaxyTextureModel[] {
       opacity: def.opacity,
       fadeNearAU: lodDistance * 1.15,
       fadeFarAU: lodDistance * 5.2,
+      billboardFadeInNearAU,
+      billboardFadeInFarAU,
+      meshRadiusAU: radiusAU,
+      meshOpacity: def.meshOpacity ?? Math.min(0.88, def.opacity + 0.04),
+      meshFadeNearAU,
+      meshFadeFarAU,
       focusDistance,
     }];
   });
