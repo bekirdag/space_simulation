@@ -29,6 +29,8 @@ const DUST_MAP_META_URL = "/data/dust-map-mf2015.meta.json";
 const DUST_MAP_MIN_ALPHA = 0.006;
 const DUST_MAP_ALPHA_RANGE = 0.080;
 const DUST_CLOUD_MIN_RADIUS_AU = 12;
+const DUST_CLOUD_MIN_MAJOR_AU = 0.18 * DUST_MILKY_WAY_KPC_TO_AU;
+const DUST_CLOUD_MAX_MAJOR_AU = 1.9 * DUST_MILKY_WAY_KPC_TO_AU;
 const DUST_DISK_SAMPLE_HALF_HEIGHT_KPC = 0.52;
 const DUST_VERTICAL_SCALE_KPC = 0.12;
 const DUST_DIRECTION_LON_BINS = 360;
@@ -178,11 +180,11 @@ function fallbackDustPosition(rand: () => number): DustSeed {
     const density = clamp((radial * (0.20 + arms * 0.26) + bar * 0.34) * vertical, 0, 1);
     if (rand() < density * 1.35 + 0.02) {
       const [x, y, zz] = galacticCartesianToEclipticAU(r * Math.cos(theta), r * Math.sin(theta), z);
-      return { x, y, z: zz, density, sizeAU: (0.22 + density * 0.28) * DUST_MILKY_WAY_KPC_TO_AU };
+      return { x, y, z: zz, density, sizeAU: (0.40 + density * 0.62) * DUST_MILKY_WAY_KPC_TO_AU };
     }
   }
   const [x, y, z] = galacticCartesianToEclipticAU(0, 0, 0);
-  return { x, y, z, density: 1, sizeAU: 0.42 * DUST_MILKY_WAY_KPC_TO_AU };
+  return { x, y, z, density: 1, sizeAU: 0.90 * DUST_MILKY_WAY_KPC_TO_AU };
 }
 
 function smoothstep(edge0: number, edge1: number, x: number): number {
@@ -307,7 +309,7 @@ function dustSeedFromDirectionGrid(grid: DustDirectionGrid, rand: () => number):
         y,
         z,
         density,
-        sizeAU: (0.10 + density * 0.16) * DUST_MILKY_WAY_KPC_TO_AU,
+        sizeAU: (0.34 + density * 0.78) * DUST_MILKY_WAY_KPC_TO_AU,
       };
       bestDensity = density;
     }
@@ -333,13 +335,15 @@ export function buildDustCloudBuffer(dustMap?: Float32Array, count = DUST_CLOUD_
     const seed = directionGrid
       ? dustSeedFromDirectionGrid(directionGrid, rand)
       : fallbackDustPosition(rand);
-    const stretch = 1.1 + rand() * 2.65;
-    const squash = 0.48 + rand() * 0.82;
-    const aspectX = rand() < 0.5 ? stretch : squash;
-    const aspectY = rand() < 0.5 ? squash : stretch;
-    const maxRadiusAU = DUST_CLOUD_MAX_MODEL_HEIGHT_AU / (2 * Math.max(0.001, aspectY));
-    const minRadiusAU = Math.min(DUST_CLOUD_MIN_RADIUS_AU, maxRadiusAU);
-    const radiusAU = clamp(seed.sizeAU * (0.52 + Math.pow(rand(), 1.7) * 0.95 + seed.density * 0.26), minRadiusAU, maxRadiusAU);
+    const majorDiameterAU = clamp(
+      seed.sizeAU * (0.72 + Math.pow(rand(), 1.45) * 1.55 + seed.density * 0.40),
+      DUST_CLOUD_MIN_MAJOR_AU,
+      DUST_CLOUD_MAX_MAJOR_AU,
+    );
+    const aspectX = 1.35 + rand() * 3.85;
+    const radiusAU = clamp(majorDiameterAU / (2 * aspectX), DUST_CLOUD_MIN_RADIUS_AU, DUST_CLOUD_MAX_MAJOR_AU);
+    const targetHeightAU = DUST_CLOUD_MAX_MODEL_HEIGHT_AU * (0.44 + rand() * 0.56);
+    const aspectY = clamp(targetHeightAU / (2 * radiusAU), 0.010, 0.38);
     const color = dustColor(rand, seed.density);
     const alpha = 0.20 + rand() * 0.60;
     const style = Math.floor(rand() * 5);
