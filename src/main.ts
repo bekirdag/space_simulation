@@ -1275,9 +1275,12 @@ async function main(): Promise<void> {
         const model = milkyWayModelById(id);
         if (model) void renderer.ensureMilkyWayModelLoaded(model);
       } else if (id.startsWith("exo:")) {
-        const hostName = id.split(":")[1] ?? null;
+        const [, hostName = null, ...planetNameParts] = id.split(":");
+        const planetName = planetNameParts.join(":");
         const hostPos = hostName ? getStarWorldPos(hostName) : null;
         setExoplanetBodies(hostName, hostPos ?? undefined);
+        const planetBody = planetName ? bodies.find(b => b.name === planetName) : null;
+        if (planetBody) nav.travelToClose(planetBody.name);
       } else {
         // Clicked a host star → load its exoplanets too
         const star = exoplanetHosts.find(s => s.id === id);
@@ -1424,6 +1427,15 @@ async function main(): Promise<void> {
     };
   }
 
+  function shouldHighlightCatalogStar(hit: StarSearchResult | null): hit is StarSearchResult {
+    return !!hit &&
+      !hit.id.startsWith("exo:") &&
+      !hit.id.startsWith("galaxy:") &&
+      !hit.id.startsWith("mwmodel:") &&
+      !hit.id.startsWith("nebula:") &&
+      !hit.id.startsWith("blackhole:");
+  }
+
   function selectMapCatalogObject(
     hit: StarSearchResult,
     mode: MapObjectClickMode,
@@ -1438,10 +1450,7 @@ async function main(): Promise<void> {
     }
     renderer.uploadBodies(bodies);
     renderer.uploadSelectedStar(
-      !hit.id.startsWith("galaxy:") &&
-        !hit.id.startsWith("mwmodel:") &&
-        !hit.id.startsWith("nebula:") &&
-        !hit.id.startsWith("blackhole:")
+      shouldHighlightCatalogStar(hit)
         ? [hit.x, hit.y, hit.z]
         : null,
     );
@@ -2126,11 +2135,7 @@ async function main(): Promise<void> {
 
     const sel = nav.selectedCatalogStar;
     renderer.uploadSelectedStar(
-      sel &&
-        !sel.id.startsWith("galaxy:") &&
-        !sel.id.startsWith("mwmodel:") &&
-        !sel.id.startsWith("nebula:") &&
-        !sel.id.startsWith("blackhole:")
+      shouldHighlightCatalogStar(sel)
         ? [sel.x, sel.y, sel.z]
         : null,
     );
@@ -2186,7 +2191,9 @@ async function main(): Promise<void> {
     const selectedCatalogLabel =
       sgrASelected
         ? null
-        : nav.selectedCatalogStar;
+        : shouldHighlightCatalogStar(nav.selectedCatalogStar)
+          ? nav.selectedCatalogStar
+          : null;
     labels.updateCatalogStarLabel(selectedCatalogLabel, camUniforms.viewProj);
     hud.galacticSpeedKms = galacticSpeedKmS(galacticOrigin);
     hud.update(bodies.length, simYears);
