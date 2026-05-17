@@ -35,8 +35,31 @@ struct VertexOut {
   @location(0) uv: vec2<f32>,
   @location(1) normal: vec3<f32>,
   @location(2) vertexColor: vec4<f32>,
-  @location(3) worldPos: vec3<f32>,
+  @location(3) viewDir: vec3<f32>,
 };
+
+const CAMERA_NEAR: f32 = 1e-8;
+const CAMERA_FAR: f32 = 50000000.0;
+
+fn projectCameraRelative(relativeToEye: vec3<f32>) -> vec4<f32> {
+  let right = normalize(camera.rightAndMNR.xyz);
+  let up = normalize(camera.upAndFocal.xyz);
+  let back = normalize(cross(right, up));
+  let view = vec3<f32>(
+    dot(relativeToEye, right),
+    dot(relativeToEye, up),
+    dot(relativeToEye, back),
+  );
+  let aspect = max(camera.screenAndTarget.x, 1e-6);
+  let focalY = camera.upAndFocal.w;
+  let nf = 1.0 / (CAMERA_NEAR - CAMERA_FAR);
+  return vec4<f32>(
+    (focalY / aspect) * view.x,
+    focalY * view.y,
+    CAMERA_FAR * nf * view.z + CAMERA_FAR * CAMERA_NEAR * nf,
+    -view.z,
+  );
+}
 
 @vertex
 fn vs_main(
@@ -46,12 +69,13 @@ fn vs_main(
   @location(3) vertexColor: vec4<f32>,
 ) -> VertexOut {
   var out: VertexOut;
-  let world = model.centerRadius.xyz + position * model.centerRadius.w;
-  out.clipPos = camera.viewProj * vec4<f32>(world, 1.0);
+  let relativeToTarget = (model.centerRadius.xyz - camera.screenAndTarget.yzw) + position * model.centerRadius.w;
+  let relativeToEye = relativeToTarget - camera.eyeOffset.xyz;
+  out.clipPos = projectCameraRelative(relativeToEye);
   out.uv = uv;
   out.normal = normalize(normal);
   out.vertexColor = vertexColor;
-  out.worldPos = world;
+  out.viewDir = normalize(-relativeToEye);
   return out;
 }
 
@@ -81,11 +105,11 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let emissiveStrength = max(model.params.x, 1.0);
     let texEmission = max(material.params.w, 0.0);
     let materialEmission = material.emissive.rgb * max(material.emissive.a, texEmission);
-    let limb = 0.74 + 0.26 * abs(dot(normal, normalize(camera.eyeAndFlags.xyz - in.worldPos)));
+    let limb = 0.74 + 0.26 * abs(dot(normal, normalize(in.viewDir)));
     color = (color * model.fallbackOpacity.rgb * emissiveStrength + materialEmission) * limb * objectBrightness;
   } else {
     let lightDir = normalize(model.lightAndKind.xyz);
-    let viewDir = normalize(camera.eyeAndFlags.xyz - in.worldPos);
+    let viewDir = normalize(in.viewDir);
     let diffuse = max(dot(normal, lightDir), 0.0);
     let fresnel = pow(1.0 - clamp(dot(normal, viewDir), 0.0, 1.0), 2.0);
     let ambient = 0.075;

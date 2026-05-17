@@ -1326,11 +1326,11 @@ export class Renderer {
           },
         }],
       },
-      primitive: { topology: "triangle-list" },
+      primitive: { topology: "triangle-list", cullMode: "back" },
       depthStencil: {
         format: MODEL_DEPTH_FORMAT,
         depthWriteEnabled: true,
-        depthCompare: "less",
+        depthCompare: "less-equal",
       },
     });
 
