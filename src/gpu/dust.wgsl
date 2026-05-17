@@ -37,6 +37,7 @@ struct VertexOut {
   @location(3) style:    f32,
   @location(4) seed:     f32,
   @location(5) density:  f32,
+  @location(6) px_size:  f32,
 };
 
 var<private> quad: array<vec2<f32>, 6> = array<vec2<f32>, 6>(
@@ -71,6 +72,7 @@ fn vs_main(
   out.style = cloud.params.x;
   out.seed = cloud.params.y;
   out.density = cloud.transform.z;
+  out.px_size = 0.0;
 
   if (clipCenter.w <= 0.0 || radius <= 0.0 || out.alpha <= 0.001) {
     out.clip_pos = vec4<f32>(10.0, 10.0, 10.0, 1.0);
@@ -80,6 +82,7 @@ fn vs_main(
   let ndcX = clipCenter.x / clipCenter.w;
   let ndcY = clipCenter.y / clipCenter.w;
   let pxSize = radius * max(sx, sy) * camera.upAndFocal.w / clipCenter.w;
+  out.px_size = pxSize;
   if (ndcX - pxSize > 1.35 || ndcX + pxSize < -1.35 ||
       ndcY - pxSize > 1.35 || ndcY + pxSize < -1.35) {
     out.clip_pos = vec4<f32>(10.0, 10.0, 10.0, 1.0);
@@ -133,23 +136,48 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
 
   let seed = in.seed * 0.0137;
   let p = in.uv * 3.2 + vec2<f32>(seed, seed * 1.271);
-  let base = (fbm(p, 5) + 1.0) * 0.5;
-  let detail = (fbm(p * 2.4 + vec2<f32>(2.7, 1.3), 4) + 1.0) * 0.5;
-  // Keep each cloud as a defined translucent object instead of a broad soft veil.
   let edgeMask = 1.0 - smoothstep(0.72, 0.98, d);
-  let edge = select(0.0, edgeMask, edgeMask > 0.05);
+  if (edgeMask <= 0.05) {
+    discard;
+  }
+
+  let compact = in.px_size < 22.0;
+  var base: f32;
+  var detail: f32;
+  if (compact) {
+    base = (fbm(p, 3) + 1.0) * 0.5;
+    detail = (noise2(p * 2.4 + vec2<f32>(2.7, 1.3)) + 1.0) * 0.5;
+  } else {
+    base = (fbm(p, 5) + 1.0) * 0.5;
+    detail = (fbm(p * 2.4 + vec2<f32>(2.7, 1.3), 4) + 1.0) * 0.5;
+  }
+  // Keep each cloud as a defined translucent object instead of a broad soft veil.
+  let edge = edgeMask;
 
   var shape = base * edge;
   if (in.style < 0.5) {
     shape = smoothstep(0.48, 0.68, base * 0.72 + detail * 0.42) * edge;
   } else if (in.style < 1.5) {
-    let lane = 1.0 - smoothstep(0.04, 0.42, abs(in.uv.y + fbm(p * 1.6, 3) * 0.28));
+    var laneNoise: f32;
+    if (compact) {
+      laneNoise = noise2(p * 1.6);
+    } else {
+      laneNoise = fbm(p * 1.6, 3);
+    }
+    let lane = 1.0 - smoothstep(0.04, 0.42, abs(in.uv.y + laneNoise * 0.28));
     shape = smoothstep(0.44, 0.66, base * 0.58 + lane * 0.46) * edge;
   } else if (in.style < 2.5) {
     let pocket = 1.0 - smoothstep(0.20, 0.88, detail);
     shape = smoothstep(0.42, 0.64, base * 0.55 + pocket * 0.55) * edge;
   } else if (in.style < 3.5) {
-    let ragged = abs(fbm(p * 3.4 + vec2<f32>(7.1, 5.4), 4));
+    let raggedP = p * 3.4 + vec2<f32>(7.1, 5.4);
+    var raggedNoise: f32;
+    if (compact) {
+      raggedNoise = noise2(raggedP);
+    } else {
+      raggedNoise = fbm(raggedP, 4);
+    }
+    let ragged = abs(raggedNoise);
     shape = smoothstep(0.46, 0.67, base * 0.50 + ragged * 0.62) * edge;
   } else {
     let shell = 1.0 - abs(d - 0.48) * 1.8;
