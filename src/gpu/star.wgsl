@@ -22,7 +22,7 @@ struct Star {
 @group(0) @binding(0) var<uniform>       camera:       Camera;
 @group(0) @binding(1) var<storage, read> stars:        array<Star>;
 @group(0) @binding(2) var<uniform>       selectedStar: vec4<f32>; // xyz=pos, w=active
-@group(0) @binding(3) var<uniform>       lodFade:      vec4<f32>; // x=1 (unused), y=camera AU from Sun
+@group(0) @binding(3) var<uniform>       lodFade:      vec4<f32>; // x=1, y=camera AU from Sun, z=brightness effects
 
 struct VertexOut {
   @builtin(position) clip_pos: vec4<f32>,
@@ -31,6 +31,7 @@ struct VertexOut {
   @location(2)       alpha:    f32,
   @location(3)       selected: f32,
   @location(4)       intensity: f32,
+  @location(5)       effects: f32,
 };
 
 var<private> quad: array<vec2<f32>, 6> = array<vec2<f32>, 6>(
@@ -67,7 +68,8 @@ fn vs_main(
   out.color    = star.color_alpha.xyz;
   out.alpha    = star.color_alpha.w;
   out.selected = 0.0;
-  out.intensity = star_hdr_intensity(out.color, star.pos_size.w, out.alpha);
+  out.effects   = clamp(lodFade.z, 0.0, 1.0);
+  out.intensity = mix(1.0, star_hdr_intensity(out.color, star.pos_size.w, out.alpha), out.effects);
 
   // ── Global LOD fade ────────────────────────────────────────────────────────
   // HYG nearby stars fade out as the camera moves far from the solar system
@@ -86,7 +88,7 @@ fn vs_main(
     return out;
   }
   out.selected = select(0.0, 1.0, isSelected);
-  out.intensity = select(out.intensity, max(out.intensity, 520.0), isSelected);
+  out.intensity = select(out.intensity, max(out.intensity, mix(1.0, 520.0, out.effects)), isSelected);
 
   // ── Frustum culling ────────────────────────────────────────────────────────
   // Cull only when the whole billboard is outside the frame plus a small margin.
@@ -151,18 +153,18 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   // ── Core bleaching ────────────────────────────────────────────────────────
   // Bright stars saturate to near-white in their centres (CCDs overexpose,
   // the eye bleaches at peak brightness). Faint stars retain their hue fully.
-  let spectral = subtle_spectral_color(in.color);
+  let spectral = mix(in.color, subtle_spectral_color(in.color), in.effects);
   let coreWhite = mix(spectral, vec3<f32>(1.0, 0.985, 0.94), 0.34);
   var col = spectral;
-  let bleach = clamp(core * in.alpha * 1.25, 0.0, 1.0);
+  let bleach = clamp(core * in.alpha * 1.25 * in.effects, 0.0, 1.0);
   col = mix(spectral, coreWhite, bleach);
 
-  let psf = core * 1.20 + wings * 0.62;
-  var alpha = clamp(psf * in.alpha * 1.35, 0.0, 1.0);
+  let psf = mix(core, core * 1.20 + wings * 0.62, in.effects);
+  var alpha = clamp(psf * in.alpha * mix(1.0, 1.35, in.effects), 0.0, 1.0);
   var hdr = col * psf * in.intensity * in.alpha;
 
   // ── Selected star: glowing physical sphere ────────────────────────────────
-  if in.selected > 0.5 {
+  if in.selected > 0.5 && in.effects > 0.001 {
     let glow  = exp(-d2 * 4.0);
     let bloom = max(0.0, 1.0 - d);
     hdr  += (spectral + vec3<f32>(glow * 0.42)) * (glow * 120.0 + bloom * bloom * 60.0);

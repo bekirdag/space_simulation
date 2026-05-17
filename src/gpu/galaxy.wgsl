@@ -21,7 +21,7 @@ struct Galaxy {
 
 @group(0) @binding(0) var<uniform>       camera:  Camera;
 @group(0) @binding(1) var<storage, read> galaxies: array<Galaxy>;
-@group(0) @binding(2) var<uniform>       galaxyLod: vec4<f32>; // x=actual brightness
+@group(0) @binding(2) var<uniform>       galaxyLod: vec4<f32>; // x=legacy apparent boost, y=brightness effects
 
 struct VertexOut {
   @builtin(position) clip_pos: vec4<f32>,

@@ -1756,7 +1756,7 @@
           </div>
           <div class="settings-row">
             <span class="settings-row-label">Actual brightness</span>
-            <label class="s-toggle" title="Use camera-distance adjusted apparent brightness for reflected solar-system objects, Milky Way stars, and galaxies.">
+            <label class="s-toggle" title="Use realistic HDR star brightness, spectral color, and bloom. Turn off for a flatter unenhanced view.">
               <input type="checkbox" id="set-body-brightness" checked>
               <span class="s-track"></span>
             </label>
@@ -1888,7 +1888,7 @@
             <li>Occlusion culling is intentionally avoided because empty space makes object-over-object hiding misleading.</li>
             <li>Screen-density reduction hides crowded body clusters when many neighboring objects compress into a few pixels.</li>
             <li>Large catalogs use octant-spread LOD caps so star and galaxy reductions stay distributed across the sky.</li>
-            <li>Actual brightness is tone-mapped and adjusted by camera distance, so it is useful visually but not photometric proof.</li>
+            <li>Actual brightness enables HDR star rendering, spectral color, and bloom for a realistic visual impression; it is not photometric proof.</li>
           </ul>
         </section>
       </div>

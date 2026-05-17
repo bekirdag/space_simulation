@@ -14,7 +14,6 @@ import constellationWGSL from "./constellation.wgsl?raw";
 import trailWGSL    from "./trail.wgsl?raw";
 import { type GPUContext } from "./device";
 import { type Body, BODY_FLOATS } from "../physics/body";
-import { BodyType } from "../physics/constants";
 import { STAR_FLOATS } from "../catalog/stars";
 import { MW_FLOATS } from "../catalog/milkyway";
 import { GALAXY_FLOATS } from "../catalog/galaxies";
@@ -53,51 +52,6 @@ const DUST_DEFAULT_TRANSPARENCY = 0.55;
 const MILKY_WAY_MODEL_RETRY_MS = 120_000;
 const MILKY_WAY_MODEL_BACKEND_RETRY_MS = 120_000;
 
-const KM_PER_AU = 149_597_870.7;
-const SUN_APPARENT_MAG = -26.74;
-const FULL_MOON_APPARENT_MAG = -12.74;
-const MOON_MEAN_DISTANCE_AU = 384_400 / KM_PER_AU;
-const MOON_RADIUS_AU = 1_737.4 / KM_PER_AU;
-const DEFAULT_REFLECTIVE_ALBEDO = 0.25;
-const REFLECTIVE_BODY_ALBEDO: Record<string, number> = {
-  Mercury: 0.142,
-  Venus: 0.689,
-  Earth: 0.367,
-  Mars: 0.170,
-  Jupiter: 0.538,
-  Saturn: 0.499,
-  Uranus: 0.488,
-  Neptune: 0.442,
-  Moon: 0.136,
-  Io: 0.63,
-  Europa: 0.67,
-  Ganymede: 0.43,
-  Callisto: 0.17,
-  Titan: 0.22,
-  Enceladus: 1.38,
-  Mimas: 0.96,
-  Tethys: 1.23,
-  Dione: 0.998,
-  Rhea: 0.95,
-  Iapetus: 0.5,
-  Miranda: 0.32,
-  Ariel: 0.39,
-  Umbriel: 0.21,
-  Titania: 0.27,
-  Oberon: 0.23,
-  Triton: 0.76,
-  Pluto: 0.49,
-  Charon: 0.37,
-  Eris: 0.96,
-  Ceres: 0.09,
-  Haumea: 0.7,
-  Makemake: 0.8,
-};
-const MOON_GEOMETRIC_ALBEDO = REFLECTIVE_BODY_ALBEDO["Moon"] ?? 0.136;
-const FULL_MOON_REFLECTED_FLUX =
-  MOON_GEOMETRIC_ALBEDO * MOON_RADIUS_AU * MOON_RADIUS_AU /
-  (MOON_MEAN_DISTANCE_AU * MOON_MEAN_DISTANCE_AU);
-
 const TRAIL_MAX_BODIES   = 64;
 const TRAIL_VTXBUF_BYTES = TRAIL_MAX_BODIES * TRAIL_SLOT_BYTES; // 64 × fixed slot = ~31 MB
 
@@ -124,10 +78,6 @@ interface MilkyWayModelPartEntry {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
-}
-
-function bodyDistanceAU(a: Body, b: Body): number {
-  return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 }
 
 function isHtmlResponse(buffer: ArrayBuffer): boolean {
@@ -254,9 +204,9 @@ export class Renderer {
   private viewportWidth = 1;
   private viewportHeight = 1;
   private selectedStarBuffer!: GPUBuffer;
-  private starLodBuffer!:   GPUBuffer;  // x=legacy fade, y=camera radius
-  private mwLodBuffer!:     GPUBuffer;  // x=fade, y=actual brightness
-  private galaxyLodBuffer!: GPUBuffer;  // x=actual brightness
+  private starLodBuffer!:   GPUBuffer;  // x=legacy fade, y=camera radius, z=brightness effects
+  private mwLodBuffer!:     GPUBuffer;  // x=fade, y=legacy apparent boost, z=brightness effects
+  private galaxyLodBuffer!: GPUBuffer;  // x=legacy apparent boost, y=brightness effects
   private bloomBlurHBuffer!: GPUBuffer;
   private bloomBlurVBuffer!: GPUBuffer;
 
@@ -299,6 +249,9 @@ export class Renderer {
   private _showTrails   = true;
   private _showGalaxies = true;
   private _showConstellations = false;
+  // This setting now controls the realistic HDR/spectral/bloom presentation.
+  // The older apparent-magnitude boost is deliberately kept disabled because it
+  // inflated solar-system bodies and nearby galaxies beyond their real volume.
   private _actualBrightness = true;
   private _cameraDistanceFromSun = 0;
   private _showDust = true;
@@ -1444,12 +1397,10 @@ export class Renderer {
   uploadBodies(bodies: Body[], visibility: ReadonlyMap<number, number> = new Map()): void {
     this.bodyCount = bodies.length;
     const data = new Float32Array(bodies.length * BODY_FLOATS);
-    const sun = bodies.find(b => b.name === "Sun" && b.type === BodyType.Star);
-    const earth = bodies.find(b => b.name === "Earth" && b.type === BodyType.Planet);
     for (let i = 0; i < bodies.length; i++) {
       const b = bodies[i]!;
       const o = i * BODY_FLOATS;
-      const brightness = this.bodyBrightnessFactor(b, sun, earth);
+      const brightness = this.bodyBrightnessFactor();
       // vec4 pos_mass
       data[o+0]=b.x;  data[o+1]=b.y;  data[o+2]=b.z;  data[o+3]=b.mass;
       // vec4 vel_rad
@@ -1462,54 +1413,17 @@ export class Renderer {
     this.ctx.device.queue.writeBuffer(this.bodyBuffer, 0, data);
   }
 
-  private bodyBrightnessFactor(body: Body, sun: Body | undefined, earth: Body | undefined): BodyBrightnessSample {
-    if (!this._actualBrightness) return { display: 1, observerDistanceAU: 0 };
-    if (body.type === BodyType.Star) {
-      const referenceAU = body.name === "Sun" && earth ? Math.max(0.02, bodyDistanceAU(body, earth)) : 0;
-      return {
-        display: body.name === "Sun" ? this.apparentMagnitudeToDisplayBrightness(SUN_APPARENT_MAG) : 32,
-        observerDistanceAU: referenceAU,
-      };
-    }
-    if (body.type === BodyType.Exoplanet) {
-      return { display: 1.35, observerDistanceAU: 0 };
-    }
-    if (!sun || !earth) return { display: 1, observerDistanceAU: 0 };
-    if (body.id === earth.id) return { display: 1.25, observerDistanceAU: 1 };
-
-    const albedo = REFLECTIVE_BODY_ALBEDO[body.name] ?? DEFAULT_REFLECTIVE_ALBEDO;
-    const sunVec = [sun.x - body.x, sun.y - body.y, sun.z - body.z] as const;
-    const earthVec = [earth.x - body.x, earth.y - body.y, earth.z - body.z] as const;
-    const sunDistanceAU = Math.max(0.02, Math.hypot(sunVec[0], sunVec[1], sunVec[2]));
-    const earthDistanceAU = Math.max(body.radius * 4, Math.hypot(earthVec[0], earthVec[1], earthVec[2]));
-    const phaseCos = clamp(
-      (sunVec[0] * earthVec[0] + sunVec[1] * earthVec[1] + sunVec[2] * earthVec[2]) /
-      (sunDistanceAU * earthDistanceAU),
-      -1,
-      1,
-    );
-    const phaseAngle = Math.acos(phaseCos);
-    const phase = Math.max(0.02, (Math.sin(phaseAngle) + (Math.PI - phaseAngle) * Math.cos(phaseAngle)) / Math.PI);
-    const reflectedFlux = Math.max(
-      1e-24,
-      albedo * body.radius * body.radius * phase /
-      (sunDistanceAU * sunDistanceAU * earthDistanceAU * earthDistanceAU),
-    );
-    const apparentMag = FULL_MOON_APPARENT_MAG - 2.5 * Math.log10(reflectedFlux / FULL_MOON_REFLECTED_FLUX);
-    return {
-      display: this.apparentMagnitudeToDisplayBrightness(apparentMag),
-      observerDistanceAU: earthDistanceAU,
-    };
-  }
-
-  private apparentMagnitudeToDisplayBrightness(mag: number): number {
-    if (!Number.isFinite(mag)) return 1;
-    return clamp(Math.pow(10, (1.0 - mag) / 7.0), 0.35, 160);
+  private bodyBrightnessFactor(): BodyBrightnessSample {
+    // Keep physical body volumes authoritative. The old apparent-brightness
+    // mode inflated quads and halos; the setting now only gates HDR/bloom
+    // presentation for star fields.
+    return { display: 1, observerDistanceAU: 0 };
   }
 
   private syncBrightnessUniforms(): void {
     if (!this.starLodBuffer || !this.mwLodBuffer || !this.galaxyLodBuffer) return;
-    const actual = this._actualBrightness ? 1 : 0;
+    const brightnessEffects = this._actualBrightness ? 1 : 0;
+    const legacyApparentBoost = 0;
 
     // MW individual stars disappear when camera > 400 kpc (3 200 000 AU).
     // Transition: fully visible at 360 kpc → invisible at 400 kpc.
@@ -1520,9 +1434,9 @@ export class Renderer {
     // Visible from 360 kpc, full brightness by 440 kpc. Max alpha 0.55.
     this._mwSelfAlpha = Math.max(0, Math.min(0.55, (camKpc - 360) / 80)) * (this._showGalaxies ? 1 : 0);
 
-    this.ctx.device.queue.writeBuffer(this.starLodBuffer, 0, new Float32Array([1, this._cameraDistanceFromSun, 0, 0]));
-    this.ctx.device.queue.writeBuffer(this.mwLodBuffer,  0, new Float32Array([mwStarFade, actual, 0, 0]));
-    this.ctx.device.queue.writeBuffer(this.galaxyLodBuffer, 0, new Float32Array([actual, 0, 0, 0]));
+    this.ctx.device.queue.writeBuffer(this.starLodBuffer, 0, new Float32Array([1, this._cameraDistanceFromSun, brightnessEffects, 0]));
+    this.ctx.device.queue.writeBuffer(this.mwLodBuffer,  0, new Float32Array([mwStarFade, legacyApparentBoost, brightnessEffects, 0]));
+    this.ctx.device.queue.writeBuffer(this.galaxyLodBuffer, 0, new Float32Array([legacyApparentBoost, brightnessEffects, 0, 0]));
 
     // Update MW self billboard: centred on Sgr A* (galactic centre) not the Sun.
     // The Sun is 8.5 kpc from the galactic centre; placing the blob at the
@@ -1762,6 +1676,20 @@ export class Renderer {
     blurVPass.setBindGroup(0, this.bloomBlurVBindGroup);
     blurVPass.draw(6, 1, 0, 0);
     blurVPass.end();
+  }
+
+  private clearBloomPass(encoder: GPUCommandEncoder): void {
+    if (!this.bloomPongTextureView) return;
+    const pass = encoder.beginRenderPass({
+      label: "hdr-bloom-clear-pass",
+      colorAttachments: [{
+        view: this.bloomPongTextureView,
+        clearValue: { r: 0, g: 0, b: 0, a: 1 },
+        loadOp: "clear",
+        storeOp: "store",
+      }],
+    });
+    pass.end();
   }
 
   private ensureDepthTexture(): GPUTextureView {
@@ -2017,7 +1945,11 @@ export class Renderer {
     this.ensureSceneTexture();
     this.ensureBloomTextures();
     drawScene(this.sceneTextureView!);
-    this.runBloomPasses(encoder);
+    if (this._actualBrightness) {
+      this.runBloomPasses(encoder);
+    } else {
+      this.clearBloomPass(encoder);
+    }
 
     const blackHoleRadius = this._blackHoleUniform[3] ?? 0;
     const blackHoleStrength = this._blackHoleUniform[7] ?? 0;

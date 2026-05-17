@@ -21,7 +21,7 @@ struct Star {
 
 @group(0) @binding(0) var<uniform>       camera:  Camera;
 @group(0) @binding(1) var<storage, read> stars:   array<Star>;
-@group(0) @binding(2) var<uniform>       lodFade: vec4<f32>; // x=fade 0..1, y=actual brightness
+@group(0) @binding(2) var<uniform>       lodFade: vec4<f32>; // x=fade 0..1, y=legacy apparent boost, z=brightness effects
 
 struct VertexOut {
   @builtin(position) clip_pos: vec4<f32>,
@@ -29,6 +29,7 @@ struct VertexOut {
   @location(1)       color:    vec3<f32>,
   @location(2)       alpha:    f32,
   @location(3)       brightness: f32,
+  @location(4)       effects: f32,
 };
 
 var<private> quad: array<vec2<f32>, 6> = array<vec2<f32>, 6>(
@@ -69,6 +70,7 @@ fn vs_main(
   out.uv    = uv;
   out.color = star.color_alpha.xyz;
   let actual = lodFade.y > 0.5;
+  out.effects = clamp(lodFade.z, 0.0, 1.0);
   let cameraDistanceAU = length(center - camera.eyeAndFlags.xyz);
   out.brightness = select(1.0, apparent_mw_brightness(cameraDistanceAU, out.color, star.pos_size.w, star.color_alpha.w), actual);
   out.alpha = star.color_alpha.w * lodFade.x * select(1.0, clamp(0.35 + out.brightness, 0.25, 2.1), actual);
@@ -113,15 +115,15 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   let core  = exp(-d2 * 22.0);
   let wings = max(0.0, 1.0 / (1.0 + d2 * 10.0) - 0.09);
 
-  let spectral = subtle_spectral_color(in.color);
+  let spectral = mix(in.color, subtle_spectral_color(in.color), in.effects);
   var col = spectral;
-  let lift   = clamp(pow(max(in.brightness, 0.08), 0.28), 0.55, 1.8);
-  let bleach = clamp(core * in.alpha * (0.95 + lift * 0.42), 0.0, 1.0);
+  let lift   = mix(1.0, clamp(pow(max(in.brightness, 0.08), 0.28), 0.55, 1.8), in.effects);
+  let bleach = clamp(core * in.alpha * (0.95 + lift * 0.42) * in.effects, 0.0, 1.0);
   let coreWhite = mix(spectral, vec3<f32>(1.0, 0.985, 0.94), 0.30);
   col = mix(spectral, coreWhite, bleach);
 
-  let psf = core * 1.12 + wings * 0.58;
-  let alpha = clamp(psf * in.alpha * (0.72 + lift * 0.42), 0.0, 1.0);
-  let intensity = clamp(pow(max(in.brightness, 0.05), 1.55) * 10.5, 0.40, 95.0);
+  let psf = mix(core, core * 1.12 + wings * 0.58, in.effects);
+  let alpha = clamp(psf * in.alpha * mix(1.0, 0.72 + lift * 0.42, in.effects), 0.0, 1.0);
+  let intensity = mix(1.0, clamp(pow(max(in.brightness, 0.05), 1.55) * 10.5, 0.40, 95.0), in.effects);
   return vec4<f32>(col * psf * in.alpha * intensity, alpha);
 }
