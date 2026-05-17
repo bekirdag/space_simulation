@@ -42,17 +42,31 @@ const GAL_TO_ECL = [
   [-0.096390,  0.862326,  0.497159],
 ] as const;
 
+function srgbChannelToLinear(channel: number): number {
+  return channel <= 0.04045
+    ? channel / 12.92
+    : Math.pow((channel + 0.055) / 1.055, 2.4);
+}
+
+function linearHexColor(hex: number): [number, number, number] {
+  return [
+    srgbChannelToLinear(((hex >> 16) & 0xff) / 255),
+    srgbChannelToLinear(((hex >> 8) & 0xff) / 255),
+    srgbChannelToLinear((hex & 0xff) / 255),
+  ];
+}
+
 const DUST_DARK_PALETTE: Array<[number, number, number]> = [
-  [0x0c / 255, 0x0a / 255, 0x0a / 255], // inky cosmic black
-  [0x1e / 255, 0x16 / 255, 0x13 / 255], // silhouette charcoal brown
+  linearHexColor(0x0c0a0a), // inky cosmic black
+  linearHexColor(0x1e1613), // silhouette charcoal brown
 ];
 const DUST_REDDENING_PALETTE: Array<[number, number, number]> = [
-  [0x8a / 255, 0x3d / 255, 0x19 / 255], // deep cosmic rust
-  [0xd4 / 255, 0x6a / 255, 0x27 / 255], // muted sunset amber
+  linearHexColor(0x8a3d19), // deep cosmic rust
+  linearHexColor(0xd46a27), // muted sunset amber
 ];
 const DUST_REFLECTION_PALETTE: Array<[number, number, number]> = [
-  [0x52 / 255, 0x8c / 255, 0xa3 / 255], // dusty sky blue
-  [0x31 / 255, 0x64 / 255, 0x7d / 255], // deep cosmic cyan
+  linearHexColor(0x528ca3), // dusty sky blue
+  linearHexColor(0x31647d), // deep cosmic cyan
 ];
 const DUST_DARK_SHARE = 0.785;
 const DUST_REDDENING_SHARE = 0.18;

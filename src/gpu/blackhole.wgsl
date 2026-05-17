@@ -56,7 +56,7 @@ fn vs_main(@builtin(vertex_index) vi: u32) -> VertexOut {
 fn sample_scene(uv: vec2<f32>) -> vec3<f32> {
   // textureSampleLevel is valid inside non-uniform branches; implicit LOD is not.
   if uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 {
-    return vec3<f32>(0.006, 0.006, 0.020);
+    return vec3<f32>(0.0);
   }
   return textureSampleLevel(sceneTex, sceneSampler, uv, 0.0).rgb;
 }

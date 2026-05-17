@@ -1788,7 +1788,7 @@ export class Renderer {
       const pass = encoder.beginRenderPass({
         colorAttachments: [{
           view,
-          clearValue: { r: 0.01, g: 0.01, b: 0.05, a: 1 },
+          clearValue: { r: 0, g: 0, b: 0, a: 1 },
           loadOp: "clear", storeOp: "store",
         }],
         depthStencilAttachment: {
@@ -1995,7 +1995,7 @@ export class Renderer {
     const pass = encoder.beginRenderPass({
       colorAttachments: [{
         view: swapView,
-        clearValue: { r: 0.01, g: 0.01, b: 0.05, a: 1 },
+        clearValue: { r: 0, g: 0, b: 0, a: 1 },
         loadOp: "clear", storeOp: "store",
       }],
     });

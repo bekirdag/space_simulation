@@ -215,6 +215,6 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     discard;
   }
 
-  let darkCore = mix(in.color, vec3<f32>(0.010, 0.009, 0.008), shape * 0.24);
+  let darkCore = mix(in.color, vec3<f32>(0.0038, 0.0031, 0.0031), shape * 0.24);
   return vec4<f32>(darkCore, alpha);
 }
