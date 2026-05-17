@@ -23,6 +23,7 @@ interface CameraTravelAnimation {
 interface WheelZoomGoal {
   distance: number;
   remainingSteps: number;
+  point?: Vec3;
 }
 
 function clampDistance(distance: number): number {
@@ -124,6 +125,39 @@ export class Camera {
       e.preventDefault();
       this.cancelTravelAnimation();
       const zoomingIn = e.deltaY < 0;
+      const pointGoal = this.wheelZoomGoal?.point ? this.wheelZoomGoal : null;
+      if (pointGoal?.point && this._uniforms) {
+        const eye = this._uniforms.eye;
+        const point = pointGoal.point;
+        const dx = eye[0] - point[0];
+        const dy = eye[1] - point[1];
+        const dz = eye[2] - point[2];
+        const currentDistance = Math.hypot(dx, dy, dz);
+        if (Number.isFinite(currentDistance) && currentDistance > MIN_DISTANCE) {
+          let nextDistance = currentDistance * (zoomingIn ? 0.9 : 1.1);
+          if (zoomingIn && currentDistance > pointGoal.distance * 1.001) {
+            const steps = Math.max(1, pointGoal.remainingSteps);
+            const factor = clamp(Math.pow(pointGoal.distance / currentDistance, 1 / steps), 0.02, 0.995);
+            nextDistance = currentDistance * factor;
+            pointGoal.remainingSteps = steps - 1;
+          }
+          if (zoomingIn && (pointGoal.remainingSteps <= 0 || nextDistance <= pointGoal.distance * 1.001)) {
+            nextDistance = pointGoal.distance;
+            this.wheelZoomGoal = null;
+          }
+          this.setViewFromEyeAndTarget(
+            [
+              point[0] + dx / currentDistance * nextDistance,
+              point[1] + dy / currentDistance * nextDistance,
+              point[2] + dz / currentDistance * nextDistance,
+            ],
+            point,
+          );
+          this.lockTarget = true;
+          return;
+        }
+      }
+
       const oldDist = this.distance;
       const activeGoal = zoomingIn && this.wheelZoomGoal && oldDist > this.wheelZoomGoal.distance * 1.001
         ? this.wheelZoomGoal
@@ -178,17 +212,45 @@ export class Camera {
     };
   }
 
+  setWheelZoomPointGoal(x: number, y: number, z: number, closeDistance: number, steps = 10): void {
+    const targetDistance = clampDistance(closeDistance);
+    if (!Number.isFinite(targetDistance)) {
+      this.wheelZoomGoal = null;
+      return;
+    }
+    this.wheelZoomGoal = {
+      distance: targetDistance,
+      remainingSteps: Math.max(1, Math.round(steps)),
+      point: [x, y, z],
+    };
+  }
+
+  updateWheelZoomPoint(x: number, y: number, z: number): void {
+    if (!this.wheelZoomGoal?.point) return;
+    this.wheelZoomGoal.point = [x, y, z];
+  }
+
+  clearWheelZoomGoal(): void {
+    this.wheelZoomGoal = null;
+  }
+
   focusFromCurrentView(x: number, y: number, z: number, closeDistance: number, wheelSteps = 10): void {
     this.cancelTravelAnimation();
 
     const target: Vec3 = [x, y, z];
     const eye = this._uniforms?.eye ?? this.currentEye();
-    const dx = eye[0] - x;
-    const dy = eye[1] - y;
-    const dz = eye[2] - z;
+    this.setViewFromEyeAndTarget(eye, target);
+    this.lockTarget = true;
+    this.setWheelZoomGoal(closeDistance, wheelSteps);
+  }
+
+  private setViewFromEyeAndTarget(eye: Vec3, target: Vec3): void {
+    const dx = eye[0] - target[0];
+    const dy = eye[1] - target[1];
+    const dz = eye[2] - target[2];
     const rawDistance = Math.hypot(dx, dy, dz);
 
-    this.target = target;
+    this.target = [...target];
     if (Number.isFinite(rawDistance) && rawDistance > MIN_DISTANCE) {
       this.distance = clampDistance(rawDistance);
       this.azimuth = Math.atan2(dy, dx);
@@ -198,9 +260,6 @@ export class Camera {
         Math.PI / 2 - ORBIT_POLE_MARGIN,
       );
     }
-
-    this.lockTarget = true;
-    this.setWheelZoomGoal(closeDistance, wheelSteps);
   }
 
   private currentEye(): Vec3 {

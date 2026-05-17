@@ -18,10 +18,13 @@ const WIKIPEDIA_SEARCH_API = "https://en.wikipedia.org/w/api.php";
 const WIKIPEDIA_WEB = "https://en.wikipedia.org/wiki";
 const WIKIMEDIA_COMMONS_API = "https://commons.wikimedia.org/w/api.php";
 const WIKIMEDIA_COMMONS_WEB = "https://commons.wikimedia.org/wiki";
-const OBJECT_INFO_CACHE_VERSION = 7;
+const OBJECT_INFO_CACHE_VERSION = 8;
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
 const DEFAULT_CACHE_TTL_DAYS = 30;
 const GENERAL_DESCRIPTION_MAX_LENGTH = 1400;
+const WIKIPEDIA_PRIMARY_SCORE_THRESHOLD = 25;
+const WIKIPEDIA_SIMILAR_SCORE_THRESHOLD = 10;
+const WIKIPEDIA_MAX_CANDIDATES = 8;
 const JSON_FETCH_TIMEOUT_MS = 10_000;
 const NASA_SCIENCE_OBJECT_PAGES = new Map([
   ["sun", "https://science.nasa.gov/sun/facts/"],
@@ -714,15 +717,46 @@ function scoreWikipediaSearchItem(item, title, objectType) {
   return score;
 }
 
-function chooseWikipediaSearchItem(items, title, objectType) {
-  const ranked = (Array.isArray(items) ? items : [])
+function rankedWikipediaSearchItems(
+  items,
+  title,
+  objectType,
+  minScore = WIKIPEDIA_PRIMARY_SCORE_THRESHOLD,
+) {
+  return (Array.isArray(items) ? items : [])
     .map(item => ({ item, score: scoreWikipediaSearchItem(item, title, objectType) }))
+    .filter(({ item, score }) => cleanText(item?.title, 180) && score >= minScore)
     .sort((a, b) => b.score - a.score);
-  const best = ranked[0];
-  return best && best.score >= 25 ? best.item : null;
 }
 
-async function wikipediaSearchPageTitle({ title, objectType, subtitle }) {
+function addWikipediaPageCandidate(candidates, { pageTitle, query, score, matchKind }) {
+  const title = cleanText(pageTitle, 180);
+  if (!title) return;
+
+  const key = normalizeForMatch(title);
+  const existing = candidates.get(key);
+  if (existing && existing.score >= score) return;
+
+  candidates.set(key, {
+    pageTitle: title,
+    query: cleanText(query || title, 180) || title,
+    score,
+    matchKind,
+  });
+}
+
+async function wikipediaSearchPageCandidates({ title, objectType, subtitle }) {
+  const candidates = new Map();
+  const knownTitle = knownWikipediaPageTitle(title);
+  if (knownTitle) {
+    addWikipediaPageCandidate(candidates, {
+      pageTitle: knownTitle,
+      query: knownTitle,
+      score: 120,
+      matchKind: "known",
+    });
+  }
+
   for (const query of wikipediaSearchTerms(title, objectType, subtitle)) {
     try {
       const url = new URL(WIKIPEDIA_SEARCH_API);
@@ -733,16 +767,38 @@ async function wikipediaSearchPageTitle({ title, objectType, subtitle }) {
       url.searchParams.set("srlimit", "8");
 
       const searchJson = await fetchJson(url);
-      const item = chooseWikipediaSearchItem(searchJson?.query?.search, title, objectType);
-      const pageTitle = cleanText(item?.title, 180);
-      if (pageTitle) return { pageTitle, query };
+      const ranked = rankedWikipediaSearchItems(
+        searchJson?.query?.search,
+        title,
+        objectType,
+        WIKIPEDIA_SIMILAR_SCORE_THRESHOLD,
+      );
+      for (const { item, score } of ranked.slice(0, 4)) {
+        addWikipediaPageCandidate(candidates, {
+          pageTitle: item?.title,
+          query,
+          score,
+          matchKind: score >= WIKIPEDIA_PRIMARY_SCORE_THRESHOLD ? "search" : "similar",
+        });
+      }
     } catch (err) {
       console.warn("CosmosMap Wikipedia search failed:", err);
     }
   }
 
-  const fallbackTitle = knownWikipediaPageTitle(title) || cleanText(title, 120);
-  return fallbackTitle ? { pageTitle: fallbackTitle, query: fallbackTitle } : null;
+  const fallbackTitle = cleanText(title, 120);
+  if (!candidates.size && fallbackTitle) {
+    addWikipediaPageCandidate(candidates, {
+      pageTitle: fallbackTitle,
+      query: fallbackTitle,
+      score: 1,
+      matchKind: "fallback",
+    });
+  }
+
+  return [...candidates.values()]
+    .sort((a, b) => b.score - a.score)
+    .slice(0, WIKIPEDIA_MAX_CANDIDATES);
 }
 
 function isUsableWikipediaSummary(summary) {
@@ -918,51 +974,58 @@ async function wikimediaCommonsImageInfo({ title, objectType, subtitle, pageTitl
 }
 
 async function wikipediaObjectInfo({ title, objectType, subtitle }) {
-  const resolved = await wikipediaSearchPageTitle({ title, objectType, subtitle });
-  if (!resolved?.pageTitle) return null;
+  const candidates = await wikipediaSearchPageCandidates({ title, objectType, subtitle });
+  for (const resolved of candidates) {
+    try {
+      const url = new URL(`${WIKIPEDIA_SUMMARY_API}/${encodeURIComponent(resolved.pageTitle)}`);
+      url.searchParams.set("redirect", "true");
 
-  const url = new URL(`${WIKIPEDIA_SUMMARY_API}/${encodeURIComponent(resolved.pageTitle)}`);
-  url.searchParams.set("redirect", "true");
+      const summary = await fetchJson(url);
+      if (!isUsableWikipediaSummary(summary)) continue;
 
-  const summary = await fetchJson(url);
-  if (!isUsableWikipediaSummary(summary)) return null;
+      const description = cleanText(summary.extract, GENERAL_DESCRIPTION_MAX_LENGTH);
+      let image = null;
+      try {
+        image = await wikimediaCommonsImageInfo({
+          title,
+          objectType,
+          subtitle,
+          pageTitle: summary?.title || resolved.pageTitle,
+        });
+      } catch (err) {
+        console.warn("CosmosMap Wikimedia image lookup failed:", err);
+      }
+      const sourceUrl = summary?.content_urls?.desktop?.page || wikipediaPageUrl(resolved.pageTitle);
 
-  const description = cleanText(summary.extract, GENERAL_DESCRIPTION_MAX_LENGTH);
-  let image = null;
-  try {
-    image = await wikimediaCommonsImageInfo({
-      title,
-      objectType,
-      subtitle,
-      pageTitle: summary?.title || resolved.pageTitle,
-    });
-  } catch (err) {
-    console.warn("CosmosMap Wikimedia image lookup failed:", err);
+      return {
+        cacheVersion: OBJECT_INFO_CACHE_VERSION,
+        title,
+        objectType,
+        description,
+        imageUrl: image?.imageUrl ?? null,
+        nasaId: null,
+        sourceTitle: cleanText(summary.title || resolved.pageTitle, 180),
+        sourceUrl,
+        wikipediaUrl: sourceUrl,
+        query: resolved.query,
+        wikipediaMatchKind: resolved.matchKind,
+        cachedImage: image?.cachedImage ?? null,
+        remoteImageUrl: image?.remoteImageUrl ?? null,
+        imageCredit: image?.imageCredit ?? null,
+        imageLicense: image?.imageLicense ?? null,
+        imageLicenseUrl: image?.imageLicenseUrl ?? null,
+        imageProvider: image?.imageProvider ?? null,
+        imageSourceTitle: image?.imageSourceTitle ?? null,
+        imageSourceUrl: image?.imageSourceUrl ?? null,
+        provider: "Wikipedia",
+        cachedAt: new Date().toISOString(),
+      };
+    } catch (err) {
+      console.warn(`CosmosMap Wikipedia summary failed for ${resolved.pageTitle}:`, err);
+    }
   }
-  const sourceUrl = summary?.content_urls?.desktop?.page || wikipediaPageUrl(resolved.pageTitle);
 
-  return {
-    cacheVersion: OBJECT_INFO_CACHE_VERSION,
-    title,
-    objectType,
-    description,
-    imageUrl: image?.imageUrl ?? null,
-    nasaId: null,
-    sourceTitle: cleanText(summary.title || resolved.pageTitle, 180),
-    sourceUrl,
-    wikipediaUrl: sourceUrl,
-    query: resolved.query,
-    cachedImage: image?.cachedImage ?? null,
-    remoteImageUrl: image?.remoteImageUrl ?? null,
-    imageCredit: image?.imageCredit ?? null,
-    imageLicense: image?.imageLicense ?? null,
-    imageLicenseUrl: image?.imageLicenseUrl ?? null,
-    imageProvider: image?.imageProvider ?? null,
-    imageSourceTitle: image?.imageSourceTitle ?? null,
-    imageSourceUrl: image?.imageSourceUrl ?? null,
-    provider: "Wikipedia",
-    cachedAt: new Date().toISOString(),
-  };
+  return null;
 }
 
 async function nasaScienceRecordInfo({ record, searchItem, title, objectType }) {

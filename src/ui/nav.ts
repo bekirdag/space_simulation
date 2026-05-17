@@ -36,17 +36,21 @@ export class NavPanel {
   private _focusedBodyName: string | null = null;
   private focusedSystemCenterName: string | null = null;
   private _selectedCatalogStar: StarSearchResult | null = null;
+  private focusedBodyTracksCamera = false;
+  private selectedCatalogTracksCamera = false;
   private modelPage = 0;
   private readonly modelPageSize = 10;
   private open     = true;
 
   /** The catalog/map object most recently selected from search results or map labels. */
   get selectedCatalogStar(): StarSearchResult | null { return this._selectedCatalogStar; }
+  get shouldTrackSelectedCatalogStar(): boolean { return this.selectedCatalogTracksCamera; }
 
   /** Select a catalog/map object externally (e.g. from search or the map). */
   selectCatalogStar(hit: StarSearchResult, durationSeconds = 0): void {
     this.clearFocusedBody();
     this._selectedCatalogStar = hit;
+    this.selectedCatalogTracksCamera = true;
     this.catalogSearch?.onFocusTitleChange?.(hit.label, hit.subtitle, this.catalogObjectType(hit));
     this.camera.travelTo(hit.x, hit.y, hit.z, hit.focusDistance, durationSeconds);
     this.camera.lockTarget = true;
@@ -55,8 +59,10 @@ export class NavPanel {
   selectCatalogStarForWheelZoom(hit: StarSearchResult, wheelSteps = 10): void {
     this.clearFocusedBody();
     this._selectedCatalogStar = hit;
+    this.selectedCatalogTracksCamera = false;
     this.catalogSearch?.onFocusTitleChange?.(hit.label, hit.subtitle, this.catalogObjectType(hit));
-    this.camera.focusFromCurrentView(hit.x, hit.y, hit.z, hit.focusDistance, wheelSteps);
+    this.camera.lockTarget = false;
+    this.camera.setWheelZoomPointGoal(hit.x, hit.y, hit.z, hit.focusDistance, wheelSteps);
   }
 
   constructor(
@@ -170,13 +176,15 @@ export class NavPanel {
     this.focusedSystemCenterName = null;
   }
 
-  private setFocusedBody(name: string): void {
+  private setFocusedBody(name: string, trackCamera = true): void {
     const body = this.bodyByName(name);
     this._focusedBodyName = name;
     this._selectedCatalogStar = null; // simulation body takes over; dismiss star selection
+    this.focusedBodyTracksCamera = trackCamera;
+    this.selectedCatalogTracksCamera = false;
     this.setFocusedSystem(name);
     this.catalogSearch?.onFocusTitleChange?.(name, "", this.bodyObjectType(body));
-    this.camera.lockTarget = true; // scroll zooms orbit radius, not toward cursor
+    this.camera.lockTarget = trackCamera; // scroll zooms orbit radius only after the camera is tracking.
     let focusedEl: HTMLElement | undefined;
     this.panel.querySelectorAll<HTMLElement>("[data-travel]").forEach(el => {
       const isFocused = el.dataset["travel"] === name;
@@ -189,8 +197,11 @@ export class NavPanel {
   clearFocusedBody(): void {
     this._focusedBodyName = null;
     this._selectedCatalogStar = null; // clear star selection when focusing a body
+    this.focusedBodyTracksCamera = false;
+    this.selectedCatalogTracksCamera = false;
     this.clearFocusedSystem();
     this.catalogSearch?.onFocusTitleChange?.(null);
+    this.camera.clearWheelZoomGoal();
     this.camera.lockTarget = false; // re-enable zoom-toward-cursor
     this.panel.querySelectorAll<HTMLElement>("[data-travel].focused").forEach(el => {
       el.classList.remove("focused");
@@ -202,6 +213,10 @@ export class NavPanel {
     const body = this.bodyByName(this._focusedBodyName!);
     if (!body) {
       this.clearFocusedBody();
+      return;
+    }
+    if (!this.focusedBodyTracksCamera) {
+      this.camera.updateWheelZoomPoint(body.x, body.y, body.z);
       return;
     }
     this.camera.target = [body.x, body.y, body.z];
@@ -230,8 +245,8 @@ export class NavPanel {
   focusBodyForWheelZoom(name: string, wheelSteps = 10): void {
     const body = this.bodyByName(name);
     if (!body) return;
-    this.setFocusedBody(name);
-    this.camera.focusFromCurrentView(body.x, body.y, body.z, this.closeDistanceFor(body), wheelSteps);
+    this.setFocusedBody(name, false);
+    this.camera.setWheelZoomPointGoal(body.x, body.y, body.z, this.closeDistanceFor(body), wheelSteps);
   }
 
   private filter(): void {

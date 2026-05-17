@@ -1354,6 +1354,7 @@ async function main(): Promise<void> {
 
   // Last computed viewProj matrix - used by pointer hit tests outside the render loop.
   let lastViewProj: Float32Array | null = null;
+  let lastCameraEye: [number, number, number] | null = null;
 
   type MapObjectClickMode = "single" | "double";
 
@@ -1365,6 +1366,7 @@ async function main(): Promise<void> {
 
   interface MapObjectHit {
     score: number;
+    cameraDistance: number;
     select: (mode: MapObjectClickMode) => void;
   }
 
@@ -1389,6 +1391,12 @@ async function main(): Promise<void> {
 
   function screenDistance(cx: number, cy: number, point: ProjectedMapPoint): number {
     return Math.hypot(cx - point.x, cy - point.y);
+  }
+
+  function cameraDistanceTo(x: number, y: number, z: number): number {
+    const eye = lastCameraEye;
+    if (!eye) return Number.POSITIVE_INFINITY;
+    return Math.hypot(x - eye[0], y - eye[1], z - eye[2]);
   }
 
   function bodyHitThreshold(body: Body, projected: ProjectedMapPoint): number {
@@ -1453,6 +1461,7 @@ async function main(): Promise<void> {
       if (dist > threshold) continue;
       addCandidate({
         score: dist - 10,
+        cameraDistance: cameraDistanceTo(body.x, body.y, body.z),
         select: (mode) => {
           if (mode === "double") nav.travelToClose(body.name);
           else nav.focusBodyForWheelZoom(body.name, MAP_WHEEL_ZOOM_STEPS);
@@ -1478,6 +1487,7 @@ async function main(): Promise<void> {
       };
       addCandidate({
         score: dist - 3,
+        cameraDistance: cameraDistanceTo(star.x, star.y, star.z),
         select: (mode) => selectMapCatalogObject(hit, mode, () => {
           setExoplanetBodies(star.name, [star.x, star.y, star.z]);
         }),
@@ -1492,6 +1502,7 @@ async function main(): Promise<void> {
       const hit = catalogHitFromStar(star);
       addCandidate({
         score: dist,
+        cameraDistance: cameraDistanceTo(star.x, star.y, star.z),
         select: (mode) => selectMapCatalogObject(hit, mode, () => {
           setExoplanetBodies(star.name, [star.x, star.y, star.z]);
         }),
@@ -1524,9 +1535,17 @@ async function main(): Promise<void> {
       };
       const candidate: MapObjectHit = {
         score: dist + 6,
+        cameraDistance: cameraDistanceTo(x, y, z),
         select: (mode) => selectMapCatalogObject(hit, mode, () => setExoplanetBodies(null)),
       };
-      if (!bestVisibleStar || candidate.score < bestVisibleStar.score) bestVisibleStar = candidate;
+      if (
+        !bestVisibleStar ||
+        candidate.cameraDistance < bestVisibleStar.cameraDistance ||
+        (
+          candidate.cameraDistance === bestVisibleStar.cameraDistance &&
+          candidate.score < bestVisibleStar.score
+        )
+      ) bestVisibleStar = candidate;
     }
     addCandidate(bestVisibleStar);
 
@@ -1553,9 +1572,17 @@ async function main(): Promise<void> {
         };
         const candidate: MapObjectHit = {
           score: dist + 4,
+          cameraDistance: cameraDistanceTo(x, y, z),
           select: (mode) => selectMapCatalogObject(hit, mode, () => setExoplanetBodies(null)),
         };
-        if (!bestGalaxy || candidate.score < bestGalaxy.score) bestGalaxy = candidate;
+        if (
+          !bestGalaxy ||
+          candidate.cameraDistance < bestGalaxy.cameraDistance ||
+          (
+            candidate.cameraDistance === bestGalaxy.cameraDistance &&
+            candidate.score < bestGalaxy.score
+          )
+        ) bestGalaxy = candidate;
       }
       addCandidate(bestGalaxy);
     }
@@ -1580,21 +1607,29 @@ async function main(): Promise<void> {
       };
       const candidate: MapObjectHit = {
         score: dist + 5,
+        cameraDistance: cameraDistanceTo(neb.x, neb.y, neb.z),
         select: (mode) => selectMapCatalogObject(hit, mode, () => setExoplanetBodies(null)),
       };
-      if (!bestNebula || candidate.score < bestNebula.score) bestNebula = candidate;
+      if (
+        !bestNebula ||
+        candidate.cameraDistance < bestNebula.cameraDistance ||
+        (
+          candidate.cameraDistance === bestNebula.cameraDistance &&
+          candidate.score < bestNebula.score
+        )
+      ) bestNebula = candidate;
     }
     addCandidate(bestNebula);
 
-    candidates.sort((a, b) => a.score - b.score);
+    candidates.sort((a, b) => (a.cameraDistance - b.cameraDistance) || (a.score - b.score));
     return candidates[0] ?? null;
   }
 
   // ── Canvas click → select body ────────────────────────────────────────────
   const contextMenu = new ContextMenu();
 
-  // ── Left-click: direct navigation ─────────────────────────────────────────
-  // Single click → system view; double-click → close-up zoom.
+  // ── Left-click: direct selection ──────────────────────────────────────────
+  // Single click locks the next wheel zoom to the object; double-click travels close.
   let pointerDownAt    = { x: 0, y: 0 };
   let rightDownAt      = { x: 0, y: 0 };
   let lastClickMs      = 0;
@@ -1632,17 +1667,20 @@ async function main(): Promise<void> {
     const isDbl = now - lastClickMs < 300 && clickGap < 12 && lastClickedMapHit !== null;
 
     const labelBody = isDbl ? null : labels.findBodyAtScreen(e.clientX, e.clientY);
-    const hit = isDbl && lastClickedMapHit
-      ? lastClickedMapHit
-      : labelBody
+    const labelHit = labelBody
       ? {
           score: 0,
+          cameraDistance: cameraDistanceTo(labelBody.x, labelBody.y, labelBody.z),
           select: (mode: MapObjectClickMode) => {
             if (mode === "double") nav.travelToClose(labelBody.name);
             else nav.focusBodyForWheelZoom(labelBody.name, MAP_WHEEL_ZOOM_STEPS);
           },
         } satisfies MapObjectHit
-      : findMapObjectAtScreen(e.clientX, e.clientY);
+      : null;
+    const mapHit = isDbl ? null : findMapObjectAtScreen(e.clientX, e.clientY);
+    const hit = isDbl && lastClickedMapHit
+      ? lastClickedMapHit
+      : mapHit ?? labelHit;
     lastClickMs = now;
     lastClickAt = { x: e.clientX, y: e.clientY };
     if (!hit) {
@@ -2045,7 +2083,7 @@ async function main(): Promise<void> {
     // Catalog stars have no simulation body, so updateFocusedBody doesn't help them.
     {
       const selStar = nav.selectedCatalogStar;
-      if (selStar && !nav.focusedBodyName) {
+      if (selStar && !nav.focusedBodyName && nav.shouldTrackSelectedCatalogStar) {
         camera.target[0] = selStar.x;
         camera.target[1] = selStar.y;
         camera.target[2] = selStar.z;
@@ -2055,6 +2093,7 @@ async function main(): Promise<void> {
 
     const camUniforms = camera.update(aspect);
     lastViewProj = camUniforms.viewProj;
+    lastCameraEye = [camUniforms.eye[0], camUniforms.eye[1], camUniforms.eye[2]];
     renderer.updateCamera(camUniforms, canvas.width, canvas.height);
     renderer.updateBlackHoleVisual(
       SGR_A_STAR_POS,
