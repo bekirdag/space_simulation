@@ -158,9 +158,7 @@ fn vs_main(
     out.clip_pos = vec4(10.0, 10.0, 10.0, 1.0);
     return out;
   }
-  out.selected = select(0.0, 1.0, isSelected);
-  let selectedBoost = mix(160.0, 8.0, cool_star_weight(out.color));
-  out.intensity = select(out.intensity, max(out.intensity, mix(1.0, selectedBoost, out.effects)), isSelected);
+  out.selected = 0.0;
 
   // ── Frustum culling ────────────────────────────────────────────────────────
   // Cull only when the whole billboard is outside the frame plus a small margin.
@@ -177,21 +175,6 @@ fn vs_main(
   if ndcX - cullMargin > 1.0 || ndcX + cullMargin < -1.0 ||
      ndcY - cullMargin > 1.0 || ndcY + cullMargin < -1.0 {
     out.clip_pos = vec4(10.0, 10.0, 10.0, 1.0);
-    return out;
-  }
-
-  // Selected star: render as a PHYSICAL SPHERE so it grows as you zoom in.
-  // A fixed-NDC billboard stays the same size regardless of distance, which
-  // makes zoom feel broken. A sphere with radius ≈ 1 solar radius in our
-  // compressed coordinate system creates the natural "approaching a star" sensation.
-  if isSelected {
-
-    let physRadius = radiusAU;
-    let physNdcR   = physRadius * focalY / clip_c.w;
-    // Never shrink below 3× the base minimum so the star stays visible at range.
-    let selectedNdcRadius = max(physNdcR, camera.rightAndMNR.w * 3.0);
-    out.pixel_radius = selectedNdcRadius * 2.5 / max(camera.rightAndMNR.w, 0.000001);
-    out.clip_pos = clip_c + clip_billboard_offset(uv, selectedNdcRadius, clip_c.w);
     return out;
   }
 

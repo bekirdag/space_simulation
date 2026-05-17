@@ -1526,6 +1526,7 @@ export class Renderer {
 
   uploadSelectedStarModel(model: SelectedStarModel | null): void {
     if (!model) {
+      if (!this.selectedStarModelActive) return;
       this.selectedStarModelActive = false;
       this.selectedStarModelUniform.fill(0);
       this.writeSelectedStarModelUniform();

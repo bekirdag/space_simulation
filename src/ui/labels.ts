@@ -207,6 +207,12 @@ export interface CatalogStarInfo {
   x: number; y: number; z: number;
 }
 
+export interface LockTargetInfo {
+  x: number;
+  y: number;
+  z: number;
+}
+
 export type BodyLabelClickHandler = (body: Body) => void;
 export type NearbyStarClickHandler = (star: NearbyStarLabel) => void;
 
@@ -230,6 +236,7 @@ export class LabelManager {
   private starLabelEl: HTMLDivElement;
   private starLabelNameEl: HTMLSpanElement;
   private starLabelSubEl: HTMLSpanElement;
+  private targetReticleEl: HTMLDivElement;
 
   // Nearby-star label spans keyed by star name
   private nearbyStarSpans = new Map<string, HTMLSpanElement>();
@@ -286,6 +293,12 @@ export class LabelManager {
       this.starLabelEl.addEventListener(eventType, stopStarLabelEvent, { capture: true });
     }
     document.body.appendChild(this.starLabelEl);
+
+    this.targetReticleEl = document.createElement('div');
+    this.targetReticleEl.className = 'target-reticle';
+    this.targetReticleEl.style.display = 'none';
+    this.targetReticleEl.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(this.targetReticleEl);
   }
 
   private activateBodyLabel(sp: HTMLElement): void {
@@ -488,6 +501,27 @@ export class LabelManager {
     this.starLabelNameEl.textContent = star.label;
     this.starLabelSubEl.textContent = star.subtitle;
     this.starLabelSubEl.style.display = star.subtitle ? 'block' : 'none';
+  }
+
+  updateLockTargetReticle(
+    target: LockTargetInfo | null,
+    viewProj: Mat4,
+    cameraFrame: BodyLabelCameraFrame | null = null,
+  ): void {
+    if (!target) {
+      this.targetReticleEl.style.display = 'none';
+      return;
+    }
+    const cssW = window.innerWidth;
+    const cssH = window.innerHeight;
+    const pos = projectStable(target.x, target.y, target.z, viewProj, cssW, cssH, false, cameraFrame);
+    if (!pos) {
+      this.targetReticleEl.style.display = 'none';
+      return;
+    }
+    this.targetReticleEl.style.display = 'block';
+    this.targetReticleEl.style.left = `${Math.round(pos.x)}px`;
+    this.targetReticleEl.style.top = `${Math.round(pos.y)}px`;
   }
 
   /**

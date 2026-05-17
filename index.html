@@ -1213,6 +1213,50 @@
         color: rgba(255,200,80,0.5);
         white-space: nowrap;
       }
+      .target-reticle {
+        position: fixed;
+        width: 34px;
+        height: 34px;
+        margin-left: -17px;
+        margin-top: -17px;
+        pointer-events: none;
+        user-select: none;
+        z-index: 7;
+        border: 1px solid rgba(255, 220, 110, 0.82);
+        border-radius: 50%;
+        box-shadow:
+          0 0 10px rgba(255, 205, 80, 0.24),
+          inset 0 0 7px rgba(255, 210, 90, 0.16);
+      }
+      .target-reticle::before,
+      .target-reticle::after {
+        content: "";
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        background: rgba(255, 220, 110, 0.82);
+      }
+      .target-reticle::before {
+        width: 44px;
+        height: 1px;
+        background: linear-gradient(
+          90deg,
+          rgba(255, 220, 110, 0.82) 0 13px,
+          transparent 13px 31px,
+          rgba(255, 220, 110, 0.82) 31px 44px
+        );
+      }
+      .target-reticle::after {
+        width: 1px;
+        height: 44px;
+        background: linear-gradient(
+          180deg,
+          rgba(255, 220, 110, 0.82) 0 13px,
+          transparent 13px 31px,
+          rgba(255, 220, 110, 0.82) 31px 44px
+        );
+      }
 
       /* ── Galactic-center label — always visible, clickable ── */
       .galactic-center-label {

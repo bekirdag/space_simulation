@@ -5,7 +5,7 @@ import { HUD } from "./ui/hud";
 import { ScaleBar } from "./ui/scale-bar";
 import { NavPanel } from "./ui/nav";
 import { ViewControls, type ViewAxis } from "./ui/view-controls";
-import { LabelManager, type GalaxyNameLabel } from "./ui/labels";
+import { LabelManager, type GalaxyNameLabel, type LockTargetInfo } from "./ui/labels";
 import { ContextMenu } from "./ui/context-menu";
 import { TrailSystem } from "./scene/trail-system";
 import { stepLeapfrog } from "./physics/integrator";
@@ -1785,22 +1785,6 @@ async function main(): Promise<void> {
     );
   }
 
-  function selectedStarModelFromHit(hit: StarSearchResult | null) {
-    if (!shouldHighlightCatalogStar(hit)) return null;
-    return {
-      position: [hit.x, hit.y, hit.z] as [number, number, number],
-      radiusAU: hit.radiusAU ?? SOLAR_RADIUS_AU,
-      color: hit.color,
-      starType: hit.starType ?? classifyStarModelType({
-        spectralType: hit.spectralType,
-        temperatureK: hit.temperatureK,
-        radiusSolar: hit.radiusSolar,
-        color: hit.color,
-      }),
-      alpha: 1,
-    };
-  }
-
   function focusNearbyStar(star: NearbyStarLabel): void {
     renderer.setActiveMilkyWayModel(null);
     setExoplanetBodies(star.name, [star.x, star.y, star.z]);
@@ -2579,7 +2563,7 @@ async function main(): Promise<void> {
         ? [sel.x, sel.y, sel.z]
         : null,
     );
-    renderer.uploadSelectedStarModel(selectedStarModelFromHit(sel));
+    renderer.uploadSelectedStarModel(null);
     const focusedMembers = nav.focusedSystemMembers();
     const bodyVisibility = buildBodyRenderVisibility(bodies, camUniforms.viewProj, focusedMembers, camUniforms);
     renderer.uploadBodies(bodies, bodyVisibility);
@@ -2644,6 +2628,14 @@ async function main(): Promise<void> {
           ? nav.selectedCatalogStar
           : null;
     labels.updateCatalogStarLabel(selectedCatalogLabel, camUniforms.viewProj, camUniforms);
+    const focusedBodyName = nav.focusedBodyName;
+    const lockedBody = focusedBodyName ? bodies.find(b => b.name === focusedBodyName) : null;
+    const lockTarget: LockTargetInfo | null = lockedBody
+      ? { x: lockedBody.x, y: lockedBody.y, z: lockedBody.z }
+      : sel
+        ? { x: sel.x, y: sel.y, z: sel.z }
+        : null;
+    labels.updateLockTargetReticle(lockTarget, camUniforms.viewProj, camUniforms);
     hud.galacticSpeedKms = galacticSpeedKmS(galacticOrigin);
     hud.update(bodies.length, simYears);
 
