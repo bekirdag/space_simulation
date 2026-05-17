@@ -12,6 +12,7 @@ struct Camera {
   viewProj:    mat4x4<f32>,
   rightAndMNR: vec4<f32>,
   upAndFocal:  vec4<f32>,
+  eyeAndFlags: vec4<f32>,
 };
 
 struct Star {
@@ -171,5 +172,6 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     alpha = clamp(glow * 0.9 + bloom * bloom * 0.35, 0.0, 1.0);
   }
 
-  return vec4<f32>(hdr, alpha);
+  let objectBrightness = max(camera.eyeAndFlags.w, 0.0);
+  return vec4<f32>(hdr * objectBrightness, alpha);
 }

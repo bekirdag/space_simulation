@@ -98,5 +98,6 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
 
   let coreLift = smoothstep(0.25, 0.85, lum);
   let color = mix(tex.rgb * 0.72, min(tex.rgb * 1.35, vec3<f32>(1.0)), coreLift);
-  return vec4<f32>(color, alpha);
+  let objectBrightness = max(camera.eyeAndFlags.w, 0.0);
+  return vec4<f32>(color * objectBrightness, alpha);
 }

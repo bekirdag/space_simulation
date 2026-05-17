@@ -253,6 +253,7 @@ export class Renderer {
   // The older apparent-magnitude boost is deliberately kept disabled because it
   // inflated solar-system bodies and nearby galaxies beyond their real volume.
   private _actualBrightness = true;
+  private _objectBrightness = 1;
   private _cameraDistanceFromSun = 0;
   private _showDust = true;
   private _dustTransparency = DUST_DEFAULT_TRANSPARENCY;
@@ -271,6 +272,7 @@ export class Renderer {
     showConstellations?: boolean;
     showTrails?:  boolean;
     actualBodyBrightness?: boolean;
+    objectBrightness?: number;
     showDust?: boolean;
     dustTransparency?: number;
     dustDrawLimit?: number;
@@ -285,6 +287,9 @@ export class Renderer {
     if (s.actualBodyBrightness !== undefined) {
       this._actualBrightness = s.actualBodyBrightness;
       this.syncBrightnessUniforms();
+    }
+    if (s.objectBrightness !== undefined) {
+      this._objectBrightness = clamp(s.objectBrightness, 0.25, 3);
     }
     if (s.showDust !== undefined) this._showDust = s.showDust;
     if (s.dustTransparency !== undefined) this._dustTransparency = clamp(s.dustTransparency, 0, 1);
@@ -1739,7 +1744,7 @@ export class Renderer {
     //   [0–63]  viewProj (mat4x4, 16 floats)
     //   [64–79] rightAndMNR (vec4: right.xyz, minNDCRadius)
     //   [80–95] upAndFocal  (vec4: up.xyz,    focalY)
-    //   [96–111] eyeAndFlags (vec4: camera eye xyz, reserved)
+    //   [96–111] eyeAndFlags (vec4: camera eye xyz, object brightness)
     const data = new Float32Array(CAMERA_BYTES / 4);
     data.set(uniforms.viewProj, 0);
     data[16] = uniforms.camRight[0]; data[17] = uniforms.camRight[1]; data[18] = uniforms.camRight[2];
@@ -1747,7 +1752,7 @@ export class Renderer {
     data[20] = uniforms.camUp[0];    data[21] = uniforms.camUp[1];    data[22] = uniforms.camUp[2];
     data[23] = uniforms.focalY;
     data[24] = uniforms.eye[0];      data[25] = uniforms.eye[1];      data[26] = uniforms.eye[2];
-    data[27] = 0;
+    data[27] = this._objectBrightness;
     this.ctx.device.queue.writeBuffer(this.cameraBuffer, 0, data);
     this.writeDustUniform();
   }

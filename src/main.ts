@@ -828,6 +828,10 @@ async function main(): Promise<void> {
     }
     const showBlackHole = (document.getElementById("set-black-hole") as HTMLInputElement).checked;
     const actualBodyBrightness = (document.getElementById("set-body-brightness") as HTMLInputElement).checked;
+    const objectBrightnessInput = document.getElementById("set-object-brightness") as HTMLInputElement;
+    const objectBrightnessValue = document.getElementById("set-object-brightness-value")!;
+    const objectBrightness = Math.max(0.25, Math.min(3, Number(objectBrightnessInput.value) / 100));
+    objectBrightnessValue.textContent = `${Math.round(objectBrightness * 100)}%`;
     showGalaxies    = (document.getElementById("set-galaxies") as HTMLInputElement).checked;
     const mwVal      = parseInt((document.querySelector('input[name="mw-stars"]:checked') as HTMLInputElement)?.value ?? "200000");
     const nearbyVal  = parseInt((document.querySelector('input[name="nearby-stars"]:checked') as HTMLInputElement)?.value ?? "100000");
@@ -856,6 +860,7 @@ async function main(): Promise<void> {
       starLimit:    nearbyVal,
       galaxyLimit:  galVal,
       actualBodyBrightness,
+      objectBrightness,
     });
   }
 

@@ -125,5 +125,6 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   let psf = mix(core, core * 1.12 + wings * 0.58, in.effects);
   let alpha = clamp(psf * in.alpha * mix(1.0, 0.72 + lift * 0.42, in.effects), 0.0, 1.0);
   let intensity = mix(1.0, clamp(pow(max(in.brightness, 0.05), 1.55) * 10.5, 0.40, 95.0), in.effects);
-  return vec4<f32>(col * psf * in.alpha * intensity, alpha);
+  let objectBrightness = max(camera.eyeAndFlags.w, 0.0);
+  return vec4<f32>(col * psf * in.alpha * intensity * objectBrightness, alpha);
 }

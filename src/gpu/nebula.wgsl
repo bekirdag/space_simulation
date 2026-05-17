@@ -14,6 +14,7 @@ struct Camera {
   viewProj:    mat4x4<f32>,
   rightAndMNR: vec4<f32>,
   upAndFocal:  vec4<f32>,
+  eyeAndFlags: vec4<f32>,
 };
 
 struct Nebula {
@@ -172,5 +173,6 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   if shape < 0.02 { discard; }
 
   let a = clamp(shape * in.alpha * 1.2, 0.0, 1.0);
-  return vec4<f32>(col * a, a);
+  let objectBrightness = max(camera.eyeAndFlags.w, 0.0);
+  return vec4<f32>(col * a * objectBrightness, a);
 }

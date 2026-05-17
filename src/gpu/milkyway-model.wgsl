@@ -112,6 +112,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
   let projectedTexture = texel.rgb * textureMix * textureEmission;
   let color = mix(litColor, proceduralColor, vec3<f32>(proceduralMix)) + emissive + projectedTexture + albedo.rgb * rim * 0.22;
   let alpha = in.alpha * clamp(albedo.a, 0.0, 1.0) * mix(1.0, 0.72 + rim * 0.22 + filament * 0.18, proceduralMix);
+  let objectBrightness = max(camera.eyeAndFlags.w, 0.0);
 
-  return vec4<f32>(color * alpha, alpha);
+  return vec4<f32>(color * alpha * objectBrightness, alpha);
 }

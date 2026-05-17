@@ -194,5 +194,6 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
 
   // Return NON-premultiplied: (col, a) not (col*a, a).
   // The blend srcFactor=src_alpha then gives: col*a + dst (correct).
-  return vec4<f32>(col, a);
+  let objectBrightness = max(camera.eyeAndFlags.w, 0.0);
+  return vec4<f32>(col * objectBrightness, a);
 }

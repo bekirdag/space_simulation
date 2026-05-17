@@ -12,6 +12,7 @@ struct Camera {
   viewProj:    mat4x4<f32>,
   rightAndMNR: vec4<f32>,
   upAndFocal:  vec4<f32>,
+  eyeAndFlags: vec4<f32>,
 };
 
 struct Nebula {
@@ -101,5 +102,6 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   let warmBoost = vec3<f32>(1.15, 1.0, 0.80);
   let col = mix(tex.rgb * in.tint, tex.rgb * in.tint * warmBoost, lum * 0.5);
 
-  return vec4<f32>(col * a, a);
+  let objectBrightness = max(camera.eyeAndFlags.w, 0.0);
+  return vec4<f32>(col * a * objectBrightness, a);
 }

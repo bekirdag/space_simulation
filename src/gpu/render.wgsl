@@ -4,7 +4,7 @@
 //   mat4x4 viewProj         — view-projection matrix (64 bytes)
 //   vec4   rightAndMNR      — xyz = camera right, w = minNDCRadius for point layers
 //   vec4   upAndFocal       — xyz = camera up,    w = focalY (= 1/tan(fovY/2))
-//   vec4   eyeAndFlags      — xyz = camera world position, w reserved
+//   vec4   eyeAndFlags      — xyz = camera world position, w = object brightness
 //
 // Body storage (64 bytes = 4 × vec4, matches JS BODY_FLOATS=16):
 //   vec4 pos_mass  — x, y, z, mass
@@ -19,7 +19,7 @@ struct Camera {
   viewProj:    mat4x4<f32>,
   rightAndMNR: vec4<f32>,  // xyz=right, w=minNDCRadius for point layers
   upAndFocal:  vec4<f32>,  // xyz=up,    w=focalY
-  eyeAndFlags: vec4<f32>,  // xyz=camera eye
+  eyeAndFlags: vec4<f32>,  // xyz=camera eye, w=object brightness
 };
 
 struct Body {
@@ -153,6 +153,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     haloCol *= clamp(pow(max(brightness, 1.0), 0.42), 1.0, 34.0);
   }
   let outAlpha = max(coreAlpha, haloAlpha);
-  let outCol = coreCol * coreAlpha + haloCol * haloAlpha;
+  let objectBrightness = max(camera.eyeAndFlags.w, 0.0);
+  let outCol = (coreCol * coreAlpha + haloCol * haloAlpha) * objectBrightness;
   return vec4<f32>(outCol, outAlpha);
 }
