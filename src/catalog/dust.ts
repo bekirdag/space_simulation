@@ -70,6 +70,7 @@ const DUST_REFLECTION_PALETTE: Array<[number, number, number]> = [
 ];
 const DUST_DARK_SHARE = 0.80;
 const DUST_REDDENING_SHARE = 0.17;
+const DUST_REFLECTION_SHARE = 0.03;
 
 const ARMS = [
   { theta0: Math.PI * 0.0,  r0: 6.0, tanp: Math.tan(0.21), width: 0.45 },
@@ -234,33 +235,36 @@ function dustColor(rand: () => number, density: number): DustColorSample {
   let exposure: number;
   let opacityScale: number;
 
-  // Approximate wide-angle visual abundance in HDR: ~80% dark obscuration,
-  // ~17% warm interstellar reddening, and a rare ~3% blue reflection component.
-  // Dense clouds are biased darker so warm dust remains an edge/backlight cue
-  // instead of turning the whole Milky Way dust layer reddish brown.
-  const denseDarkBias = smoothstep(0.42, 0.86, d) * 0.10;
-  const darkLimit = clamp(DUST_DARK_SHARE + denseDarkBias, DUST_DARK_SHARE, 0.91);
-  const reddeningShare = DUST_REDDENING_SHARE * (1 - smoothstep(0.64, 0.96, d) * 0.55);
-  const reddeningLimit = clamp(darkLimit + reddeningShare, darkLimit, 0.985);
+  // Keep the requested visual abundance stable: ~80% dark obscuration,
+  // ~17% warm interstellar reddening, and ~3% blue reflection dust.
+  // Density affects opacity/contrast, not the palette category.
+  const darkLimit = DUST_DARK_SHARE;
+  const reddeningLimit = DUST_DARK_SHARE + DUST_REDDENING_SHARE;
+  const reflectionLimit = reddeningLimit + DUST_REFLECTION_SHARE;
 
   if (roll < darkLimit) {
-    const blackBias = 0.70 + d * 0.24;
+    const blackBias = 0.54 + d * 0.18;
     base = DUST_DARK_PALETTE[rand() < blackBias ? 0 : 1]!;
-    jitter = 0.004;
-    exposure = 0.72 + rand() * 0.16;
-    opacityScale = 0.92 + d * 0.28;
+    jitter = 0.0012;
+    exposure = 1.18 + rand() * 0.54;
+    opacityScale = 0.88 + d * 0.30;
   } else if (roll < reddeningLimit) {
-    const rustBias = 0.74 + d * 0.18;
+    const rustBias = 0.70 + d * 0.10;
     base = DUST_REDDENING_PALETTE[rand() < rustBias ? 0 : 1]!;
-    jitter = 0.012;
-    exposure = 0.24 + (1 - d) * 0.18;
-    opacityScale = 0.24 + (1 - d) * 0.16;
-  } else {
-    const cyanBias = 0.58 + d * 0.20;
+    jitter = 0.006;
+    exposure = 0.46 + (1 - d) * 0.25 + rand() * 0.08;
+    opacityScale = 0.27 + (1 - d) * 0.15;
+  } else if (roll < reflectionLimit) {
+    const cyanBias = 0.60 + d * 0.16;
     base = DUST_REFLECTION_PALETTE[rand() < cyanBias ? 1 : 0]!;
-    jitter = 0.010;
-    exposure = 0.20 + (1 - d) * 0.14;
-    opacityScale = 0.18 + (1 - d) * 0.12;
+    jitter = 0.005;
+    exposure = 0.42 + (1 - d) * 0.22 + rand() * 0.08;
+    opacityScale = 0.22 + (1 - d) * 0.13;
+  } else {
+    base = DUST_REFLECTION_PALETTE[1]!;
+    jitter = 0.005;
+    exposure = 0.42;
+    opacityScale = 0.22;
   }
 
   const color = scaleColor(base, exposure);

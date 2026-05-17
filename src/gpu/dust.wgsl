@@ -216,8 +216,10 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     discard;
   }
 
-  let hdrAlbedo = in.color * (0.42 + (1.0 - density) * 0.18);
-  let darkMix = clamp(shape * (0.48 + density * 0.28), 0.0, 0.86);
-  let darkCore = mix(hdrAlbedo, vec3<f32>(0.0038, 0.0031, 0.0031), darkMix);
+  let visibleFloor = vec3<f32>(0.0062, 0.0047, 0.0040) * (0.80 + (1.0 - density) * 0.22);
+  let hdrAlbedo = max(in.color * (0.72 + (1.0 - density) * 0.20), visibleFloor);
+  let shadowTint = max(in.color * 0.34, visibleFloor * 0.72);
+  let darkMix = clamp(shape * (0.24 + density * 0.22), 0.0, 0.56);
+  let darkCore = mix(hdrAlbedo, shadowTint, darkMix);
   return vec4<f32>(darkCore, alpha);
 }
