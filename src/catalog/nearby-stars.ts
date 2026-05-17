@@ -11,7 +11,12 @@
 // Positions are in compressed equatorial J2000 render AU (AU_PER_PARSEC = 80).
 // This matches the HYG x/y/z render buffer and exoplanet-host catalog stars.
 
-import { colorFromSpectralType, starColorFromBv } from "./stars";
+import {
+  colorFromSpectralType,
+  starColorFromBv,
+  stellarRadiusSolarFromPhotometry,
+  stellarRenderRadiusAU,
+} from "./stars";
 
 export interface NearbyStarLabel {
   name:   string;
@@ -24,6 +29,8 @@ export interface NearbyStarLabel {
   bv?: number;
   spectralType?: string;
   magnitude?: number;
+  radiusSolar?: number;
+  radiusAU?: number;
 }
 
 export const NEARBY_STAR_AU_PER_PARSEC = 80; // must match build-visible-stars.mjs
@@ -42,6 +49,7 @@ interface NearbyStarPhotometry {
   bv?: number;
   spectralType?: string;
   magnitude?: number;
+  radiusSolar?: number;
 }
 
 // HYG 4.2 photometry for named nearby-star anchors. These anchors are drawn
@@ -154,9 +162,17 @@ function s(
     tier,
     color: visualColorForStar(name),
   };
+  const radiusSolar = photometry?.radiusSolar ?? stellarRadiusSolarFromPhotometry(
+    photometry?.magnitude,
+    d,
+    photometry?.bv,
+    photometry?.spectralType,
+  );
   if (photometry?.bv !== undefined) label.bv = photometry.bv;
   if (photometry?.spectralType !== undefined) label.spectralType = photometry.spectralType;
   if (photometry?.magnitude !== undefined) label.magnitude = photometry.magnitude;
+  label.radiusSolar = radiusSolar;
+  label.radiusAU = stellarRenderRadiusAU(radiusSolar);
   return label;
 }
 

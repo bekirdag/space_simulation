@@ -139,7 +139,7 @@ fn vs_main(
   var out: VertexOut;
   out.uv    = uv;
   out.color = g.col_alpha.xyz;
-  let actual = galaxyLod.x > 0.5;
+  let actual = galaxyLod.y > 0.5;
   out.brightness = select(1.0,
     apparent_galaxy_brightness(center, g.pos_size.w, g.col_alpha.xyz, g.col_alpha.w),
     actual);
@@ -161,9 +161,9 @@ fn vs_main(
     return out;
   }
 
-  // Size also scales with the boosted brightness so galaxies look like proper
-  // blobs (not just single pixels) when the whole catalog is visible.
-  let sizeMult = g.pos_size.w * select(1.0, clamp(0.55 + boostedBr * 2.5, 0.55, 2.0), actual);
+  // Keep catalog angular size independent from brightness; brightness should
+  // affect emitted light/alpha, not the physical extent of the galaxy.
+  let sizeMult = g.pos_size.w;
   let catalogRadius = camera.rightAndMNR.w * max(sizeMult * 2.5, 0.8);
 
   // Catalog-only galaxies do not have physical 3D meshes. When the camera has

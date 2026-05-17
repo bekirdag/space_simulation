@@ -8,13 +8,13 @@
  * Type:        0=emission  1=planetary  2=SNR  3=reflection  4=mixed
  *
  * Visual size in our compressed AU coordinate system:
- *   billboard_radius_AU = dist_AU × tan(ang_radius_rad) × VISIBILITY_BOOST
+ *   billboard_radius_AU = dist_AU × tan(ang_radius_rad)
  *   where dist_AU = dist_pc × 80 (AU_PER_PARSEC)
  */
 
 export const NEBULA_FLOATS = 16; // 4 × vec4 = 64 bytes per nebula
 
-export const NEBULA_VISIBILITY_BOOST = 8; // enlarge for easy visibility
+export const NEBULA_VISIBILITY_BOOST = 1; // kept for compatibility; sizes are actual angular radii
 
 export type NebType = 0 | 1 | 2 | 3 | 4;
 export const NebType = { EMISSION: 0, PLANETARY: 1, SNR: 2, REFLECTION: 3, MIXED: 4 } as const;
@@ -1025,9 +1025,7 @@ export function buildNebulaBuffer(exclusions?: ReadonlySet<string>): Float32Arra
     const def     = catalog[i]!;
     const [x,y,z] = nebulaWorldPos(def.ra, def.dec, def.dist);
 
-    const dist_au       = def.dist * AU_PER_PARSEC;
-    const ang_radius_rad = (def.diam / 2) / 60 * Math.PI / 180;
-    const radius_au     = dist_au * ang_radius_rad * NEBULA_VISIBILITY_BOOST;
+    const radius_au = nebulaRenderRadiusAU(def);
 
     const col   = def.color ?? NEB_COLOR[def.type]!;
     const alpha = Math.min(1, (def.opacity ?? 1) * 0.70);
@@ -1043,7 +1041,13 @@ export function buildNebulaBuffer(exclusions?: ReadonlySet<string>): Float32Arra
 }
 
 /** For right-click context menu: project nebulas to screen space. */
-export interface NebulaDet { name: string; x: number; y: number; z: number; type: NebType }
+export interface NebulaDet { name: string; x: number; y: number; z: number; type: NebType; radiusAU: number }
+
+function nebulaRenderRadiusAU(def: Pick<NebulaDef, "dist" | "diam">): number {
+  const dist_au = def.dist * AU_PER_PARSEC;
+  const ang_radius_rad = (def.diam / 2) / 60 * Math.PI / 180;
+  return dist_au * Math.tan(ang_radius_rad) * NEBULA_VISIBILITY_BOOST;
+}
 
 export function nebulaPositions(exclusions?: ReadonlySet<string>): NebulaDet[] {
   const catalog = exclusions && exclusions.size > 0
@@ -1051,7 +1055,7 @@ export function nebulaPositions(exclusions?: ReadonlySet<string>): NebulaDet[] {
     : NEBULA_CATALOG;
   return catalog.map((def, _i) => {
     const [x,y,z] = nebulaWorldPos(def.ra, def.dec, def.dist);
-    return { name: def.name, x, y, z, type: def.type };
+    return { name: def.name, x, y, z, type: def.type, radiusAU: nebulaRenderRadiusAU(def) };
   });
 }
 
@@ -1068,9 +1072,8 @@ export const HOMUNCULUS_NEBULA = {
   ra:     161.265,   // J2000 RA degrees
   dec:    -59.685,   // J2000 Dec degrees
   dist:   2300,      // parsecs (Panagia 2008, Smith 2006)
-  // Visual diameter boosted for sim visibility; actual angular size is ~18".
-  // At 2300 pc × 8 AU/pc = 18400 AU scale: diam=50' gives a nice visible blob.
-  diam:   50,        // arcminutes (inflated for visibility — actual 0.3')
+  // Actual angular size is about 18 arcseconds, i.e. 0.3 arcminutes.
+  diam:   0.3,       // arcminutes
   // Image aspect ratio: the HST opo9110a image is wider than tall
   aspectRatio: 1.35, // width / height of the ESA image
   type:   NebType.EMISSION,
@@ -1081,9 +1084,7 @@ export function buildHomunculusBuffer(): { buf: Float32Array; x: number; y: numb
   const def = HOMUNCULUS_NEBULA;
   const [x, y, z] = nebulaWorldPos(def.ra, def.dec, def.dist);
 
-  const dist_au        = def.dist * AU_PER_PARSEC;
-  const ang_radius_rad = (def.diam / 2) / 60 * Math.PI / 180;
-  const radius_au      = dist_au * ang_radius_rad * NEBULA_VISIBILITY_BOOST;
+  const radius_au = nebulaRenderRadiusAU(def);
 
   // Neutral tint: let the real image colours show through
   const buf = new Float32Array(NEBULA_FLOATS);

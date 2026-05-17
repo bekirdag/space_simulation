@@ -44,8 +44,8 @@ export class ContextMenu {
     onSelectStar:  (star: CatalogStar) => void = () => {},
     galaxies: { name: string; dist: number; x: number; y: number; z: number }[] = [],
     onSelectGalaxy: (g: { name: string; dist: number; x: number; y: number; z: number }) => void = () => {},
-    nebulas: { name: string; type: number; x: number; y: number; z: number }[] = [],
-    onSelectNebula: (n: { name: string; type: number; x: number; y: number; z: number }) => void = () => {},
+    nebulas: { name: string; type: number; x: number; y: number; z: number; radiusAU: number }[] = [],
+    onSelectNebula: (n: { name: string; type: number; x: number; y: number; z: number; radiusAU: number }) => void = () => {},
   ): void {
     const totalItems = bodies.length + catalogStars.length + galaxies.length + nebulas.length;
     if (totalItems === 0) { this.hide(); return; }
@@ -172,7 +172,7 @@ export class ContextMenu {
       [['#fa3860','Emission'],['#59f2cc','Planetary'],['#6bb8ff','SNR'],
        ['#8db8ff','Reflection'],['#e05990','Mixed']][t]?.[0] ?? '#aaa';
 
-    const addNebula = (n: { name: string; type: number; x: number; y: number; z: number }) => {
+    const addNebula = (n: { name: string; type: number; x: number; y: number; z: number; radiusAU: number }) => {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "ctx-item";

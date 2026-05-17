@@ -1,8 +1,8 @@
 // Static catalog-star renderer.
 //
 // Star storage (32 bytes = 2 x vec4):
-//   vec4 pos_size    - xyz = compressed catalog position, w = visual size multiplier
-//   vec4 color_alpha - rgb = star color, w = alpha
+//   vec4 pos_size    - xyz = compressed catalog position, w = physical radius AU
+//   vec4 color_alpha - rgb = star color, w = apparent-brightness alpha
 //
 // Binding 2: selectedStar (16 bytes)
 //   xyz = world-space position of selected star, w = 1.0 if active else 0.0
@@ -31,6 +31,7 @@ const CLOSE_STAR_SPHERE_LOD_START_PX: f32 = 2.25;
 const CLOSE_STAR_SPHERE_LOD_FULL_PX:  f32 = 4.50;
 const CAMERA_NEAR: f32 = 1e-8;
 const CAMERA_FAR:  f32 = 50000000.0;
+const SOLAR_RADIUS_AU: f32 = 0.00465047;
 
 struct VertexOut {
   @builtin(position) clip_pos: vec4<f32>,
@@ -48,12 +49,14 @@ var<private> quad: array<vec2<f32>, 6> = array<vec2<f32>, 6>(
   vec2(-1.0, 1.0), vec2(1.0,-1.0), vec2( 1.0,1.0),
 );
 
-fn star_hdr_intensity(color: vec3<f32>, size: f32, alpha: f32) -> f32 {
+fn star_hdr_intensity(color: vec3<f32>, radiusAU: f32, alpha: f32) -> f32 {
   let blueWeight = clamp((color.b - color.r + 0.32) / 0.82, 0.0, 1.0);
   let warmWeight = clamp((color.r - color.b + 0.20) / 0.90, 0.0, 1.0);
   let spectralLum = mix(0.75, 4.5, blueWeight) * mix(1.0, 0.72, warmWeight * (1.0 - blueWeight));
-  let catalogFlux = max(size * size * (0.28 + alpha * 1.35), 0.01);
-  return clamp(pow(catalogFlux * spectralLum * 2.35, 1.85) * 8.0, 0.65, 260.0);
+  let radiusSolar = clamp(radiusAU / SOLAR_RADIUS_AU, 0.01, 1800.0);
+  let radiusLift = clamp(pow(radiusSolar, 0.16), 0.38, 3.2);
+  let catalogFlux = max(alpha * alpha * (0.55 + radiusLift * 0.35), 0.008);
+  return clamp(pow(catalogFlux * spectralLum * 2.15, 1.65) * 7.5, 0.45, 240.0);
 }
 
 fn camera_back() -> vec3<f32> {
@@ -144,7 +147,7 @@ fn vs_main(
     return out;
   }
   out.selected = select(0.0, 1.0, isSelected);
-  let selectedBoost = mix(520.0, 18.0, cool_star_weight(out.color));
+  let selectedBoost = mix(160.0, 8.0, cool_star_weight(out.color));
   out.intensity = select(out.intensity, max(out.intensity, mix(1.0, selectedBoost, out.effects)), isSelected);
 
   // ── Frustum culling ────────────────────────────────────────────────────────
@@ -152,8 +155,12 @@ fn vs_main(
   // Center-only tests can hide visible edge billboards.
   let ndcX = clip_c.x / clip_c.w;
   let ndcY = clip_c.y / clip_c.w;
+  let focalY = camera.upAndFocal.w;
+  let radiusAU = max(star.pos_size.w, SOLAR_RADIUS_AU * 0.01);
+  let physicalNdcRadius = radiusAU * focalY / max(clip_c.w, 0.000001);
   let distanceSizeLift = mix(1.0, clamp(pow(distanceFlux, 0.14), 0.65, 7.0), out.effects);
-  let billboardNdcRadius = camera.rightAndMNR.w * max(star.pos_size.w * distanceSizeLift * 1.8, 0.6);
+  let pointNdcRadius = camera.rightAndMNR.w * max((0.35 + out.alpha * 1.25) * distanceSizeLift, 0.6);
+  let billboardNdcRadius = max(physicalNdcRadius, pointNdcRadius);
   let cullMargin = max(billboardNdcRadius * 1.5, 0.06);
   if ndcX - cullMargin > 1.0 || ndcX + cullMargin < -1.0 ||
      ndcY - cullMargin > 1.0 || ndcY + cullMargin < -1.0 {
@@ -161,17 +168,13 @@ fn vs_main(
     return out;
   }
 
-  let focalY = camera.upAndFocal.w;
-
   // Selected star: render as a PHYSICAL SPHERE so it grows as you zoom in.
   // A fixed-NDC billboard stays the same size regardless of distance, which
   // makes zoom feel broken. A sphere with radius ≈ 1 solar radius in our
   // compressed coordinate system creates the natural "approaching a star" sensation.
   if isSelected {
 
-    // Physical radius ≈ 1 solar radius = 0.005 AU in compressed coordinates.
-    // At 0.5 AU camera distance: apparent radius ≈ 24px. At 0.05 AU: ≈ 240px.
-    let physRadius = 0.005;
+    let physRadius = radiusAU;
     let physNdcR   = physRadius * focalY / clip_c.w;
     // Never shrink below 3× the base minimum so the star stays visible at range.
     let selectedNdcRadius = max(physNdcR, camera.rightAndMNR.w * 3.0);
@@ -213,7 +216,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   let spectral = mix(baseSpectral, pow(baseSpectral, vec3<f32>(2.25)), coolWeight * in.effects * 0.72);
   let coreWhite = mix(spectral, vec3<f32>(1.0, 0.985, 0.94), mix(0.34, 0.08, coolWeight));
   var col = spectral;
-  let bleach = clamp(core * in.alpha * mix(1.25, 0.36, coolWeight) * in.effects, 0.0, 1.0);
+  let bleach = clamp(core * in.alpha * mix(1.10, 0.06, coolWeight) * in.effects, 0.0, 1.0);
   col = mix(spectral, coreWhite, bleach);
 
   let psf = mix(core, core * 1.20 + wings * 0.62, in.effects);
@@ -234,7 +237,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let diffuse = max(dot(normal, lightDir), 0.0);
     let limb = pow(max(z, 0.0), 0.45);
     let hotSpot = pow(max(diffuse, 0.0), 18.0);
-    let sphereWhiteMix = mix(0.34, 0.08, coolWeight);
+    let sphereWhiteMix = mix(0.26, 0.015, coolWeight);
     let sphereCol = mix(spectral * (0.50 + diffuse * 0.36 + limb * 0.32), vec3<f32>(1.0, 0.985, 0.94), hotSpot * sphereWhiteMix);
     let sphereAlpha = clamp(silhouette * mix(in.alpha * (0.45 + limb * 0.55), 1.0, in.selected), 0.0, 1.0);
     let corona = exp(-d2 * 4.8) * mix(0.28, 0.52, in.selected);

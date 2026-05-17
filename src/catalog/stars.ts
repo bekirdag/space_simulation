@@ -1,9 +1,14 @@
 export const STAR_FLOATS = 8;
 export const DEFAULT_VISIBLE_STAR_COUNT = 100_000;
 export const AU_PER_PARSEC = 80;
+export const SOLAR_RADIUS_AU = 0.00465047;
 
 const EXOPLANET_HOST_DATA_URL = "/data/exoplanet-hosts.json";
-const VISIBLE_STAR_DATA_URL = "/data/visible-stars-100k.bin";
+const VISIBLE_STAR_DATA_URL = "/data/visible-stars-100k.bin?v=physical-radii-v2";
+const SUN_ABSOLUTE_V_MAG = 4.83;
+const SUN_TEMPERATURE_K = 5778;
+const MIN_STELLAR_RADIUS_SOLAR = 0.01;
+const MAX_STELLAR_RADIUS_SOLAR = 1800;
 
 export type StarBuffer = Float32Array<ArrayBufferLike>;
 
@@ -18,7 +23,9 @@ export interface CatalogStar {
   magnitude: number | null;
   planetCount: number;
   color: [number, number, number];
+  /** Physical render radius in AU. */
   size: number;
+  radiusSolar: number;
   alpha: number;
   aliases?: string[];
 }
@@ -101,10 +108,156 @@ function apparentFluxFromMagnitude(magnitude: number): number {
   return Math.pow(10, -0.4 * (magnitude - 6.0));
 }
 
-function starDisplayFromMagnitude(magnitude: number | null, fallbackDisplay = 0.20): number {
+export function starDisplayFromMagnitude(magnitude: number | null, fallbackDisplay = 0.20): number {
   if (magnitude === null || !Number.isFinite(magnitude)) return fallbackDisplay;
   const normalized = apparentFluxFromMagnitude(magnitude) / 260;
   return clamp(Math.pow(Math.max(normalized, 1e-8), 0.18), 0.035, 1);
+}
+
+export function stellarTemperatureFromBv(bv: number): number {
+  const safeBv = clamp(bv, -0.33, 2.0);
+  return clamp(
+    4600 * (1 / (0.92 * safeBv + 1.7) + 1 / (0.92 * safeBv + 0.62)),
+    2400,
+    42000,
+  );
+}
+
+function spectralLetter(spectralType: string | null | undefined): string | null {
+  return spectralType?.trim().toUpperCase().match(/[OBAFGKM]/)?.[0] ?? null;
+}
+
+function spectralTemperature(spectralType: string | null | undefined): number | null {
+  switch (spectralLetter(spectralType)) {
+    case "O": return 30000;
+    case "B": return 17000;
+    case "A": return 9000;
+    case "F": return 7000;
+    case "G": return 5800;
+    case "K": return 4500;
+    case "M": return 3300;
+    default: return null;
+  }
+}
+
+function spectralLuminosityClass(spectralType: string | null | undefined): "I" | "II" | "III" | "IV" | "V" | "D" | null {
+  const upper = spectralType?.trim().toUpperCase().replace(/\s+/g, "") ?? "";
+  if (upper.length === 0) return null;
+  if (upper.startsWith("D") || upper.includes("WD")) return "D";
+  if (upper.includes("IA") || upper.includes("IB") || upper.includes("IAB")) return "I";
+  if (upper.includes("III")) return "III";
+  if (upper.includes("II")) return "II";
+  if (upper.includes("IV")) return "IV";
+  if (upper.includes("V")) return "V";
+  return null;
+}
+
+export function stellarRadiusSolarFromSpectralType(spectralType: string | null | undefined): number {
+  const letter = spectralLetter(spectralType);
+  const klass = spectralLuminosityClass(spectralType);
+  if (klass === "D") return 0.012;
+
+  const mainSequence: Record<string, number> = {
+    O: 12.0,
+    B: 5.0,
+    A: 2.2,
+    F: 1.35,
+    G: 1.0,
+    K: 0.75,
+    M: 0.35,
+  };
+  const giant: Record<string, number> = {
+    O: 18,
+    B: 9,
+    A: 4,
+    F: 5,
+    G: 10,
+    K: 22,
+    M: 75,
+  };
+  const brightGiant: Record<string, number> = {
+    O: 30,
+    B: 25,
+    A: 35,
+    F: 60,
+    G: 90,
+    K: 150,
+    M: 220,
+  };
+  const supergiant: Record<string, number> = {
+    O: 35,
+    B: 45,
+    A: 80,
+    F: 120,
+    G: 180,
+    K: 300,
+    M: 500,
+  };
+
+  if (!letter) return 1.0;
+  if (klass === "I") return supergiant[letter] ?? 120;
+  if (klass === "II") return brightGiant[letter] ?? 80;
+  if (klass === "III") return giant[letter] ?? 12;
+  if (klass === "IV") return (mainSequence[letter] ?? 1) * 1.8;
+  return mainSequence[letter] ?? 1.0;
+}
+
+export function stellarRadiusSolarFromPhotometry(
+  magnitude: number | null | undefined,
+  distancePc: number | null | undefined,
+  bv: number | null | undefined,
+  spectralType?: string | null,
+  luminositySolar?: number | null,
+): number {
+  const temperature = Number.isFinite(bv)
+    ? stellarTemperatureFromBv(Number(bv))
+    : spectralTemperature(spectralType);
+  let photometricRadius: number | null = null;
+  const finiteLuminositySolar = Number.isFinite(luminositySolar) ? Number(luminositySolar) : null;
+  const finiteDistancePc = Number.isFinite(distancePc) ? Number(distancePc) : null;
+  const finiteMagnitude = Number.isFinite(magnitude) ? Number(magnitude) : null;
+
+  if (finiteLuminositySolar !== null && finiteLuminositySolar > 0 && temperature !== null) {
+    photometricRadius = Math.sqrt(finiteLuminositySolar) / Math.pow(temperature / SUN_TEMPERATURE_K, 2);
+  } else if (
+    finiteMagnitude !== null &&
+    finiteDistancePc !== null &&
+    finiteDistancePc > 0 &&
+    temperature !== null
+  ) {
+    const absoluteMagnitude = finiteMagnitude - 5 * Math.log10(finiteDistancePc / 10);
+    const luminosity = Math.pow(10, -0.4 * (absoluteMagnitude - SUN_ABSOLUTE_V_MAG));
+    photometricRadius = Math.sqrt(Math.max(luminosity, 1e-8)) / Math.pow(temperature / SUN_TEMPERATURE_K, 2);
+  }
+
+  const spectralRadius = stellarRadiusSolarFromSpectralType(spectralType);
+  const klass = spectralLuminosityClass(spectralType);
+  const radius = photometricRadius === null || !Number.isFinite(photometricRadius)
+    ? spectralRadius
+    : klass === "I" || klass === "II" || klass === "III"
+      ? Math.max(photometricRadius, spectralRadius)
+      : photometricRadius;
+  return clamp(radius, MIN_STELLAR_RADIUS_SOLAR, MAX_STELLAR_RADIUS_SOLAR);
+}
+
+export function stellarRenderRadiusAU(radiusSolar: number | null | undefined): number {
+  return clamp(
+    Number.isFinite(radiusSolar) ? Number(radiusSolar) : 1,
+    MIN_STELLAR_RADIUS_SOLAR,
+    MAX_STELLAR_RADIUS_SOLAR,
+  ) * SOLAR_RADIUS_AU;
+}
+
+export function focusDistanceForStarRadiusAU(
+  radiusAU: number,
+  aspect = 16 / 9,
+  screenWidthFraction = 0.50,
+  fovY = Math.PI / 4,
+): number {
+  const safeRadius = Math.max(radiusAU, SOLAR_RADIUS_AU * MIN_STELLAR_RADIUS_SOLAR);
+  const focalY = 1 / Math.tan(fovY / 2);
+  const distance = safeRadius * focalY / (Math.max(0.2, aspect) * Math.max(0.05, screenWidthFraction));
+  return Math.max(safeRadius * 1.6, distance);
 }
 
 function hostAliasKey(value: string): string {
@@ -212,8 +365,17 @@ function hostToCatalogStar(record: ExoplanetHostRecord, index: number): CatalogS
   const luminositySolar = Number.isFinite(record.luminosityLogSolar)
     ? Math.pow(10, Number(record.luminosityLogSolar))
     : null;
-  const radiusScale = radiusSolar === null ? 1 : clamp(Math.sqrt(Math.max(radiusSolar, 0.05)), 0.45, 3.0);
-  const luminosityScale = luminositySolar === null ? 1 : clamp(Math.pow(Math.max(luminositySolar, 0.0001), 0.16), 0.45, 2.4);
+  const resolvedRadiusSolar = radiusSolar ?? stellarRadiusSolarFromPhotometry(
+    magnitude,
+    distancePc,
+    null,
+    record.spectralType,
+    luminositySolar,
+  );
+  const luminosityFallback = luminositySolar === null ? 0.22 : clamp(Math.pow(Math.max(luminositySolar, 0.0001), 0.12) * 0.18, 0.06, 0.78);
+  const alpha = magnitude === null
+    ? luminosityFallback
+    : 0.08 + Math.pow(apparentDisplay, 0.90) * 0.82;
 
   const star: CatalogStar = {
     id: `exo-${index}-${record.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
@@ -224,8 +386,9 @@ function hostToCatalogStar(record: ExoplanetHostRecord, index: number): CatalogS
     magnitude,
     planetCount,
     color,
-    size: clamp((0.10 + Math.pow(apparentDisplay, 1.25) * 0.90) * (0.74 + radiusScale * 0.26), 0.08, 1.60),
-    alpha: clamp((0.10 + Math.pow(apparentDisplay, 0.90) * 0.82) * luminosityScale, 0.10, 0.98),
+    size: stellarRenderRadiusAU(resolvedRadiusSolar),
+    radiusSolar: resolvedRadiusSolar,
+    alpha: clamp(alpha, 0.04, 0.98),
   };
   const aliases = HOST_ALIASES_BY_KEY[hostAliasKey(record.name)];
   if (aliases) star.aliases = aliases;
@@ -246,13 +409,15 @@ export function createVisibleStarField(count = DEFAULT_VISIBLE_STAR_COUNT): Star
     const cosDec = Math.cos(dec);
     const flux = Math.pow(rng(), 8.0);
     const brightness = clamp(Math.pow(Math.max(flux, 1e-8), 0.18), 0.035, 1);
-    const color = starColorFromBv(rng() * 2.4 - 0.2);
+    const bv = rng() * 2.4 - 0.2;
+    const color = starColorFromBv(bv);
+    const radiusSolar = stellarRadiusSolarFromPhotometry(null, null, bv, null);
     const o = i * STAR_FLOATS;
 
     data[o + 0] = r * cosDec * Math.cos(ra);
     data[o + 1] = r * cosDec * Math.sin(ra);
     data[o + 2] = r * Math.sin(dec);
-    data[o + 3] = 0.09 + Math.pow(brightness, 1.35) * 0.95;
+    data[o + 3] = stellarRenderRadiusAU(radiusSolar);
     data[o + 4] = color[0];
     data[o + 5] = color[1];
     data[o + 6] = color[2];
@@ -272,7 +437,7 @@ export async function loadVisibleStarField(): Promise<VisibleStarLoad> {
     }
     return {
       data: new Float32Array(buffer),
-      source: "HYG 4.2 local binary snapshot",
+      source: "HYG 4.2 local binary snapshot with physical stellar radii",
     };
   } catch (error) {
     console.warn("Using generated visible star field:", error);
@@ -358,7 +523,6 @@ export function searchCatalogStars(stars: CatalogStar[], query: string, limit = 
       const distanceLabel = star.distancePc === null ? "distance unknown" : `${star.distancePc.toFixed(star.distancePc < 20 ? 1 : 0)} pc`;
       const planetLabel = `${star.planetCount} confirmed planet${star.planetCount === 1 ? "" : "s"}`;
       const magnitudeLabel = star.magnitude === null ? "" : ` · mag ${star.magnitude.toFixed(1)}`;
-      const distanceAu = Math.sqrt(star.x * star.x + star.y * star.y + star.z * star.z);
       return {
         id: star.id,
         label: star.name,
@@ -366,10 +530,7 @@ export function searchCatalogStars(stars: CatalogStar[], query: string, limit = 
         x: star.x,
         y: star.y,
         z: star.z,
-        // Zoom to 0.5–5 AU from the star's visual position so it fills the view.
-        // (Stars are rendered as fixed-NDC billboards; getting close + a size boost
-        // via the shader makes them prominently visible.)
-        focusDistance: clamp(distanceAu * 0.0005, 0.5, 5),
+        focusDistance: focusDistanceForStarRadiusAU(star.size),
         color: star.color,
       };
     });

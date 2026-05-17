@@ -6,5 +6,6 @@
   "inputStars": 109400,
   "strideFloat32": 8,
   "coordinateScale": "80 visual AU per parsec",
-  "brightnessEncoding": "Johnson V apparent magnitude flux, relative to mag 6, compressed for display"
+  "brightnessEncoding": "Johnson V apparent magnitude flux, relative to mag 6, compressed for display",
+  "radiusEncoding": "Solar radii inferred from HYG luminosity/absolute magnitude and B-V temperature, stored as AU"
 }

@@ -29,9 +29,11 @@ import {
   AU_PER_PARSEC,
   catalogStarsToRenderBuffer,
   combineStarBuffers,
+  focusDistanceForStarRadiusAU,
   loadExoplanetHostStars,
   loadVisibleStarField,
   searchCatalogStars,
+  starDisplayFromMagnitude,
   type CatalogStar,
   type StarBuffer,
   type StarSearchResult,
@@ -135,7 +137,6 @@ const KNOWN_GALAXY_ALIASES: Record<string, readonly string[]> = {
 };
 const GENERIC_GALAXY_CLOSE_FOCUS_AU = 220;
 const LIGHT_YEARS_PER_PARSEC = 3.26156;
-const SELECTED_NEARBY_STAR_RENDER_RADIUS_AU = 0.005; // keep in sync with src/gpu/star.wgsl
 const SELECTED_NEARBY_STAR_SCREEN_WIDTH_FRACTION = 0.50;
 const CAMERA_FOV_Y = Math.PI / 4; // keep in sync with src/scene/camera.ts
 const CAMERA_NEAR_AU = 1e-8; // keep in sync with src/scene/camera.ts
@@ -213,11 +214,12 @@ function nearbyStarLabelsToRenderBuffer(stars: readonly NearbyStarLabel[]): Star
     data[o + 0] = star.x;
     data[o + 1] = star.y;
     data[o + 2] = star.z;
-    data[o + 3] = 1.05 * tierFade;
+    data[o + 3] = star.radiusAU ?? 0.00465047;
     data[o + 4] = star.color[0];
     data[o + 5] = star.color[1];
     data[o + 6] = star.color[2];
-    data[o + 7] = 0.82 * tierFade;
+    const display = starDisplayFromMagnitude(star.magnitude ?? null, 0.28);
+    data[o + 7] = clamp((0.08 + Math.pow(display, 0.90) * 0.82) * tierFade, 0.04, 0.98);
   }
 
   return data;
@@ -1531,12 +1533,14 @@ async function main(): Promise<void> {
     return `nearby:${star.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
   }
 
-  function nearbyStarFocusDistance(): number {
+  function starFocusDistance(radiusAU?: number): number {
     const aspect = Math.max(0.2, window.innerWidth / Math.max(1, window.innerHeight));
-    const focalY = 1 / Math.tan(CAMERA_FOV_Y / 2);
-    const distance = SELECTED_NEARBY_STAR_RENDER_RADIUS_AU * focalY /
-      (aspect * SELECTED_NEARBY_STAR_SCREEN_WIDTH_FRACTION);
-    return Math.max(SELECTED_NEARBY_STAR_RENDER_RADIUS_AU * 1.6, distance);
+    return focusDistanceForStarRadiusAU(
+      radiusAU ?? 0.00465047,
+      aspect,
+      SELECTED_NEARBY_STAR_SCREEN_WIDTH_FRACTION,
+      CAMERA_FOV_Y,
+    );
   }
 
   function focusNearbyStar(star: NearbyStarLabel): void {
@@ -1550,7 +1554,7 @@ async function main(): Promise<void> {
       x: star.x,
       y: star.y,
       z: star.z,
-      focusDistance: nearbyStarFocusDistance(),
+      focusDistance: starFocusDistance(star.radiusAU),
       color: star.color,
     });
     renderer.uploadBodies(bodies);
@@ -1659,7 +1663,6 @@ async function main(): Promise<void> {
       : `${star.distancePc.toFixed(star.distancePc < 20 ? 1 : 0)} pc`;
     const planetLabel = `${star.planetCount} confirmed planet${star.planetCount === 1 ? "" : "s"}`;
     const magnitudeLabel = star.magnitude === null ? "" : ` · mag ${star.magnitude.toFixed(1)}`;
-    const distanceAu = Math.hypot(star.x, star.y, star.z);
     return {
       id: star.id,
       label: star.name,
@@ -1667,9 +1670,16 @@ async function main(): Promise<void> {
       x: star.x,
       y: star.y,
       z: star.z,
-      focusDistance: clamp(distanceAu * 0.0005, 0.5, 5),
+      focusDistance: starFocusDistance(star.size),
       color: star.color,
     };
+  }
+
+  function nebulaFocusDistance(neb: { radiusAU: number }): number {
+    return Math.max(
+      camera.distanceForViewRadius(neb.radiusAU, 0.55),
+      neb.radiusAU * 1.35,
+    );
   }
 
   function shouldHighlightCatalogStar(hit: StarSearchResult | null): hit is StarSearchResult {
@@ -1737,7 +1747,7 @@ async function main(): Promise<void> {
         x: star.x,
         y: star.y,
         z: star.z,
-        focusDistance: nearbyStarFocusDistance(),
+        focusDistance: starFocusDistance(star.radiusAU),
         color: star.color,
       };
       addCandidate({
@@ -1772,7 +1782,7 @@ async function main(): Promise<void> {
       const projected = projectMapPoint(x, y, z);
       if (!projected) continue;
       const dist = screenDistance(cx, cy, projected);
-      const threshold = clamp(visibleStarBuffer[o + 3]! * 5 + visibleStarBuffer[o + 7]! * 4 + 4, 6, 12);
+      const threshold = clamp(visibleStarBuffer[o + 7]! * 8 + 5, 6, 13);
       if (dist > threshold) continue;
       const distancePc = Math.hypot(x, y, z) / AU_PER_PARSEC;
       const distanceLy = distancePc * LIGHT_YEARS_PER_PARSEC;
@@ -1781,7 +1791,7 @@ async function main(): Promise<void> {
         label: "Mapped star",
         subtitle: `${distancePc.toFixed(distancePc < 20 ? 1 : 0)} pc · ${distanceLy.toFixed(distanceLy < 50 ? 1 : 0)} ly`,
         x, y, z,
-        focusDistance: nearbyStarFocusDistance(),
+        focusDistance: starFocusDistance(visibleStarBuffer[o + 3]!),
         color: [
           visibleStarBuffer[o + 4]!,
           visibleStarBuffer[o + 5]!,
@@ -1838,7 +1848,6 @@ async function main(): Promise<void> {
       if (!projected) continue;
       const dist = screenDistance(cx, cy, projected);
       if (dist > 18) continue;
-      const r = Math.hypot(neb.x, neb.y, neb.z);
       const color = NEB_COLOR[neb.type] ?? [0.88, 0.35, 0.55];
       const hit: StarSearchResult = {
         id: mapObjectSearchId("nebula", neb.name),
@@ -1847,7 +1856,7 @@ async function main(): Promise<void> {
         x: neb.x,
         y: neb.y,
         z: neb.z,
-        focusDistance: Math.max(200, r * 0.005),
+        focusDistance: nebulaFocusDistance(neb),
         color,
       };
       const candidate: MapObjectHit = {
@@ -1970,14 +1979,14 @@ async function main(): Promise<void> {
     }
 
     // ── Nebulas ───────────────────────────────────────────────────────────
-    interface NebHit { name: string; type: number; x: number; y: number; z: number }
+    interface NebHit { name: string; type: number; x: number; y: number; z: number; radiusAU: number }
     const nearbyNebulas: NebHit[] = [];
     if (lastViewProj) {
       for (const neb of nebulaDets) {
         const projected = projectMapPoint(neb.x, neb.y, neb.z);
         if (!projected) continue;
         if (Math.abs(cx - projected.x) <= half && Math.abs(cy - projected.y) <= half) {
-          nearbyNebulas.push({ name: neb.name, type: neb.type, x: neb.x, y: neb.y, z: neb.z });
+          nearbyNebulas.push({ name: neb.name, type: neb.type, x: neb.x, y: neb.y, z: neb.z, radiusAU: neb.radiusAU });
         }
       }
     }
@@ -2025,7 +2034,6 @@ async function main(): Promise<void> {
       nearbyNebulas,
       (neb) => {
         renderer.setActiveMilkyWayModel(null);
-        const r = Math.sqrt(neb.x**2 + neb.y**2 + neb.z**2);
         const color = NEB_COLOR[neb.type] ?? [0.88, 0.35, 0.55];
         nav.selectCatalogStar({
           id: mapObjectSearchId("nebula", neb.name),
@@ -2034,7 +2042,7 @@ async function main(): Promise<void> {
           x: neb.x,
           y: neb.y,
           z: neb.z,
-          focusDistance: Math.max(200, r * 0.005),
+          focusDistance: nebulaFocusDistance(neb),
           color,
         });
       },

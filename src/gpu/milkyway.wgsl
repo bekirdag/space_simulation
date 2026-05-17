@@ -77,7 +77,7 @@ fn vs_main(
   var out: VertexOut;
   out.uv    = uv;
   out.color = star.color_alpha.xyz;
-  let actual = lodFade.y > 0.5;
+  let actual = lodFade.z > 0.5;
   out.effects = clamp(lodFade.z, 0.0, 1.0);
   out.pixel_radius = 0.0;
   let cameraDistanceAU = length(center - camera.eyeAndFlags.xyz);
@@ -94,7 +94,7 @@ fn vs_main(
   // Cull only once the complete billboard is outside the frame.
   let ndcX = clip_c.x / clip_c.w;
   let ndcY = clip_c.y / clip_c.w;
-  let sizeMult = star.pos_size.w * select(1.0, clamp(0.55 + out.brightness, 0.45, 2.8), actual);
+  let sizeMult = star.pos_size.w;
   let pxRadius = camera.rightAndMNR.w * max(sizeMult * 1.8, 0.6);
   out.pixel_radius = pxRadius * 2.5 / max(camera.rightAndMNR.w, 0.000001);
   let cullMargin = max(pxRadius * 1.5, 0.06);

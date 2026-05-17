@@ -3,6 +3,9 @@ import { gunzipSync } from "node:zlib";
 
 const STAR_FLOATS = 8;
 const AU_PER_PARSEC = 80;
+const SOLAR_RADIUS_AU = 0.00465047;
+const SUN_ABSOLUTE_V_MAG = 4.83;
+const SUN_TEMPERATURE_K = 5778;
 const MAX_STARS = 100_000;
 const HYG_URL = "https://astronexus.com/downloads/catalogs/hygdata_v42.csv.gz";
 const OUT_BIN = new URL("../public/data/visible-stars-100k.bin", import.meta.url);
@@ -67,6 +70,31 @@ function starDisplayFromMagnitude(mag) {
   return clamp(Math.pow(Math.max(normalized, 1e-8), 0.18), 0.035, 1);
 }
 
+function stellarTemperatureFromBv(ci) {
+  const bv = clamp(ci ?? 0.65, -0.33, 2.0);
+  return clamp(
+    4600 * (1 / (0.92 * bv + 1.7) + 1 / (0.92 * bv + 0.62)),
+    2400,
+    42000,
+  );
+}
+
+function luminosityFromAbsoluteMagnitude(absMag) {
+  return Math.pow(10, -0.4 * (absMag - SUN_ABSOLUTE_V_MAG));
+}
+
+function stellarRadiusSolar({ mag, dist, ci, absmag, lum }) {
+  const absoluteMag = Number.isFinite(absmag)
+    ? absmag
+    : mag - 5 * Math.log10(dist / 10);
+  const luminosity = Number.isFinite(lum) && lum > 0
+    ? lum
+    : luminosityFromAbsoluteMagnitude(absoluteMag);
+  const temperature = stellarTemperatureFromBv(ci);
+  const radius = Math.sqrt(Math.max(luminosity, 1e-8)) / Math.pow(temperature / SUN_TEMPERATURE_K, 2);
+  return clamp(radius, 0.01, 1800);
+}
+
 /**
  * B-V Johnson color index → linear sRGB.
  * Uses subtle O/B, A/F, G, K, and M anchors. Input `ci` is the B-V color
@@ -110,10 +138,12 @@ const stars = rows.map(row => {
   const dist = numberOrNull(row[col.dist]);
   const mag = numberOrNull(row[col.mag]);
   const ci = numberOrNull(row[col.ci]);
+  const absmag = numberOrNull(row[col.absmag]);
+  const lum = numberOrNull(row[col.lum]);
   if (x === null || y === null || z === null || dist === null || mag === null) return null;
   if (dist <= 0 || dist >= 1000) return null;
   return {
-    x, y, z, dist, mag, ci,
+    x, y, z, dist, mag, ci, absmag, lum,
     score: mag + Math.log10(dist + 1) * 1.15,
   };
 }).filter(Boolean);
@@ -126,11 +156,12 @@ for (let i = 0; i < selected.length; i++) {
   const star = selected[i];
   const brightness = starDisplayFromMagnitude(star.mag);
   const color = starColor(star.ci);
+  const radiusSolar = stellarRadiusSolar(star);
   const o = i * STAR_FLOATS;
   data[o + 0] = star.x * AU_PER_PARSEC;
   data[o + 1] = star.y * AU_PER_PARSEC;
   data[o + 2] = star.z * AU_PER_PARSEC;
-  data[o + 3] = 0.09 + Math.pow(brightness, 1.35) * 0.95;
+  data[o + 3] = radiusSolar * SOLAR_RADIUS_AU;
   data[o + 4] = color[0];
   data[o + 5] = color[1];
   data[o + 6] = color[2];
@@ -148,6 +179,7 @@ await writeFile(OUT_META, `${JSON.stringify({
   strideFloat32: STAR_FLOATS,
   coordinateScale: `${AU_PER_PARSEC} visual AU per parsec`,
   brightnessEncoding: "Johnson V apparent magnitude flux, relative to mag 6, compressed for display",
+  radiusEncoding: "Solar radii inferred from HYG luminosity/absolute magnitude and B-V temperature, stored as AU",
 }, null, 2)}\n`, "utf8");
 
 console.log(`Wrote ${selected.length} visible stars to ${OUT_BIN.pathname}`);
