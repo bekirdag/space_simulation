@@ -823,6 +823,98 @@
         text-align: center;
       }
 
+      .nav-flight-section {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding-bottom: 10px;
+      }
+      .nav-flight-point {
+        display: grid;
+        grid-template-columns: 42px 1fr;
+        gap: 8px;
+        margin: 0 10px;
+        padding: 7px 8px;
+        border-top: 1px solid rgba(255,255,255,0.055);
+        color: rgba(255,255,255,0.52);
+        font-family: 'SF Mono', 'Fira Code', monospace;
+        font-size: 9px;
+        line-height: 1.35;
+      }
+      .nav-section-title + .nav-flight-point { border-top: 0; }
+      .nav-flight-point-title {
+        color: rgba(255,255,255,0.72);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+      .nav-flight-point-value {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .nav-flight-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px;
+        padding: 0 10px;
+      }
+      .nav-flight-btn {
+        min-height: 28px;
+        border: 1px solid rgba(255,255,255,0.10);
+        border-radius: 6px;
+        background: rgba(255,255,255,0.055);
+        color: rgba(235,240,255,0.74);
+        font-family: 'SF Mono', 'Fira Code', monospace;
+        font-size: 10px;
+        cursor: pointer;
+      }
+      .nav-flight-btn:hover {
+        background: rgba(136,170,255,0.13);
+        border-color: rgba(136,170,255,0.28);
+        color: rgba(255,255,255,0.92);
+      }
+      .nav-flight-btn.primary {
+        width: calc(100% - 20px);
+        margin: 2px 10px 0;
+        background: rgba(80,160,255,0.20);
+        border-color: rgba(123,191,255,0.32);
+        color: rgba(225,241,255,0.92);
+      }
+      .nav-flight-btn:disabled {
+        opacity: 0.36;
+        cursor: default;
+      }
+      .nav-flight-row {
+        margin: 0 10px;
+        padding: 5px 0;
+      }
+      .nav-number-input {
+        width: 62px;
+        height: 24px;
+        border: 1px solid rgba(255,255,255,0.12);
+        border-radius: 5px;
+        background: rgba(255,255,255,0.065);
+        color: rgba(255,255,255,0.78);
+        font-family: 'SF Mono', 'Fira Code', monospace;
+        font-size: 10px;
+        text-align: right;
+        padding: 0 6px;
+        color-scheme: dark;
+      }
+      .nav-flight-toggle-row {
+        margin: 0 10px;
+        padding: 3px 0;
+      }
+      .nav-flight-status {
+        min-height: 14px;
+        margin: 0 10px;
+        color: rgba(123,191,255,0.70);
+        font-family: 'SF Mono', 'Fira Code', monospace;
+        font-size: 9px;
+        line-height: 1.35;
+      }
+
       .nav-dot {
         width: 8px;
         height: 8px;
@@ -1823,6 +1915,9 @@
           <button type="button" class="nav-tab" data-nav-tab="models" title="Milky Way 3D models" aria-label="Milky Way 3D models" aria-selected="false">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4.5 7.2 12 11.4l7.5-4.2L12 3Z"></path><path d="M4.5 7.2v8.5L12 20l7.5-4.3V7.2"></path><path d="M12 11.4V20"></path></svg>
           </button>
+          <button type="button" class="nav-tab" data-nav-tab="flight" title="Cinematic flight" aria-label="Cinematic flight" aria-selected="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19c4.5-8.5 8-13 16-14"></path><path d="M13 5h6v6"></path><path d="M5 17l2 2"></path><path d="M9 13l2 2"></path><path d="M14 8l2 2"></path></svg>
+          </button>
           <div class="nav-tab-spacer"></div>
           <button type="button" class="nav-tab" data-nav-tab="info" title="About and limits" aria-label="About and limits" aria-selected="false">
             <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"></circle><path d="M12 11v5"></path><path d="M12 8h.01"></path></svg>
@@ -1924,6 +2019,61 @@
                 <div class="nav-section-title">Milky Way 3D Models</div>
                 <div id="mw-model-list" class="nav-model-list"></div>
                 <div id="mw-model-pagination" class="nav-model-pagination"></div>
+              </div>
+              <div class="nav-bottom-pad"></div>
+            </div>
+          </section>
+
+          <section id="nav-tab-flight" class="nav-tab-panel" data-nav-panel="flight" role="tabpanel">
+            <div class="nav-tab-scroll">
+              <div class="nav-section-block nav-flight-section">
+                <div class="nav-section-title">Cinematic Flight</div>
+                <div class="nav-flight-point">
+                  <span class="nav-flight-point-title">Start</span>
+                  <span id="flight-start-label" class="nav-flight-point-value">Not set</span>
+                </div>
+                <div class="nav-flight-point">
+                  <span class="nav-flight-point-title">End</span>
+                  <span id="flight-end-label" class="nav-flight-point-value">Not set</span>
+                </div>
+                <div class="nav-flight-actions">
+                  <button id="flight-set-start" type="button" class="nav-flight-btn">Set Start</button>
+                  <button id="flight-set-end" type="button" class="nav-flight-btn">Set End</button>
+                </div>
+                <div class="settings-row-range nav-flight-row">
+                  <div class="settings-row-top">
+                    <span class="settings-row-label">Acceleration</span>
+                    <input id="flight-accel" class="nav-number-input" type="number" min="0" max="60" step="0.1" value="0.5" aria-label="Acceleration duration seconds" />
+                  </div>
+                </div>
+                <div class="settings-row-range nav-flight-row">
+                  <div class="settings-row-top">
+                    <span class="settings-row-label">Flight time</span>
+                    <input id="flight-cruise" class="nav-number-input" type="number" min="0.1" max="600" step="0.1" value="1.0" aria-label="Flight time seconds" />
+                  </div>
+                </div>
+                <div class="settings-row-range nav-flight-row">
+                  <div class="settings-row-top">
+                    <span class="settings-row-label">Deceleration</span>
+                    <input id="flight-decel" class="nav-number-input" type="number" min="0" max="60" step="0.1" value="0.5" aria-label="Deceleration duration seconds" />
+                  </div>
+                </div>
+                <div class="settings-row nav-flight-toggle-row">
+                  <span class="settings-row-label">Motion blur</span>
+                  <label class="s-toggle" title="Blend radial scene samples during the flight.">
+                    <input type="checkbox" id="flight-motion-blur" checked>
+                    <span class="s-track"></span>
+                  </label>
+                </div>
+                <div class="settings-row nav-flight-toggle-row">
+                  <span class="settings-row-label">Space warp</span>
+                  <label class="s-toggle" title="Bend the screen toward the flight direction.">
+                    <input type="checkbox" id="flight-space-warp" checked>
+                    <span class="s-track"></span>
+                  </label>
+                </div>
+                <button id="flight-start" type="button" class="nav-flight-btn primary" disabled>Start Flight</button>
+                <div id="flight-status" class="nav-flight-status">Set start and end points from the current camera view.</div>
               </div>
               <div class="nav-bottom-pad"></div>
             </div>

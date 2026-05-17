@@ -18,8 +18,17 @@ interface CameraTravelAnimation {
   toTarget:   Vec3;
   fromDistance: number;
   toDistance:   number;
+  fromAzimuth: number;
+  toAzimuth: number;
+  fromElevation: number;
+  toElevation: number;
   startMs:  number;
   durationMs: number;
+  accelMs: number;
+  cruiseMs: number;
+  decelMs: number;
+  motionBlur: boolean;
+  spaceWarp: boolean;
 }
 
 interface WheelZoomGoal {
@@ -42,51 +51,82 @@ function aspectLimitedNdcRadius(fill: number): number {
   return Math.max(0.25, Math.min(fill, fill * aspect));
 }
 
-function cinematicTravelProgress(elapsedMs: number, durationMs: number): number {
+function shortestAngleDelta(from: number, to: number): number {
+  return Math.atan2(Math.sin(to - from), Math.cos(to - from));
+}
+
+function defaultTravelTiming(durationMs: number): { accelMs: number; cruiseMs: number; decelMs: number } {
+  const total = Math.max(1, durationMs);
+  const accelMs = Math.min(CINEMATIC_TRAVEL_ACCEL_MS, total * 0.25);
+  const decelMs = Math.min(CINEMATIC_TRAVEL_DECEL_MS, total * 0.25);
+  return {
+    accelMs,
+    cruiseMs: Math.max(0, total - accelMs - decelMs),
+    decelMs,
+  };
+}
+
+function secondsToMs(value: number, fallbackSeconds: number): number {
+  const seconds = Number.isFinite(value) ? Math.max(0, value) : fallbackSeconds;
+  return Math.max(0, seconds * 1000);
+}
+
+function cinematicTravelProgress(
+  elapsedMs: number,
+  durationMs: number,
+  accelMs: number,
+  cruiseMs: number,
+  decelMs: number,
+): number {
   if (!Number.isFinite(elapsedMs) || !Number.isFinite(durationMs) || durationMs <= 0) return 1;
 
   const elapsed = clamp(elapsedMs, 0, durationMs);
-  const accelMs = Math.min(CINEMATIC_TRAVEL_ACCEL_MS, durationMs * 0.25);
-  const decelMs = Math.min(CINEMATIC_TRAVEL_DECEL_MS, durationMs * 0.25);
-  const cruiseMs = Math.max(0, durationMs - accelMs - decelMs);
-  const travelArea = cruiseMs + (accelMs + decelMs) * 0.5;
+  const safeAccelMs = Math.max(0, accelMs);
+  const safeCruiseMs = Math.max(0, cruiseMs);
+  const safeDecelMs = Math.max(0, decelMs);
+  const travelArea = safeCruiseMs + (safeAccelMs + safeDecelMs) * 0.5;
   if (travelArea <= 0) {
     const linearT = elapsed / durationMs;
     return linearT * linearT * (3 - 2 * linearT);
   }
 
   const cruiseVelocity = 1 / travelArea;
-  if (elapsed <= accelMs) {
-    return 0.5 * cruiseVelocity * elapsed * elapsed / Math.max(accelMs, 1);
+  if (elapsed <= safeAccelMs) {
+    return 0.5 * cruiseVelocity * elapsed * elapsed / Math.max(safeAccelMs, 1);
   }
 
-  const accelDistance = 0.5 * cruiseVelocity * accelMs;
-  const cruiseEndMs = accelMs + cruiseMs;
+  const accelDistance = 0.5 * cruiseVelocity * safeAccelMs;
+  const cruiseEndMs = safeAccelMs + safeCruiseMs;
   if (elapsed <= cruiseEndMs) {
-    return accelDistance + cruiseVelocity * (elapsed - accelMs);
+    return accelDistance + cruiseVelocity * (elapsed - safeAccelMs);
   }
 
   const decelElapsed = elapsed - cruiseEndMs;
-  const cruiseDistance = cruiseVelocity * cruiseMs;
+  const cruiseDistance = cruiseVelocity * safeCruiseMs;
   const decelDistance =
     cruiseVelocity * decelElapsed -
-    0.5 * cruiseVelocity * decelElapsed * decelElapsed / Math.max(decelMs, 1);
+    0.5 * cruiseVelocity * decelElapsed * decelElapsed / Math.max(safeDecelMs, 1);
   return clamp(accelDistance + cruiseDistance + decelDistance, 0, 1);
 }
 
-function cinematicTravelEffect(elapsedMs: number, durationMs: number): number {
+function cinematicTravelEffect(
+  elapsedMs: number,
+  durationMs: number,
+  accelMs: number,
+  decelMs: number,
+): number {
   if (!Number.isFinite(elapsedMs) || !Number.isFinite(durationMs) || durationMs <= 0) return 0;
 
   const elapsed = clamp(elapsedMs, 0, durationMs);
   const linearT = durationMs > 0 ? elapsed / durationMs : 1;
-  const accelMs = Math.min(CINEMATIC_TRAVEL_ACCEL_MS, durationMs * 0.25);
-  const decelMs = Math.min(CINEMATIC_TRAVEL_DECEL_MS, durationMs * 0.25);
+  const safeAccelMs = Math.max(0, accelMs);
+  const safeDecelMs = Math.max(0, decelMs);
 
   let velocityRamp = 1;
-  if (accelMs > 0 && elapsed < accelMs) {
-    velocityRamp = elapsed / accelMs;
-  } else if (decelMs > 0 && elapsed > durationMs - decelMs) {
-    velocityRamp = (durationMs - elapsed) / decelMs;
+  if (safeAccelMs > 0 && elapsed < safeAccelMs) {
+    velocityRamp = elapsed / safeAccelMs;
+  } else if (safeDecelMs > 0 && elapsed > durationMs - safeDecelMs) {
+    velocityRamp = (durationMs - elapsed) / safeDecelMs;
   }
 
   const edgeFade = Math.sin(Math.PI * linearT);
@@ -101,7 +141,25 @@ export interface CameraUniforms {
   eye:        Vec3;   // camera world-space position (for distance-based fades)
   target:     Vec3;   // camera target, used for stable target-relative projection
   eyeOffset:  Vec3;   // eye - target, small even when target is galaxy-scale
-  flightEffect: number; // 0..1 cinematic travel warp/blur strength
+  flightEffect: number; // 0..1 legacy combined cinematic travel effect strength
+  flightSpaceWarp: number; // 0..1 cinematic screen-warp strength
+  flightMotionBlur: number; // 0..1 cinematic radial motion-blur strength
+}
+
+export interface CameraSnapshot {
+  target: Vec3;
+  distance: number;
+  azimuth: number;
+  elevation: number;
+  eye: Vec3;
+}
+
+export interface CameraFlightOptions {
+  accelerationSeconds: number;
+  flightSeconds: number;
+  decelerationSeconds: number;
+  motionBlur: boolean;
+  spaceWarp: boolean;
 }
 
 export class Camera {
@@ -123,6 +181,8 @@ export class Camera {
   private travelAnimation: CameraTravelAnimation | null = null;
   private wheelZoomGoal: WheelZoomGoal | null = null;
   private flightEffect = 0;
+  private flightSpaceWarp = 0;
+  private flightMotionBlur = 0;
 
   attach(canvas: HTMLCanvasElement): void {
     let orbiting = false;
@@ -256,6 +316,8 @@ export class Camera {
   private cancelTravelAnimation(): void {
     this.travelAnimation = null;
     this.flightEffect = 0;
+    this.flightSpaceWarp = 0;
+    this.flightMotionBlur = 0;
   }
 
   setWheelZoomGoal(distance: number, steps = 10): void {
@@ -309,6 +371,16 @@ export class Camera {
     this.lockTarget = true;
   }
 
+  snapshot(): CameraSnapshot {
+    return {
+      target: [this.target[0], this.target[1], this.target[2]],
+      distance: this.distance,
+      azimuth: this.azimuth,
+      elevation: this.elevation,
+      eye: this.currentEye(),
+    };
+  }
+
   private setViewFromEyeAndTarget(eye: Vec3, target: Vec3): void {
     const dx = eye[0] - target[0];
     const dy = eye[1] - target[1];
@@ -344,25 +416,46 @@ export class Camera {
     const anim = this.travelAnimation;
     if (!anim) {
       this.flightEffect = 0;
+      this.flightSpaceWarp = 0;
+      this.flightMotionBlur = 0;
       return;
     }
 
     const elapsedMs = nowMs - anim.startMs;
     const linearT = Math.min(1, Math.max(0, elapsedMs / anim.durationMs));
-    const t = cinematicTravelProgress(elapsedMs, anim.durationMs);
-    this.flightEffect = cinematicTravelEffect(elapsedMs, anim.durationMs);
+    const t = cinematicTravelProgress(
+      elapsedMs,
+      anim.durationMs,
+      anim.accelMs,
+      anim.cruiseMs,
+      anim.decelMs,
+    );
+    const effect = cinematicTravelEffect(elapsedMs, anim.durationMs, anim.accelMs, anim.decelMs);
+    this.flightSpaceWarp = anim.spaceWarp ? effect : 0;
+    this.flightMotionBlur = anim.motionBlur ? effect : 0;
+    this.flightEffect = Math.max(this.flightSpaceWarp, this.flightMotionBlur);
     this.target = [
       anim.fromTarget[0] + (anim.toTarget[0] - anim.fromTarget[0]) * t,
       anim.fromTarget[1] + (anim.toTarget[1] - anim.fromTarget[1]) * t,
       anim.fromTarget[2] + (anim.toTarget[2] - anim.fromTarget[2]) * t,
     ];
     this.distance = clampDistance(anim.fromDistance + (anim.toDistance - anim.fromDistance) * t);
+    this.azimuth = anim.fromAzimuth + shortestAngleDelta(anim.fromAzimuth, anim.toAzimuth) * t;
+    this.elevation = clamp(
+      anim.fromElevation + (anim.toElevation - anim.fromElevation) * t,
+      -Math.PI / 2 + ORBIT_POLE_MARGIN,
+      Math.PI / 2 - ORBIT_POLE_MARGIN,
+    );
 
     if (linearT >= 1) {
       this.travelAnimation = null;
       this.target = [...anim.toTarget];
       this.distance = anim.toDistance;
+      this.azimuth = anim.toAzimuth;
+      this.elevation = anim.toElevation;
       this.flightEffect = 0;
+      this.flightSpaceWarp = 0;
+      this.flightMotionBlur = 0;
     }
   }
 
@@ -373,18 +466,59 @@ export class Camera {
     if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
       this.travelAnimation = null;
       this.flightEffect = 0;
+      this.flightSpaceWarp = 0;
+      this.flightMotionBlur = 0;
       this.target = toTarget;
       this.distance = toDistance;
       return;
     }
 
+    const durationMs = Math.max(1, durationSeconds * 1000);
+    const timing = defaultTravelTiming(durationMs);
     this.travelAnimation = {
       fromTarget: [...this.target],
       toTarget,
       fromDistance: this.distance,
       toDistance,
+      fromAzimuth: this.azimuth,
+      toAzimuth: this.azimuth,
+      fromElevation: this.elevation,
+      toElevation: this.elevation,
       startMs: performance.now(),
-      durationMs: Math.max(1, durationSeconds * 1000),
+      durationMs,
+      ...timing,
+      motionBlur: true,
+      spaceWarp: true,
+    };
+  }
+
+  startCustomFlight(start: CameraSnapshot, end: CameraSnapshot, options: CameraFlightOptions): void {
+    const accelMs = secondsToMs(options.accelerationSeconds, 0.5);
+    const cruiseMs = secondsToMs(options.flightSeconds, 1);
+    const decelMs = secondsToMs(options.decelerationSeconds, 0.5);
+    const durationMs = Math.max(1, accelMs + cruiseMs + decelMs);
+    this.clearWheelZoomGoal();
+    this.target = [start.target[0], start.target[1], start.target[2]];
+    this.distance = clampDistance(start.distance);
+    this.azimuth = start.azimuth;
+    this.elevation = clamp(start.elevation, -Math.PI / 2 + ORBIT_POLE_MARGIN, Math.PI / 2 - ORBIT_POLE_MARGIN);
+    this.lockTarget = true;
+    this.travelAnimation = {
+      fromTarget: [start.target[0], start.target[1], start.target[2]],
+      toTarget: [end.target[0], end.target[1], end.target[2]],
+      fromDistance: clampDistance(start.distance),
+      toDistance: clampDistance(end.distance),
+      fromAzimuth: start.azimuth,
+      toAzimuth: end.azimuth,
+      fromElevation: start.elevation,
+      toElevation: end.elevation,
+      startMs: performance.now(),
+      durationMs,
+      accelMs,
+      cruiseMs,
+      decelMs,
+      motionBlur: options.motionBlur,
+      spaceWarp: options.spaceWarp,
     };
   }
 
@@ -431,6 +565,8 @@ export class Camera {
         eye[2] - this.target[2],
       ],
       flightEffect: this.flightEffect,
+      flightSpaceWarp: this.flightSpaceWarp,
+      flightMotionBlur: this.flightMotionBlur,
     };
     return this._uniforms;
   }

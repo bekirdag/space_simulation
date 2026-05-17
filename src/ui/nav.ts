@@ -1,5 +1,5 @@
 import { type Body } from "../physics/body";
-import { type Camera } from "../scene/camera";
+import { type Camera, type CameraSnapshot } from "../scene/camera";
 import {
   MOON_ZOOM,
   systemCenterForBody,
@@ -36,6 +36,12 @@ export class NavPanel {
   private modelPager: HTMLElement | null = null;
   private constellationList: HTMLElement | null = null;
   private constellationPager: HTMLElement | null = null;
+  private flightStartLabel: HTMLElement | null = null;
+  private flightEndLabel: HTMLElement | null = null;
+  private flightStatus: HTMLElement | null = null;
+  private flightStartButton: HTMLButtonElement | null = null;
+  private flightStartInput: CameraSnapshot | null = null;
+  private flightEndInput: CameraSnapshot | null = null;
   private tabs: HTMLElement[] = [];
   private tabPanels: HTMLElement[] = [];
   private _focusedBodyName: string | null = null;
@@ -103,6 +109,10 @@ export class NavPanel {
     this.modelPager = document.getElementById("mw-model-pagination");
     this.constellationList = document.getElementById("constellation-list");
     this.constellationPager = document.getElementById("constellation-pagination");
+    this.flightStartLabel = document.getElementById("flight-start-label");
+    this.flightEndLabel = document.getElementById("flight-end-label");
+    this.flightStatus = document.getElementById("flight-status");
+    this.flightStartButton = document.getElementById("flight-start") as HTMLButtonElement | null;
     this.tabs = Array.from(this.panel.querySelectorAll<HTMLElement>("[data-nav-tab]"));
     this.tabPanels = Array.from(this.panel.querySelectorAll<HTMLElement>("[data-nav-panel]"));
 
@@ -113,6 +123,8 @@ export class NavPanel {
 
     this.bindTabs();
     this.bindLinks();
+    this.bindFlightControls();
+    this.updateFlightControls();
     this.renderCatalogLists();
   }
 
@@ -160,6 +172,26 @@ export class NavPanel {
         this.clearFocusedBody();
         this.onPreset(el.dataset["preset"]!);
       });
+    });
+  }
+
+  private bindFlightControls(): void {
+    const setStart = document.getElementById("flight-set-start");
+    const setEnd = document.getElementById("flight-set-end");
+    const start = document.getElementById("flight-start");
+    setStart?.addEventListener("click", e => {
+      e.stopPropagation();
+      this.flightStartInput = this.camera.snapshot();
+      this.updateFlightControls("Start point captured.");
+    });
+    setEnd?.addEventListener("click", e => {
+      e.stopPropagation();
+      this.flightEndInput = this.camera.snapshot();
+      this.updateFlightControls("End point captured.");
+    });
+    start?.addEventListener("click", e => {
+      e.stopPropagation();
+      this.startCinematicFlight();
     });
   }
 
@@ -269,6 +301,21 @@ export class NavPanel {
     this.renderCatalogLists();
   }
 
+  private releaseTrackingForFlight(): void {
+    this.resetEnterKeyNavigation();
+    this._focusedBodyName = null;
+    this._selectedCatalogStar = null;
+    this.focusedBodyTracksCamera = false;
+    this.selectedCatalogTracksCamera = false;
+    this.clearFocusedSystem();
+    this.catalogSearch?.onFocusTitleChange?.(null);
+    this.camera.clearWheelZoomGoal();
+    this.panel.querySelectorAll<HTMLElement>("[data-travel].focused").forEach(el => {
+      el.classList.remove("focused");
+    });
+    this.renderCatalogLists();
+  }
+
   updateFocusedBody(): void {
     if (!this._focusedBodyName) return;
     const body = this.bodyByName(this._focusedBodyName!);
@@ -353,6 +400,62 @@ export class NavPanel {
     this.selectCatalogStar(selected, CLOSE_TRAVEL_SECONDS);
     this.enterKeyCenteredLock = true;
     return true;
+  }
+
+  private flightNumberInput(id: string, fallback: number): number {
+    const input = document.getElementById(id) as HTMLInputElement | null;
+    if (!input) return fallback;
+    const value = Number(input.value);
+    return Number.isFinite(value) ? Math.max(0, value) : fallback;
+  }
+
+  private flightToggleInput(id: string, fallback: boolean): boolean {
+    const input = document.getElementById(id) as HTMLInputElement | null;
+    return input ? input.checked : fallback;
+  }
+
+  private formatFlightDistance(distance: number): string {
+    if (!Number.isFinite(distance)) return "n/a";
+    const abs = Math.abs(distance);
+    if (abs >= 63241.077) return `${(distance / 63241.077).toFixed(abs >= 632410 ? 1 : 2)} ly`;
+    if (abs >= 1000) return `${(distance / 1000).toFixed(abs >= 10000 ? 1 : 2)}k AU`;
+    if (abs >= 1) return `${distance.toFixed(abs >= 10 ? 1 : 2)} AU`;
+    return `${distance.toExponential(2)} AU`;
+  }
+
+  private formatFlightPoint(snapshot: CameraSnapshot | null): string {
+    if (!snapshot) return "Not set";
+    const [x, y, z] = snapshot.target;
+    return `target ${this.formatFlightDistance(x)}, ${this.formatFlightDistance(y)}, ${this.formatFlightDistance(z)} - d ${this.formatFlightDistance(snapshot.distance)}`;
+  }
+
+  private updateFlightControls(status?: string): void {
+    if (this.flightStartLabel) this.flightStartLabel.textContent = this.formatFlightPoint(this.flightStartInput);
+    if (this.flightEndLabel) this.flightEndLabel.textContent = this.formatFlightPoint(this.flightEndInput);
+    if (this.flightStartButton) this.flightStartButton.disabled = !this.flightStartInput || !this.flightEndInput;
+    if (this.flightStatus && status) this.flightStatus.textContent = status;
+  }
+
+  private startCinematicFlight(): void {
+    if (!this.flightStartInput || !this.flightEndInput) {
+      this.updateFlightControls("Set both points before starting.");
+      return;
+    }
+    const accelerationSeconds = this.flightNumberInput("flight-accel", 0.5);
+    const flightSeconds = Math.max(0.1, this.flightNumberInput("flight-cruise", 1));
+    const decelerationSeconds = this.flightNumberInput("flight-decel", 0.5);
+    const motionBlur = this.flightToggleInput("flight-motion-blur", true);
+    const spaceWarp = this.flightToggleInput("flight-space-warp", true);
+    this.releaseTrackingForFlight();
+    this.camera.startCustomFlight(this.flightStartInput, this.flightEndInput, {
+      accelerationSeconds,
+      flightSeconds,
+      decelerationSeconds,
+      motionBlur,
+      spaceWarp,
+    });
+    const total = accelerationSeconds + flightSeconds + decelerationSeconds;
+    this.updateFlightControls(`Flying ${total.toFixed(total >= 10 ? 0 : 1)}s camera path.`);
   }
 
   private filter(): void {

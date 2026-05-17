@@ -2060,7 +2060,8 @@ export class Renderer {
     data[27] = this._objectBrightness;
     data[28] = aspect;                 data[29] = uniforms.target[0];    data[30] = uniforms.target[1];    data[31] = uniforms.target[2];
     data[32] = uniforms.eyeOffset[0];  data[33] = uniforms.eyeOffset[1]; data[34] = uniforms.eyeOffset[2];
-    this._blackHoleUniform[8] = clamp(uniforms.flightEffect, 0, 1);
+    this._blackHoleUniform[8] = clamp(uniforms.flightSpaceWarp ?? uniforms.flightEffect, 0, 1);
+    this._blackHoleUniform[9] = clamp(uniforms.flightMotionBlur ?? uniforms.flightEffect, 0, 1);
     this.ctx.device.queue.writeBuffer(this.cameraBuffer, 0, data);
 
     const bodyData = new Float32Array(CAMERA_BYTES / 4);
