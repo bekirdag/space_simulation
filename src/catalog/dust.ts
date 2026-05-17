@@ -9,7 +9,7 @@ import { NEBULA_FLOATS } from "./nebulas";
 // anchored in the simulation frame, not true 3D distance-resolved cloud bodies.
 
 export const DUST_CLOUD_FLOATS = NEBULA_FLOATS;
-export const DUST_CLOUD_COUNT = 5_200;
+export const DUST_CLOUD_COUNT = 24_000;
 export const DUST_CLOUD_CAPACITY = DUST_CLOUD_COUNT;
 export const DUST_MAP_FLOATS = 8;
 export const DUST_MILKY_WAY_KPC_TO_AU = 8_000;

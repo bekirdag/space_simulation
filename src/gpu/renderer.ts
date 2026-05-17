@@ -1703,8 +1703,16 @@ export class Renderer {
       }
     }
 
-    // ── Partial galactic dust clouds — background layer before all star passes.
-    // Positions are sampled from the MF2015 E(B-V) map; stars draw over dust.
+    // ── Milky Way background stars (galaxy-scale LOD layer) ───────────────
+    pass.setPipeline(this.mwPipeline);
+    pass.setBindGroup(0, this.mwBindGroup);
+    drawOctants(
+      this.mwOctants, this._mwStarLimit, this.mwStarCount,
+      () => pass.draw(6, Math.min(this.mwStarCount, this._mwStarLimit), 0, 0),
+    );
+
+    // ── Partial galactic dust clouds — between background and foreground stars.
+    // Positions are sampled from the MF2015 E(B-V) map; nearby catalog stars draw over dust.
     if (
       this._showDust &&
       this.dustCloudCount > 0 &&
@@ -1715,14 +1723,6 @@ export class Renderer {
       pass.setBindGroup(0, this.dustBindGroup);
       pass.draw(6, this.dustCloudCount, 0, 0);
     }
-
-    // ── Milky Way background stars (galaxy-scale LOD layer) ───────────────
-    pass.setPipeline(this.mwPipeline);
-    pass.setBindGroup(0, this.mwBindGroup);
-    drawOctants(
-      this.mwOctants, this._mwStarLimit, this.mwStarCount,
-      () => pass.draw(6, Math.min(this.mwStarCount, this._mwStarLimit), 0, 0),
-    );
 
     // ── Static catalog stars (nearby HYG) ─────────────────────────────────
     pass.setPipeline(this.starPipeline);

@@ -156,12 +156,12 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     shape = smoothstep(0.43, 0.66, base * 0.62 + max(shell, 0.0) * 0.36) * edge;
   }
 
-  if (shape < 0.075) {
+  if (shape < 0.045) {
     discard;
   }
 
   let densityBoost = 0.72 + clamp(in.density, 0.0, 1.0) * 0.42;
-  let alpha = clamp(shape * in.alpha * densityBoost, 0.0, 0.62);
+  let alpha = clamp(shape * in.alpha * densityBoost, 0.0, 0.72);
   if (alpha < 0.004) {
     discard;
   }
