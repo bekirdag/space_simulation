@@ -13,6 +13,7 @@
     "test": "npm run typecheck",
     "catalog:exoplanets": "node scripts/build-exoplanet-hosts.mjs",
     "catalog:stars": "node scripts/build-visible-stars.mjs",
+    "catalog:constellations:check": "node scripts/check-constellations.mjs",
     "catalog:dust": "node scripts/build-dust-map.mjs",
     "cache:horizons": "node scripts/cache-horizons.mjs"
   },

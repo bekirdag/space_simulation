@@ -130,6 +130,7 @@ export class NavPanel {
   private catalogObjectType(hit: StarSearchResult): string {
     if (hit.id.startsWith("blackhole:")) return "black hole";
     if (hit.id.startsWith("galaxy:")) return "galaxy";
+    if (hit.id.startsWith("constellation:")) return "constellation";
     if (hit.id.startsWith("mwmodel:")) return "3D model";
     if (hit.id.startsWith("nebula:")) return "nebula";
     if (hit.id.startsWith("exo:")) return "exoplanet";
@@ -422,8 +423,8 @@ export class NavPanel {
       } else {
         empty.innerHTML =
           `No match for "<b>${query}</b>".<br>` +
-          `Catalog: known galaxies, 3D models, exoplanet host stars, planets, and Sgr A*.<br>` +
-          `Try: <em>Andromeda, LMC, Sgr A*, Crab, TRAPPIST-1, Proxima</em>`;
+          `Catalog: constellations, known galaxies, 3D models, exoplanet host stars, planets, and Sgr A*.<br>` +
+          `Try: <em>Orion, Andromeda, LMC, Sgr A*, Crab, TRAPPIST-1, Proxima</em>`;
       }
       this.catalogResults.appendChild(empty);
       return;

@@ -72,7 +72,7 @@ import {
 } from "./catalog/dust";
 import { NEARBY_STAR_LABELS, SGR_A_STAR_POS, type NearbyStarLabel } from "./catalog/nearby-stars";
 import { sortIntoOctants } from "./gpu/sky-cull";
-import { loadConstellationLines, type ConstellationLabel } from "./catalog/constellations";
+import { loadConstellationLines, searchConstellations, type ConstellationLabel } from "./catalog/constellations";
 import {
   buildNebulaBuffer,
   nebulaPositions,
@@ -661,6 +661,13 @@ async function main(): Promise<void> {
     return `${prefix}:${name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
   }
 
+  function enableConstellationLayerForFocus(): void {
+    const input = document.getElementById("set-constellations") as HTMLInputElement | null;
+    if (!input || input.checked) return;
+    input.checked = true;
+    applySettings();
+  }
+
   function galaxySelectionFocusDistance(id: string): number {
     return galaxyModelFocusDistance(id) ?? GENERIC_GALAXY_CLOSE_FOCUS_AU;
   }
@@ -1239,6 +1246,7 @@ async function main(): Promise<void> {
       ) ? [SGR_A_SEARCH_RESULT] : [];
       const starHits = searchCatalogStars(exoplanetHosts, query, 5);
       const modelHits = searchMilkyWayModels(query, 5);
+      const constellationHits = searchConstellations(constellationLabels, query, 5);
       const galaxyHits = mergeGalaxySearchHits(
         searchKnownGalaxies(query, 6),
         searchGalaxies(galaxyNames, galaxyBuffer, query, 5).map(catalogGalaxyResult),
@@ -1247,6 +1255,7 @@ async function main(): Promise<void> {
       return [
         ...blackHoleHits,
         ...galaxyHits,
+        ...constellationHits,
         ...modelHits,
         ...starHits,
         // Map exoplanet results to StarSearchResult shape
@@ -1270,6 +1279,9 @@ async function main(): Promise<void> {
         setExoplanetBodies(null);
       } else if (id.startsWith("galaxy:")) {
         setExoplanetBodies(null);
+      } else if (id.startsWith("constellation:")) {
+        setExoplanetBodies(null);
+        enableConstellationLayerForFocus();
       } else if (id.startsWith("mwmodel:")) {
         setExoplanetBodies(null);
         const model = milkyWayModelById(id);
@@ -1473,6 +1485,7 @@ async function main(): Promise<void> {
     return !!hit &&
       !hit.id.startsWith("exo:") &&
       !hit.id.startsWith("galaxy:") &&
+      !hit.id.startsWith("constellation:") &&
       !hit.id.startsWith("mwmodel:") &&
       !hit.id.startsWith("nebula:") &&
       !hit.id.startsWith("blackhole:");

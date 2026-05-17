@@ -1,4 +1,4 @@
-import { STAR_FLOATS } from "./stars";
+import { STAR_FLOATS, type StarSearchResult } from "./stars";
 
 export const CONSTELLATION_FLOATS = 4; // pos xyz + alpha
 
@@ -8,6 +8,7 @@ const VISIBLE_STAR_DATA_URL = "/data/visible-stars-100k.bin";
 const STAR_CACHE_FLOATS = 6; // pos xyz + unit direction xyz
 const LABEL_DISTANCE_SCALE = 1.035;
 const LOOSE_SNAP_DEGREES = 0.75;
+const CONSTELLATION_FOCUS_DISTANCE_FACTOR = 3.6;
 
 type LonLat = [number, number];
 
@@ -41,10 +42,13 @@ export interface ConstellationLineLoad {
 
 export interface ConstellationLabel {
   id: string;
+  abbreviation: string;
   name: string;
   x: number;
   y: number;
   z: number;
+  radius: number;
+  rank: number;
   alpha: number;
 }
 
@@ -213,6 +217,11 @@ function labelName(lineFeature: ConstellationFeature, nameFeature: Constellation
     ?? "Constellation";
 }
 
+function labelRank(lineFeature: ConstellationFeature, nameFeature: ConstellationFeature | undefined): number {
+  const rank = Number(nameFeature?.properties?.rank ?? lineFeature.properties?.rank);
+  return Number.isFinite(rank) ? rank : 3;
+}
+
 function labelPosition(
   labelCoord: LonLat | null,
   featureStars: SnappedStar[],
@@ -222,6 +231,17 @@ function labelPosition(
     : centroidDirection(featureStars);
   const radius = median(featureStars.map(star => star.distance)) * LABEL_DISTANCE_SCALE;
   return [direction[0] * radius, direction[1] * radius, direction[2] * radius];
+}
+
+function labelRadius(center: [number, number, number], featureStars: SnappedStar[]): number {
+  let radius = 1;
+  for (const star of featureStars) {
+    radius = Math.max(
+      radius,
+      Math.hypot(star.x - center[0], star.y - center[1], star.z - center[2]),
+    );
+  }
+  return radius;
 }
 
 async function loadJson<T>(url: string): Promise<T> {
@@ -286,11 +306,15 @@ export async function loadConstellationLines(): Promise<ConstellationLineLoad> {
     }
 
     if (featureStars.length > 0) {
-      const [x, y, z] = labelPosition(pointCoordinates(labelFeature), featureStars);
+      const center = labelPosition(pointCoordinates(labelFeature), featureStars);
+      const [x, y, z] = center;
       labels.push({
         id: `${id}-${featureIndex}`,
+        abbreviation: id,
         name: labelName(feature, labelFeature),
         x, y, z,
+        radius: labelRadius(center, featureStars),
+        rank: labelRank(feature, labelFeature),
         alpha: Math.min(alpha + 0.22, 0.72),
       });
     }
@@ -310,4 +334,56 @@ export async function loadConstellationLines(): Promise<ConstellationLineLoad> {
     snappedEndpointCount: snapCache.size,
     looseEndpointCount,
   };
+}
+
+function normalizeConstellationSearchText(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function constellationSearchRank(label: ConstellationLabel, query: string): number | null {
+  const normalizedName = normalizeConstellationSearchText(label.name);
+  const normalizedId = normalizeConstellationSearchText(label.abbreviation);
+  const haystack = [normalizedName, normalizedId].join(" ");
+  const index = haystack.indexOf(query);
+  if (index < 0) return null;
+
+  const exact = normalizedName === query || normalizedId === query;
+  const starts = normalizedName.startsWith(query) || normalizedId.startsWith(query);
+  return (exact ? -100 : starts ? 0 : 1000) + index + label.rank * 2;
+}
+
+function constellationToSearchResult(label: ConstellationLabel): StarSearchResult {
+  return {
+    id: `constellation:${label.id}`,
+    label: label.name,
+    subtitle: `constellation · ${label.abbreviation}`,
+    x: label.x,
+    y: label.y,
+    z: label.z,
+    focusDistance: Math.max(25, label.radius * CONSTELLATION_FOCUS_DISTANCE_FACTOR),
+    color: [0.46, 0.70, 1.00],
+  };
+}
+
+export function searchConstellations(
+  labels: readonly ConstellationLabel[],
+  query: string,
+  limit = 6,
+): StarSearchResult[] {
+  const q = normalizeConstellationSearchText(query);
+  if (q.length < 2) return [];
+
+  return labels
+    .map(label => {
+      const rank = constellationSearchRank(label, q);
+      return rank === null ? null : { rank, label };
+    })
+    .filter((item): item is { rank: number; label: ConstellationLabel } => item !== null)
+    .sort((a, b) => a.rank - b.rank || a.label.name.localeCompare(b.label.name))
+    .slice(0, limit)
+    .map(item => constellationToSearchResult(item.label));
 }
