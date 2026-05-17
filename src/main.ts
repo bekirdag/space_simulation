@@ -72,7 +72,13 @@ import {
 } from "./catalog/dust";
 import { NEARBY_STAR_LABELS, SGR_A_STAR_POS, type NearbyStarLabel } from "./catalog/nearby-stars";
 import { sortIntoOctants } from "./gpu/sky-cull";
-import { loadConstellationLines, searchConstellations, type ConstellationLabel } from "./catalog/constellations";
+import {
+  constellationsToSearchResults,
+  loadConstellationLines,
+  searchConstellations,
+  type ConstellationFigure,
+  type ConstellationLabel,
+} from "./catalog/constellations";
 import {
   buildNebulaBuffer,
   nebulaPositions,
@@ -1053,8 +1059,13 @@ async function main(): Promise<void> {
 
   // ── Constellation lines snapped to real visible-star positions ───────────
   let constellationLabels: ConstellationLabel[] = [];
+  let constellationFigures: ConstellationFigure[] = [];
+  let constellationLineData: Float32Array<ArrayBufferLike> = new Float32Array(0);
+  let selectedConstellation: ConstellationFigure | null = null;
   startupAssetPromises.push(trackStartupAsset("constellation lines", async () => {
-    const { data, labels: loadedLabels, source, featureCount, segmentCount, snappedEndpointCount, looseEndpointCount } = await loadConstellationLines();
+    const { data, figures, labels: loadedLabels, source, featureCount, segmentCount, snappedEndpointCount, looseEndpointCount } = await loadConstellationLines();
+    constellationLineData = data;
+    constellationFigures = figures;
     constellationLabels = loadedLabels;
     renderer.uploadConstellations(data);
     console.info(
@@ -1210,6 +1221,58 @@ async function main(): Promise<void> {
   loadTextEl.textContent = "Rendering first frame...";
 
   // ── Nav panel ──────────────────────────────────────────────────────────────
+  function clearSelectedConstellation(): void {
+    if (!selectedConstellation) return;
+    selectedConstellation = null;
+    if (constellationLineData.length > 0) renderer.uploadConstellations(constellationLineData);
+  }
+
+  function findConstellationFigure(id: string): ConstellationFigure | null {
+    const figureId = id.startsWith("constellation:")
+      ? id.slice("constellation:".length)
+      : id;
+    return constellationFigures.find(figure => figure.id === figureId) ?? null;
+  }
+
+  function focusConstellationFromEarth(figure: ConstellationFigure): void {
+    const earth = bodies.find(body => body.name === "Earth");
+    if (!earth) return;
+
+    const target: [number, number, number] = [
+      figure.label.x,
+      figure.label.y,
+      figure.label.z,
+    ];
+    let dx = target[0] - earth.x;
+    let dy = target[1] - earth.y;
+    let dz = target[2] - earth.z;
+    let len = Math.hypot(dx, dy, dz);
+    if (!Number.isFinite(len) || len <= 0) {
+      dx = 1;
+      dy = 0;
+      dz = 0;
+      len = 1;
+    }
+
+    const surfaceRadius = Math.max(earth.radius * 1.04, earth.radius + 1e-7);
+    const eye: [number, number, number] = [
+      earth.x + dx / len * surfaceRadius,
+      earth.y + dy / len * surfaceRadius,
+      earth.z + dz / len * surfaceRadius,
+    ];
+    camera.lookFromEyeToTarget(eye, target);
+  }
+
+  function selectConstellation(id: string): void {
+    const figure = findConstellationFigure(id);
+    if (!figure) return;
+    selectedConstellation = figure;
+    renderer.uploadConstellations(figure.data);
+    renderer.uploadSelectedStar(null);
+    focusConstellationFromEarth(figure);
+    enableConstellationLayerForFocus();
+  }
+
   function loadPreset(name: string) {
     if (name === "solar-system") {
       nav.clearFocusedBody();
@@ -1270,10 +1333,12 @@ async function main(): Promise<void> {
       ];
     },
     getCatalogStatus: () => catalogStatus,
+    constellationObjects: constellationsToSearchResults(constellationFigures),
     modelObjects: milkyWayModelSearchResults(),
     // Called whenever a catalog search result is clicked.
     // If the id encodes an exoplanet, load that star's planet bodies.
     onCatalogItemClick: (id: string) => {
+      if (!id.startsWith("constellation:")) clearSelectedConstellation();
       renderer.setActiveMilkyWayModel(id.startsWith("mwmodel:") ? id : null);
       if (id === "blackhole:sgr-a") {
         setExoplanetBodies(null);
@@ -1281,7 +1346,7 @@ async function main(): Promise<void> {
         setExoplanetBodies(null);
       } else if (id.startsWith("constellation:")) {
         setExoplanetBodies(null);
-        enableConstellationLayerForFocus();
+        selectConstellation(id);
       } else if (id.startsWith("mwmodel:")) {
         setExoplanetBodies(null);
         const model = milkyWayModelById(id);
@@ -1300,7 +1365,10 @@ async function main(): Promise<void> {
       }
       renderer.uploadBodies(bodies);
     },
-    onFocusTitleChange: setFocusTitle,
+    onFocusTitleChange: (title, subtitle, objectType) => {
+      if (objectType !== "constellation") clearSelectedConstellation();
+      setFocusTitle(title, subtitle, objectType);
+    },
   });
 
   function shouldIgnoreLockedObjectEnter(event: KeyboardEvent): boolean {
@@ -2194,7 +2262,12 @@ async function main(): Promise<void> {
       focusNearbyStar,
       selectedNearbyStarName,
     );
-    labels.updateConstellationLabels(constellationLabels, camUniforms.viewProj, showConstellations);
+    labels.updateConstellationLabels(
+      selectedConstellation ? [selectedConstellation.label] : constellationLabels,
+      camUniforms.viewProj,
+      showConstellations,
+      selectedConstellation?.starLabels ?? [],
+    );
     const selectedGalaxyId = sel?.id.startsWith("galaxy:")
       ? sel.id.slice("galaxy:".length)
       : null;

@@ -2,7 +2,7 @@ import { type Body } from "../physics/body";
 import { BodyType } from "../physics/constants";
 import { type Mat4, type Vec3 } from "../math/mat4";
 import { NEARBY_STAR_AU_PER_PARSEC, type NearbyStarLabel } from "../catalog/nearby-stars";
-import { type ConstellationLabel } from "../catalog/constellations";
+import { type ConstellationLabel, type ConstellationStarLabel } from "../catalog/constellations";
 
 // Moons fade out beyond this distance from the camera eye (AU).
 // Matches the shader's 1.5 AU soft cutoff.
@@ -177,6 +177,8 @@ export class LabelManager {
   private galaxyNameSpans = new Map<string, HTMLSpanElement>();
   // Constellation title spans keyed by constellation id
   private constellationSpans = new Map<string, HTMLSpanElement>();
+  // Selected-constellation star labels keyed by snapped endpoint id
+  private constellationStarSpans = new Map<string, HTMLSpanElement>();
   // Sgr A* permanent label
   private galacticCenterEl: HTMLSpanElement | null = null;
   // Large-scale Milky Way label, shown after Sgr A* stops being useful.
@@ -191,6 +193,7 @@ export class LabelManager {
       for (const sp of this.nearbyStarSpans.values()) sp.style.display = 'none';
       for (const sp of this.galaxyNameSpans.values()) sp.style.display = 'none';
       for (const sp of this.constellationSpans.values()) sp.style.display = 'none';
+      for (const sp of this.constellationStarSpans.values()) sp.style.display = 'none';
       if (this.galacticCenterEl) this.galacticCenterEl.style.display = 'none';
       if (this.milkyWayEl) this.milkyWayEl.style.display = 'none';
       if (this.starLabelEl) this.starLabelEl.style.display = 'none';
@@ -558,9 +561,11 @@ export class LabelManager {
     constellations: readonly ConstellationLabel[],
     viewProj: Mat4,
     visible: boolean,
+    starLabels: readonly ConstellationStarLabel[] = [],
   ): void {
     if (!this._visible || !visible || constellations.length === 0) {
       for (const sp of this.constellationSpans.values()) sp.style.display = 'none';
+      for (const sp of this.constellationStarSpans.values()) sp.style.display = 'none';
       return;
     }
 
@@ -594,6 +599,38 @@ export class LabelManager {
 
     for (const [id, sp] of this.constellationSpans) {
       if (!active.has(id)) sp.style.display = 'none';
+    }
+
+    const activeStars = new Set<string>();
+    for (const star of starLabels) {
+      activeStars.add(star.id);
+
+      let sp = this.constellationStarSpans.get(star.id);
+      if (!sp) {
+        sp = document.createElement('span');
+        sp.className = 'constellation-star-label';
+        sp.textContent = star.name;
+        if (star.catalog) sp.title = star.catalog;
+        this.container.appendChild(sp);
+        this.constellationStarSpans.set(star.id, sp);
+      }
+
+      const pt = project(star.x, star.y, star.z, viewProj, cssW, cssH, false);
+      if (!pt) {
+        sp.style.display = 'none';
+        continue;
+      }
+
+      sp.textContent = star.name;
+      if (star.catalog) sp.title = star.catalog;
+      sp.style.display = 'block';
+      sp.style.opacity = star.alpha.toFixed(3);
+      sp.style.left = `${Math.round(pt.x + 8)}px`;
+      sp.style.top  = `${Math.round(pt.y + 7)}px`;
+    }
+
+    for (const [id, sp] of this.constellationStarSpans) {
+      if (!activeStars.has(id)) sp.style.display = 'none';
     }
   }
 

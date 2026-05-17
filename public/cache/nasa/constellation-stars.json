@@ -1,0 +1,3796 @@
+{
+  "schema": "cosmosmap.constellation-stars.v1",
+  "source": "HYG 4.2 visible-star names snapped to d3-celestial constellation endpoints",
+  "sourceUrl": "https://astronexus.com/downloads/catalogs/hygdata_v42.csv.gz",
+  "license": "CC BY-SA 4.0",
+  "coordinateKey": "raDeg.toFixed(4),decDeg.toFixed(4)",
+  "selectedStars": 100000,
+  "endpointStars": 757,
+  "stars": {
+    "30.9748,42.3297": {
+      "name": "Almach",
+      "catalog": "HIP 9640 · HD 12533 · HR 603",
+      "magnitude": 2.1
+    },
+    "17.4330,35.6206": {
+      "name": "Mirach",
+      "catalog": "HIP 5447 · HD 6860 · HR 337",
+      "magnitude": 2.07
+    },
+    "9.8320,30.8610": {
+      "name": "31 Delta And",
+      "catalog": "HIP 3092 · HD 3627 · HR 165",
+      "magnitude": 3.27
+    },
+    "2.0969,29.0904": {
+      "name": "Alpheratz",
+      "catalog": "HIP 677 · HD 358 · HR 15",
+      "magnitude": 2.07
+    },
+    "14.3017,23.4176": {
+      "name": "Kui",
+      "catalog": "HIP 4463 · HD 5516 · HR 271",
+      "magnitude": 4.4
+    },
+    "11.8347,24.2672": {
+      "name": "Shimu",
+      "catalog": "HIP 3693 · HD 4502 · HR 215",
+      "magnitude": 4.08
+    },
+    "9.6389,29.3118": {
+      "name": "30 Epsilon And",
+      "catalog": "HIP 3031 · HD 3546 · HR 163",
+      "magnitude": 4.34
+    },
+    "9.2202,33.7193": {
+      "name": "29 Pi And",
+      "catalog": "HIP 2912 · HD 3369 · HR 154",
+      "magnitude": 4.34
+    },
+    "-5.4658,43.2681": {
+      "name": "Rasalnaqa",
+      "catalog": "HIP 116631 · HD 222173 · HR 8965",
+      "magnitude": 4.29
+    },
+    "-14.5197,42.3260": {
+      "name": "Alfarasalkamil",
+      "catalog": "HIP 113726 · HD 217675 · HR 8762",
+      "magnitude": 3.62
+    },
+    "-4.8979,44.3339": {
+      "name": "Kaffalmusalsala",
+      "catalog": "HIP 116805 · HD 222439 · HR 8976",
+      "magnitude": 4.15
+    },
+    "-5.6090,46.4582": {
+      "name": "Udkadua",
+      "catalog": "HIP 116584 · HD 222107 · HR 8961",
+      "magnitude": 3.81
+    },
+    "14.1884,38.4993": {
+      "name": "37 Mu And",
+      "catalog": "HIP 4436 · HD 5448 · HR 269",
+      "magnitude": 3.86
+    },
+    "12.4535,41.0789": {
+      "name": "35 Nu And",
+      "catalog": "HIP 3881 · HD 4727 · HR 226",
+      "magnitude": 4.53
+    },
+    "17.3755,47.2418": {
+      "name": "42 Phi And",
+      "catalog": "HIP 5434 · HD 6811 · HR 335",
+      "magnitude": 4.26
+    },
+    "24.4982,48.6282": {
+      "name": "Nembus",
+      "catalog": "HIP 7607 · HD 9927 · HR 464",
+      "magnitude": 3.59
+    },
+    "-3.4915,46.4203": {
+      "name": "20 Psi And",
+      "catalog": "HIP 117221 · HD 223047 · HR 9003",
+      "magnitude": 4.97
+    },
+    "142.3113,-35.9513": {
+      "name": "Epsilon Ant",
+      "catalog": "HIP 46515 · HD 82150 · HR 3765",
+      "magnitude": 4.51
+    },
+    "156.7879,-31.0678": {
+      "name": "Alpha Ant",
+      "catalog": "HIP 51172 · HD 90610 · HR 4104",
+      "magnitude": 4.28
+    },
+    "164.1794,-37.1378": {
+      "name": "Iota Ant",
+      "catalog": "HIP 53502 · HD 94890 · HR 4273",
+      "magnitude": 4.6
+    },
+    "-138.0345,-79.0448": {
+      "name": "Paradys",
+      "catalog": "HIP 72370 · HD 129078 · HR 5470",
+      "magnitude": 3.83
+    },
+    "-114.9133,-78.6957": {
+      "name": "Delta-1 Aps",
+      "catalog": "HIP 80047 · HD 145366 · HR 6020",
+      "magnitude": 4.68
+    },
+    "-109.2306,-77.5174": {
+      "name": "Beta Aps",
+      "catalog": "HIP 81852 · HD 149324 · HR 6163",
+      "magnitude": 4.23
+    },
+    "-111.6372,-78.8971": {
+      "name": "Gamma Aps",
+      "catalog": "HIP 81065 · HD 147675 · HR 6102",
+      "magnitude": 3.86
+    },
+    "-48.0810,-9.4958": {
+      "name": "Albali",
+      "catalog": "HIP 102618 · HD 198001 · HR 7950",
+      "magnitude": 3.78
+    },
+    "-46.8365,-8.9833": {
+      "name": "6 Mu Aqr",
+      "catalog": "HIP 103045 · HD 198743 · HR 7990",
+      "magnitude": 4.73
+    },
+    "-37.1103,-5.5712": {
+      "name": "Sadalsuud",
+      "catalog": "HIP 106278 · HD 204867 · HR 8232",
+      "magnitude": 2.9
+    },
+    "-28.5540,-0.3199": {
+      "name": "Sadalmelik",
+      "catalog": "HIP 109074 · HD 209750 · HR 8414",
+      "magnitude": 2.95
+    },
+    "-24.5859,-1.3873": {
+      "name": "Sadachbia",
+      "catalog": "HIP 110395 · HD 212061 · HR 8518",
+      "magnitude": 3.86
+    },
+    "-22.7920,-0.0200": {
+      "name": "55 Zeta-1 Aqr",
+      "catalog": "HIP 110960 · HD 213051 · HR 8558",
+      "magnitude": 3.65
+    },
+    "-21.1609,-0.1175": {
+      "name": "62 Eta Aqr",
+      "catalog": "HIP 111497 · HD 213998 · HR 8597",
+      "magnitude": 4.04
+    },
+    "-16.8464,-7.5796": {
+      "name": "73 Lambda Aqr",
+      "catalog": "HIP 112961 · HD 216386 · HR 8698",
+      "magnitude": 3.73
+    },
+    "-10.5241,-9.1825": {
+      "name": "93 Psi-2 Aqr",
+      "catalog": "HIP 115033 · HD 219688 · HR 8858",
+      "magnitude": 4.41
+    },
+    "-12.6383,-21.1724": {
+      "name": "Safina",
+      "catalog": "HIP 114341 · HD 218594 · HR 8812",
+      "magnitude": 3.68
+    },
+    "-28.3907,-13.8697": {
+      "name": "33 Iota Aqr",
+      "catalog": "HIP 109139 · HD 209819 · HR 8418",
+      "magnitude": 4.29
+    },
+    "-25.7915,-7.7833": {
+      "name": "Ancha",
+      "catalog": "HIP 110003 · HD 211391 · HR 8499",
+      "magnitude": 4.17
+    },
+    "-23.6807,1.3774": {
+      "name": "52 Pi Aqr",
+      "catalog": "HIP 110672 · HD 212571 · HR 8539",
+      "magnitude": 4.8
+    },
+    "-9.2574,-20.1006": {
+      "name": "98 Aqr",
+      "catalog": "HIP 115438 · HD 220321 · HR 8892",
+      "magnitude": 3.96
+    },
+    "-4.5591,-17.8165": {
+      "name": "104 Aqr",
+      "catalog": "HIP 116901 · HD 222574 · HR 8982",
+      "magnitude": 4.82
+    },
+    "-63.4351,10.6133": {
+      "name": "Tarazed",
+      "catalog": "HIP 97278 · HD 186791 · HR 7525",
+      "magnitude": 2.72
+    },
+    "-62.3042,8.8683": {
+      "name": "Altair",
+      "catalog": "HIP 97649 · HD 187642 · HR 7557",
+      "magnitude": 0.76
+    },
+    "-61.1717,6.4068": {
+      "name": "Alshain",
+      "catalog": "HIP 98036 · HD 188512 · HR 7602",
+      "magnitude": 3.71
+    },
+    "-57.1738,-0.8215": {
+      "name": "Antinous",
+      "catalog": "HIP 99473 · HD 191692 · HR 7710",
+      "magnitude": 3.24
+    },
+    "-61.8818,1.0057": {
+      "name": "55 Eta Aql",
+      "catalog": "HIP 97804 · HD 187929 · HR 7570",
+      "magnitude": 3.87
+    },
+    "-68.6254,3.1148": {
+      "name": "30 Delta Aql",
+      "catalog": "HIP 95501 · HD 182640 · HR 7377",
+      "magnitude": 3.36
+    },
+    "-73.6475,13.8635": {
+      "name": "Okab",
+      "catalog": "HIP 93747 · HD 177724 · HR 7235",
+      "magnitude": 2.99
+    },
+    "-73.4378,-4.8826": {
+      "name": "16 Lambda Aql",
+      "catalog": "HIP 93805 · HD 177756 · HR 7236",
+      "magnitude": 3.43
+    },
+    "-98.6514,-56.3777": {
+      "name": "Gamma Ara",
+      "catalog": "HIP 85267 · HD 157246 · HR 6462",
+      "magnitude": 3.31
+    },
+    "-97.2254,-60.6838": {
+      "name": "Delta Ara",
+      "catalog": "HIP 85727 · HD 158094 · HR 6500",
+      "magnitude": 3.6
+    },
+    "-107.5535,-59.0414": {
+      "name": "Eta Ara",
+      "catalog": "HIP 82363 · HD 151249 · HR 6229",
+      "magnitude": 3.77
+    },
+    "-105.3450,-55.9901": {
+      "name": "Zeta Ara",
+      "catalog": "HIP 83081 · HD 152786 · HR 6285",
+      "magnitude": 3.12
+    },
+    "-105.1040,-53.1604": {
+      "name": "Epsilon-1 Ara",
+      "catalog": "HIP 83153 · HD 152980 · HR 6295",
+      "magnitude": 4.06
+    },
+    "-97.0396,-49.8761": {
+      "name": "Alpha Ara",
+      "catalog": "HIP 85792 · HD 158427 · HR 6510",
+      "magnitude": 2.84
+    },
+    "-98.6750,-55.5299": {
+      "name": "Beta Ara",
+      "catalog": "HIP 85258 · HD 157244 · HR 6461",
+      "magnitude": 2.84
+    },
+    "42.4960,27.2605": {
+      "name": "Bharani",
+      "catalog": "HIP 13209 · HD 17573 · HR 838",
+      "magnitude": 3.61
+    },
+    "31.7934,23.4624": {
+      "name": "Hamal",
+      "catalog": "HIP 9884 · HD 12929 · HR 617",
+      "magnitude": 2.01
+    },
+    "28.6600,20.8080": {
+      "name": "Sheratan",
+      "catalog": "HIP 8903 · HD 11636 · HR 553",
+      "magnitude": 2.64
+    },
+    "28.3826,19.2939": {
+      "name": "Mesarthim",
+      "catalog": "HIP 8832 · HD 11502 · HR 546",
+      "magnitude": 3.88
+    },
+    "89.8822,44.9474": {
+      "name": "Menkalinan",
+      "catalog": "HIP 28360 · HD 40183 · HR 2088",
+      "magnitude": 1.9
+    },
+    "79.1723,45.9980": {
+      "name": "Capella",
+      "catalog": "HIP 24608 · HD 34029 · HR 1708",
+      "magnitude": 0.08
+    },
+    "76.6287,41.2345": {
+      "name": "Haedus",
+      "catalog": "HIP 23767 · HD 32630 · HR 1641",
+      "magnitude": 3.18
+    },
+    "74.2484,33.1661": {
+      "name": "Hassaleh",
+      "catalog": "HIP 23015 · HD 31398 · HR 1577",
+      "magnitude": 2.69
+    },
+    "81.5730,28.6075": {
+      "name": "Elnath",
+      "catalog": "HIP 25428 · HD 35497 · HR 1791",
+      "magnitude": 1.65
+    },
+    "89.9303,37.2126": {
+      "name": "Mahasim",
+      "catalog": "HIP 28380 · HD 40312 · HR 2095",
+      "magnitude": 2.65
+    },
+    "89.8818,54.2847": {
+      "name": "33 Delta Aur",
+      "catalog": "HIP 28358 · HD 40035 · HR 2077",
+      "magnitude": 3.72
+    },
+    "75.4922,43.8233": {
+      "name": "Almaaz",
+      "catalog": "HIP 23416 · HD 31964 · HR 1605",
+      "magnitude": 3.03
+    },
+    "75.6195,41.0758": {
+      "name": "Saclateni",
+      "catalog": "HIP 23453 · HD 32068 · HR 1612",
+      "magnitude": 3.69
+    },
+    "-153.1844,17.4569": {
+      "name": "4 Tau Boo",
+      "catalog": "HIP 67275 · HD 120136 · HR 5185",
+      "magnitude": 4.5
+    },
+    "-151.3288,18.3977": {
+      "name": "Muphrid",
+      "catalog": "HIP 67927 · HD 121370 · HR 5235",
+      "magnitude": 2.68
+    },
+    "-146.0847,19.1824": {
+      "name": "Arcturus",
+      "catalog": "HIP 69673 · HD 124897 · HR 5340",
+      "magnitude": -0.05
+    },
+    "-142.0425,30.3714": {
+      "name": "25 Rho Boo",
+      "catalog": "HIP 71053 · HD 127665 · HR 5429",
+      "magnitude": 3.57
+    },
+    "-141.9805,38.3083": {
+      "name": "Seginus",
+      "catalog": "HIP 71075 · HD 127762 · HR 5435",
+      "magnitude": 3.04
+    },
+    "-134.5135,40.3906": {
+      "name": "Nekkar",
+      "catalog": "HIP 73555 · HD 133208 · HR 5602",
+      "magnitude": 3.49
+    },
+    "-131.1243,33.3148": {
+      "name": "49 Delta Boo",
+      "catalog": "HIP 74666 · HD 135722 · HR 5681",
+      "magnitude": 3.46
+    },
+    "-138.7533,27.0742": {
+      "name": "Izar",
+      "catalog": "HIP 72105 · HD 129988 · HR 5505",
+      "magnitude": 2.35
+    },
+    "-139.7127,13.7283": {
+      "name": "30 Zeta Boo",
+      "catalog": "HIP 71795 · HD 129246 · HR 5477",
+      "magnitude": 3.78
+    },
+    "-145.9041,46.0883": {
+      "name": "Xuange",
+      "catalog": "HIP 69732 · HD 125162 · HR 5351",
+      "magnitude": 4.18
+    },
+    "-146.6341,51.7879": {
+      "name": "17 Kappa-1 Boo",
+      "catalog": "HIP 69481 · HD 124674 · HR 5328",
+      "magnitude": 6.62
+    },
+    "-143.7008,51.8507": {
+      "name": "23 Theta Boo",
+      "catalog": "HIP 70497 · HD 126660 · HR 5404",
+      "magnitude": 4.04
+    },
+    "67.7087,-44.9537": {
+      "name": "Delta Cae",
+      "catalog": "HIP 21060 · HD 28873 · HR 1443",
+      "magnitude": 5.07
+    },
+    "70.1405,-41.8638": {
+      "name": "Alpha Cae",
+      "catalog": "HIP 21770 · HD 29875 · HR 1502",
+      "magnitude": 4.44
+    },
+    "70.5145,-37.1443": {
+      "name": "Beta Cae",
+      "catalog": "HIP 21861 · HD 29992 · HR 1503",
+      "magnitude": 5.04
+    },
+    "76.1017,-35.4830": {
+      "name": "Gamma-1 Cae",
+      "catalog": "HIP 23595 · HD 32831 · HR 1652",
+      "magnitude": 4.55
+    },
+    "74.3217,53.7521": {
+      "name": "7 Cam",
+      "catalog": "HIP 23040 · HD 31278 · HR 1568",
+      "magnitude": 4.43
+    },
+    "75.8545,60.4422": {
+      "name": "10 Beta Cam",
+      "catalog": "HIP 23522 · HD 31910 · HR 1603",
+      "magnitude": 4.03
+    },
+    "73.5125,66.3427": {
+      "name": "HD 30376",
+      "catalog": "HIP 22615 · HD 30376",
+      "magnitude": 8.09
+    },
+    "57.5896,71.3323": {
+      "name": "Gamma Cam",
+      "catalog": "HIP 17959 · HD 23401 · HR 1148",
+      "magnitude": 4.59
+    },
+    "57.3803,65.5260": {
+      "name": "HR 1155",
+      "catalog": "HIP 17884 · HD 23475 · HR 1155",
+      "magnitude": 4.39
+    },
+    "52.2672,59.9403": {
+      "name": "HR 1035",
+      "catalog": "HIP 16228 · HD 21291 · HR 1035",
+      "magnitude": 4.21
+    },
+    "94.7116,69.3198": {
+      "name": "HR 2209",
+      "catalog": "HIP 29997 · HD 42818 · HR 2209",
+      "magnitude": 4.76
+    },
+    "105.0168,76.9774": {
+      "name": "HR 2527",
+      "catalog": "HIP 33694 · HD 49878 · HR 2527",
+      "magnitude": 4.55
+    },
+    "134.6218,11.8577": {
+      "name": "Acubens",
+      "catalog": "HIP 44066 · HD 76756 · HR 3572",
+      "magnitude": 4.26
+    },
+    "131.1712,18.1543": {
+      "name": "Asellus Australis",
+      "catalog": "HIP 42911 · HD 74442 · HR 3461",
+      "magnitude": 3.94
+    },
+    "130.8214,21.4685": {
+      "name": "Asellus Borealis",
+      "catalog": "HIP 42806 · HD 74198 · HR 3449",
+      "magnitude": 4.66
+    },
+    "131.6666,28.7651": {
+      "name": "48 Iota Cnc",
+      "catalog": "HIP 43100 · HD 74738 · HR 3474",
+      "magnitude": 6.58
+    },
+    "124.1288,9.1855": {
+      "name": "Tarf",
+      "catalog": "HIP 40526 · HD 69267 · HR 3249",
+      "magnitude": 3.53
+    },
+    "-165.9981,38.3149": {
+      "name": "Cor Caroli B",
+      "catalog": "HIP 63121 · HD 112412 · HR 4914",
+      "magnitude": 5.61
+    },
+    "-171.5644,41.3575": {
+      "name": "Chara",
+      "catalog": "HIP 61317 · HD 109358 · HR 4785",
+      "magnitude": 4.24
+    },
+    "95.6749,-17.9559": {
+      "name": "Mirzam",
+      "catalog": "HIP 30324 · HD 44743 · HR 2294",
+      "magnitude": 1.98
+    },
+    "101.2872,-16.7161": {
+      "name": "Sirius",
+      "catalog": "HIP 32349 · HD 48915 · HR 2491",
+      "magnitude": -1.44
+    },
+    "105.7561,-23.8333": {
+      "name": "24 Omicron-2 CMa",
+      "catalog": "HIP 33977 · HD 53138 · HR 2653",
+      "magnitude": 3.02
+    },
+    "107.0979,-26.3932": {
+      "name": "Wezen",
+      "catalog": "HIP 34444 · HD 54605 · HR 2693",
+      "magnitude": 1.83
+    },
+    "105.4298,-27.9348": {
+      "name": "Nganurganity",
+      "catalog": "HIP 33856 · HD 52877 · HR 2646",
+      "magnitude": 3.49
+    },
+    "104.6565,-28.9721": {
+      "name": "Adhara",
+      "catalog": "HIP 33579 · HD 52089 · HR 2618",
+      "magnitude": 1.5
+    },
+    "95.0783,-30.0634": {
+      "name": "Furud",
+      "catalog": "HIP 30122 · HD 44402 · HR 2282",
+      "magnitude": 3.02
+    },
+    "111.0238,-29.3031": {
+      "name": "Aludra",
+      "catalog": "HIP 35904 · HD 58350 · HR 2827",
+      "magnitude": 2.45
+    },
+    "104.0343,-17.0542": {
+      "name": "20 Iota CMa",
+      "catalog": "HIP 33347 · HD 51309 · HR 2596",
+      "magnitude": 4.36
+    },
+    "105.9396,-15.6333": {
+      "name": "Muliphein",
+      "catalog": "HIP 34045 · HD 53244 · HR 2657",
+      "magnitude": 4.11
+    },
+    "103.5475,-12.0386": {
+      "name": "14 Theta CMa",
+      "catalog": "HIP 33160 · HD 50778 · HR 2574",
+      "magnitude": 4.08
+    },
+    "114.8255,5.2250": {
+      "name": "Procyon",
+      "catalog": "HIP 37279 · HD 61421 · HR 2943",
+      "magnitude": 0.4
+    },
+    "111.7877,8.2893": {
+      "name": "Gomeisa",
+      "catalog": "HIP 36188 · HD 58715 · HR 2845",
+      "magnitude": 2.89
+    },
+    "-55.5880,-12.5082": {
+      "name": "5 Alpha-1 Cap",
+      "catalog": "HIP 100027 · HD 192876 · HR 7747",
+      "magnitude": 4.3
+    },
+    "-54.7472,-14.7814": {
+      "name": "Dabih",
+      "catalog": "HIP 100345 · HD 193495 · HR 7776",
+      "magnitude": 3.05
+    },
+    "-52.7849,-17.8137": {
+      "name": "11 Rho Cap",
+      "catalog": "HIP 101027 · HD 194943 · HR 7822",
+      "magnitude": 4.77
+    },
+    "-48.4761,-25.2709": {
+      "name": "16 Psi Cap",
+      "catalog": "HIP 102485 · HD 197692 · HR 7936",
+      "magnitude": 4.13
+    },
+    "-47.0446,-26.9191": {
+      "name": "18 Omega Cap",
+      "catalog": "HIP 102978 · HD 198542 · HR 7980",
+      "magnitude": 4.12
+    },
+    "-38.3332,-22.4113": {
+      "name": "34 Zeta Cap",
+      "catalog": "HIP 105881 · HD 204075 · HR 8204",
+      "magnitude": 3.77
+    },
+    "-33.2398,-16.1273": {
+      "name": "Deneb Algedi",
+      "catalog": "HIP 107556 · HD 207098 · HR 8322",
+      "magnitude": 2.85
+    },
+    "-34.9773,-16.6623": {
+      "name": "Nashira",
+      "catalog": "HIP 106985 · HD 206088 · HR 8278",
+      "magnitude": 3.69
+    },
+    "-39.4383,-16.8345": {
+      "name": "32 Iota Cap",
+      "catalog": "HIP 105515 · HD 203387 · HR 8167",
+      "magnitude": 4.28
+    },
+    "-43.5132,-17.2329": {
+      "name": "23 Theta Cap",
+      "catalog": "HIP 104139 · HD 200761 · HR 8075",
+      "magnitude": 4.08
+    },
+    "99.4403,-43.1959": {
+      "name": "Pipit",
+      "catalog": "HIP 31685 · HD 47670 · HR 2451",
+      "magnitude": 3.17
+    },
+    "95.9880,-52.6957": {
+      "name": "Canopus",
+      "catalog": "HIP 30438 · HD 45348 · HR 2326",
+      "magnitude": -0.62
+    },
+    "138.2999,-69.7172": {
+      "name": "Miaplacidus",
+      "catalog": "HIP 45238 · HD 80007 · HR 3685",
+      "magnitude": 1.67
+    },
+    "153.4342,-70.0379": {
+      "name": "Omega Car",
+      "catalog": "HIP 50099 · HD 89080 · HR 4037",
+      "magnitude": 3.29
+    },
+    "160.7392,-64.3945": {
+      "name": "Theta Car",
+      "catalog": "HIP 52419 · HD 93030 · HR 4199",
+      "magnitude": 2.74
+    },
+    "158.0061,-61.6853": {
+      "name": "HR 4140",
+      "catalog": "HIP 51576 · HD 91465 · HR 4140",
+      "magnitude": 3.3
+    },
+    "154.2707,-61.3323": {
+      "name": "HR 4050",
+      "catalog": "HIP 50371 · HD 89388 · HR 4050",
+      "magnitude": 3.39
+    },
+    "139.2725,-59.2752": {
+      "name": "Aspidiske",
+      "catalog": "HIP 45556 · HD 80404 · HR 3699",
+      "magnitude": 2.21
+    },
+    "125.6285,-59.5095": {
+      "name": "Avior",
+      "catalog": "HIP 41037 · HD 71129 · HR 3307",
+      "magnitude": 1.86
+    },
+    "119.1946,-52.9824": {
+      "name": "Chi Car",
+      "catalog": "HIP 38827 · HD 65575 · HR 3117",
+      "magnitude": 3.46
+    },
+    "122.3831,-47.3366": {
+      "name": "Gamma-2 Vel",
+      "catalog": "HIP 39953 · HD 68273 · HR 3207",
+      "magnitude": 1.75
+    },
+    "131.1759,-54.7088": {
+      "name": "Alsephina",
+      "catalog": "HIP 42913 · HD 74956 · HR 3485",
+      "magnitude": 1.93
+    },
+    "166.6351,-62.4241": {
+      "name": "HR 4325",
+      "catalog": "HIP 54301 · HD 96566 · HR 4325",
+      "magnitude": 4.62
+    },
+    "167.1417,-61.9472": {
+      "name": "HD 96673",
+      "catalog": "HIP 54348 · HD 96673",
+      "magnitude": 9.77
+    },
+    "168.1501,-60.3176": {
+      "name": "HD 97398",
+      "catalog": "HIP 54684 · HD 97398",
+      "magnitude": 6.68
+    },
+    "167.1475,-58.9750": {
+      "name": "HD 97082",
+      "catalog": "HIP 54543 · HD 97082",
+      "magnitude": 6.79
+    },
+    "163.3736,-58.8532": {
+      "name": "HR 4257",
+      "catalog": "HIP 53253 · HD 94510 · HR 4257",
+      "magnitude": 3.78
+    },
+    "28.5989,63.6701": {
+      "name": "Segin",
+      "catalog": "HIP 8886 · HD 11415 · HR 542",
+      "magnitude": 3.35
+    },
+    "21.4540,60.2353": {
+      "name": "Ruchbah",
+      "catalog": "HIP 6686 · HD 8538 · HR 403",
+      "magnitude": 2.66
+    },
+    "14.1772,60.7167": {
+      "name": "Cih",
+      "catalog": "HIP 4427 · HD 5394 · HR 264",
+      "magnitude": 2.15
+    },
+    "10.1268,56.5373": {
+      "name": "Schedar",
+      "catalog": "HIP 3179 · HD 3712 · HR 168",
+      "magnitude": 2.24
+    },
+    "2.2945,59.1498": {
+      "name": "Caph",
+      "catalog": "HIP 746 · HD 432 · HR 21",
+      "magnitude": 2.28
+    },
+    "170.2517,-54.4910": {
+      "name": "Pi Cen",
+      "catalog": "HIP 55425 · HD 98718 · HR 4390",
+      "magnitude": 3.9
+    },
+    "-177.9104,-50.7224": {
+      "name": "Delta Cen",
+      "catalog": "HIP 59196 · HD 105435 · HR 4621",
+      "magnitude": 2.58
+    },
+    "-172.9901,-50.2306": {
+      "name": "Sigma Cen",
+      "catalog": "HIP 60823 · HD 108483 · HR 4743",
+      "magnitude": 3.91
+    },
+    "-169.6207,-48.9599": {
+      "name": "Gamma Cen",
+      "catalog": "HIP 61932 · HD 110304 · HR 4819",
+      "magnitude": 2.2
+    },
+    "-155.0281,-53.4664": {
+      "name": "Epsilon Cen",
+      "catalog": "HIP 66657 · HD 118716 · HR 5132",
+      "magnitude": 2.29
+    },
+    "-151.1151,-47.2884": {
+      "name": "Leepwal",
+      "catalog": "HIP 68002 · HD 121263 · HR 5231",
+      "magnitude": 2.55
+    },
+    "-152.5959,-42.4737": {
+      "name": "Mu Cen",
+      "catalog": "HIP 67472 · HD 120324 · HR 5193",
+      "magnitude": 3.47
+    },
+    "-152.6238,-41.6877": {
+      "name": "Heng",
+      "catalog": "HIP 67464 · HD 120307 · HR 5190",
+      "magnitude": 3.41
+    },
+    "-148.3294,-36.3700": {
+      "name": "Menkent",
+      "catalog": "HIP 68933 · HD 123139 · HR 5288",
+      "magnitude": 2.06
+    },
+    "-141.1232,-42.1578": {
+      "name": "Eta Cen",
+      "catalog": "HIP 71352 · HD 127972 · HR 5440",
+      "magnitude": 2.33
+    },
+    "-135.2096,-42.1042": {
+      "name": "Kappa Cen",
+      "catalog": "HIP 73334 · HD 132200 · HR 5576",
+      "magnitude": 3.13
+    },
+    "-159.8508,-36.7123": {
+      "name": "Kulou",
+      "catalog": "HIP 65109 · HD 115892 · HR 5028",
+      "magnitude": 2.75
+    },
+    "-140.1038,-60.8372": {
+      "name": "Toliman",
+      "catalog": "HIP 71681 · HD 128621 · HR 5460",
+      "magnitude": 1.35
+    },
+    "-149.0441,-60.3730": {
+      "name": "Hadar",
+      "catalog": "HIP 68702 · HD 122451 · HR 5267",
+      "magnitude": 0.61
+    },
+    "-177.0870,-52.3685": {
+      "name": "Rho Cen",
+      "catalog": "HIP 59449 · HD 105937 · HR 4638",
+      "magnitude": 3.97
+    },
+    "172.9420,-59.4421": {
+      "name": "HD 100380",
+      "catalog": "HIP 56301 · HD 100380",
+      "magnitude": 6.78
+    },
+    "-52.6046,62.9941": {
+      "name": "2 Theta Cep",
+      "catalog": "HIP 101093 · HD 195725 · HR 7850",
+      "magnitude": 4.21
+    },
+    "-48.6776,61.8388": {
+      "name": "3 Eta Cep",
+      "catalog": "HIP 102422 · HD 198149 · HR 7957",
+      "magnitude": 3.41
+    },
+    "-40.3551,62.5856": {
+      "name": "Alderamin",
+      "catalog": "HIP 105199 · HD 203280 · HR 8162",
+      "magnitude": 2.45
+    },
+    "-34.1231,58.7800": {
+      "name": "HD 239738",
+      "catalog": "HIP 107123 · HD 239738",
+      "magnitude": 8.8
+    },
+    "-26.2409,57.0436": {
+      "name": "23 Epsilon Cep",
+      "catalog": "HIP 109857 · HD 211336 · HR 8494",
+      "magnitude": 4.18
+    },
+    "-27.2863,58.2013": {
+      "name": "21 Zeta Cep",
+      "catalog": "HIP 109492 · HD 210745 · HR 8465",
+      "magnitude": 3.39
+    },
+    "-22.7072,58.4152": {
+      "name": "27 Delta Cep",
+      "catalog": "HIP 110991 · HD 213306 · HR 8571",
+      "magnitude": 4.07
+    },
+    "-17.5799,66.2004": {
+      "name": "32 Iota Cep",
+      "catalog": "HIP 112724 · HD 216228 · HR 8694",
+      "magnitude": 3.5
+    },
+    "-5.1631,77.6323": {
+      "name": "Errai",
+      "catalog": "HIP 116727 · HD 222404 · HR 8974",
+      "magnitude": 3.21
+    },
+    "-37.8350,70.5607": {
+      "name": "Alfirk",
+      "catalog": "HIP 106032 · HD 205021 · HR 8238",
+      "magnitude": 3.23
+    },
+    "40.8252,3.2358": {
+      "name": "Kaffaljidhma",
+      "catalog": "HIP 12706 · HD 16970 · HR 804",
+      "magnitude": 3.47
+    },
+    "38.9686,5.5932": {
+      "name": "78 Nu Cet",
+      "catalog": "HIP 12093 · HD 16161 · HR 754",
+      "magnitude": 4.87
+    },
+    "37.0398,8.4601": {
+      "name": "73 Xi-2 Cet",
+      "catalog": "HIP 11484 · HD 15318 · HR 718",
+      "magnitude": 4.3
+    },
+    "41.2356,10.1141": {
+      "name": "87 Mu Cet",
+      "catalog": "HIP 12828 · HD 17094 · HR 813",
+      "magnitude": 4.27
+    },
+    "44.9288,8.9074": {
+      "name": "91 Lambda Cet",
+      "catalog": "HIP 13954 · HD 18604 · HR 896",
+      "magnitude": 4.71
+    },
+    "45.5699,4.0897": {
+      "name": "Menkar",
+      "catalog": "HIP 14135 · HD 18884 · HR 911",
+      "magnitude": 2.54
+    },
+    "39.8707,0.3285": {
+      "name": "82 Delta Cet",
+      "catalog": "HIP 12387 · HD 16582 · HR 779",
+      "magnitude": 4.08
+    },
+    "34.8366,-2.9776": {
+      "name": "Mira",
+      "catalog": "HIP 10826 · HD 14386 · HR 681",
+      "magnitude": 6.47
+    },
+    "27.8651,-10.3350": {
+      "name": "Baten Kaitos",
+      "catalog": "HIP 8645 · HD 11353 · HR 539",
+      "magnitude": 3.74
+    },
+    "26.0170,-15.9375": {
+      "name": "52 Tau Cet",
+      "catalog": "HIP 8102 · HD 10700 · HR 509",
+      "magnitude": 3.49
+    },
+    "10.8974,-17.9866": {
+      "name": "Diphda",
+      "catalog": "HIP 3419 · HD 4128 · HR 188",
+      "magnitude": 2.04
+    },
+    "4.8570,-8.8239": {
+      "name": "8 Iota Cet",
+      "catalog": "HIP 1562 · HD 1522 · HR 74",
+      "magnitude": 3.56
+    },
+    "17.1475,-10.1823": {
+      "name": "31 Eta Cet",
+      "catalog": "HIP 5364 · HD 6805 · HR 334",
+      "magnitude": 3.46
+    },
+    "21.0059,-8.1833": {
+      "name": "45 Theta Cet",
+      "catalog": "HIP 6537 · HD 8512 · HR 402",
+      "magnitude": 3.6
+    },
+    "124.6315,-76.9197": {
+      "name": "Alpha Cha",
+      "catalog": "HIP 40702 · HD 71243 · HR 3318",
+      "magnitude": 4.05
+    },
+    "158.8671,-78.6078": {
+      "name": "Gamma Cha",
+      "catalog": "HIP 51839 · HD 92305 · HR 4174",
+      "magnitude": 4.11
+    },
+    "161.3180,-80.4696": {
+      "name": "Delta-1 Cha",
+      "catalog": "HIP 52595 · HD 93779 · HR 4231",
+      "magnitude": 5.46
+    },
+    "-175.4132,-79.3122": {
+      "name": "Beta Cha",
+      "catalog": "HIP 60000 · HD 106911 · HR 4674",
+      "magnitude": 4.24
+    },
+    "179.9066,-78.2218": {
+      "name": "Epsilon Cha",
+      "catalog": "HIP 58484 · HD 104174 · HR 4583",
+      "magnitude": 4.88
+    },
+    "-130.6215,-58.8012": {
+      "name": "Beta Cir",
+      "catalog": "HIP 74824 · HD 135379 · HR 5670",
+      "magnitude": 4.07
+    },
+    "-139.3733,-64.9751": {
+      "name": "Xami",
+      "catalog": "HIP 71908 · HD 128898 · HR 5463",
+      "magnitude": 3.18
+    },
+    "-129.1556,-59.3208": {
+      "name": "Gamma Cir",
+      "catalog": "HIP 75323 · HD 136415 · HR 5704",
+      "magnitude": 4.48
+    },
+    "95.5285,-33.4364": {
+      "name": "Delta Col",
+      "catalog": "HIP 30277 · HD 44762 · HR 2296",
+      "magnitude": 3.85
+    },
+    "87.7400,-35.7683": {
+      "name": "Wazn",
+      "catalog": "HIP 27628 · HD 39425 · HR 2040",
+      "magnitude": 3.12
+    },
+    "84.9122,-34.0741": {
+      "name": "Phact",
+      "catalog": "HIP 26634 · HD 37795 · HR 1956",
+      "magnitude": 2.65
+    },
+    "82.8031,-35.4705": {
+      "name": "Epsilon Col",
+      "catalog": "HIP 25859 · HD 36597 · HR 1862",
+      "magnitude": 3.86
+    },
+    "89.7867,-42.8151": {
+      "name": "Eta Col",
+      "catalog": "HIP 28328 · HD 40808 · HR 2120",
+      "magnitude": 3.96
+    },
+    "-162.5030,17.5294": {
+      "name": "Diadem",
+      "catalog": "HIP 64241 · HD 114378 · HR 4968",
+      "magnitude": 4.32
+    },
+    "-162.0317,27.8782": {
+      "name": "43 Beta Com",
+      "catalog": "HIP 64394 · HD 114710 · HR 4983",
+      "magnitude": 4.23
+    },
+    "-173.2655,28.2684": {
+      "name": "15 Gamma Com",
+      "catalog": "HIP 60742 · HD 108381 · HR 4737",
+      "magnitude": 4.35
+    },
+    "-75.3193,-37.1074": {
+      "name": "Epsilon CrA",
+      "catalog": "HIP 93174 · HD 175813 · HR 7152",
+      "magnitude": 4.83
+    },
+    "-73.3954,-37.0634": {
+      "name": "Gamma CrA",
+      "catalog": "HIP 93825 · HD 177474 · HR 7226",
+      "magnitude": 4.23
+    },
+    "-72.6319,-37.9045": {
+      "name": "Meridiana",
+      "catalog": "HIP 94114 · HD 178253 · HR 7254",
+      "magnitude": 4.11
+    },
+    "-72.4927,-39.3408": {
+      "name": "Beta CrA",
+      "catalog": "HIP 94160 · HD 178345 · HR 7259",
+      "magnitude": 4.1
+    },
+    "-72.9126,-40.4967": {
+      "name": "Delta CrA",
+      "catalog": "HIP 94005 · HD 177873 · HR 7242",
+      "magnitude": 4.57
+    },
+    "-74.2213,-42.0951": {
+      "name": "Zeta CrA",
+      "catalog": "HIP 93542 · HD 176638 · HR 7188",
+      "magnitude": 4.74
+    },
+    "-77.6042,-43.4341": {
+      "name": "Eta-2 CrA",
+      "catalog": "HIP 92382 · HD 173861 · HR 7068",
+      "magnitude": 5.6
+    },
+    "-81.6242,-42.3125": {
+      "name": "Theta CrA",
+      "catalog": "HIP 90982 · HD 170845 · HR 6951",
+      "magnitude": 4.62
+    },
+    "-126.7676,31.3591": {
+      "name": "4 Theta CrB",
+      "catalog": "HIP 76127 · HD 138749 · HR 5778",
+      "magnitude": 4.14
+    },
+    "-128.0428,29.1057": {
+      "name": "Nusakan",
+      "catalog": "HIP 75695 · HD 137909 · HR 5747",
+      "magnitude": 3.66
+    },
+    "-126.3280,26.7147": {
+      "name": "Alphecca",
+      "catalog": "HIP 76267 · HD 139006 · HR 5793",
+      "magnitude": 2.22
+    },
+    "-124.3143,26.2956": {
+      "name": "8 Gamma CrB",
+      "catalog": "HIP 76952 · HD 140436 · HR 5849",
+      "magnitude": 3.81
+    },
+    "-122.6015,26.0684": {
+      "name": "10 Delta CrB",
+      "catalog": "HIP 77512 · HD 141714 · HR 5889",
+      "magnitude": 4.59
+    },
+    "-120.6031,26.8779": {
+      "name": "13 Epsilon CrB",
+      "catalog": "HIP 78159 · HD 143107 · HR 5947",
+      "magnitude": 4.14
+    },
+    "-119.6393,29.8511": {
+      "name": "14 Iota CrB",
+      "catalog": "HIP 78493 · HD 143807 · HR 5971",
+      "magnitude": 4.98
+    },
+    "-177.8966,-24.7289": {
+      "name": "Alchiba",
+      "catalog": "HIP 59199 · HD 105452 · HR 4623",
+      "magnitude": 4.02
+    },
+    "-177.4688,-22.6198": {
+      "name": "2 Epsilon Crv",
+      "catalog": "HIP 59316 · HD 105707 · HR 4630",
+      "magnitude": 3.02
+    },
+    "-176.0485,-17.5419": {
+      "name": "Gienah",
+      "catalog": "HIP 59803 · HD 106625 · HR 4662",
+      "magnitude": 2.58
+    },
+    "-172.5339,-16.5154": {
+      "name": "Algorab",
+      "catalog": "HIP 60965 · HD 108767 · HR 4757",
+      "magnitude": 2.94
+    },
+    "-171.4032,-23.3968": {
+      "name": "Kraz",
+      "catalog": "HIP 61359 · HD 109379 · HR 4786",
+      "magnitude": 2.65
+    },
+    "174.1705,-9.8022": {
+      "name": "21 Theta Crt",
+      "catalog": "HIP 56633 · HD 100889 · HR 4468",
+      "magnitude": 4.7
+    },
+    "171.1525,-10.8593": {
+      "name": "14 Epsilon Crt",
+      "catalog": "HIP 55687 · HD 99167 · HR 4402",
+      "magnitude": 4.81
+    },
+    "169.8352,-14.7785": {
+      "name": "12 Delta Crt",
+      "catalog": "HIP 55282 · HD 98430 · HR 4382",
+      "magnitude": 3.56
+    },
+    "164.9436,-18.2988": {
+      "name": "Alkes",
+      "catalog": "HIP 53740 · HD 95272 · HR 4287",
+      "magnitude": 4.08
+    },
+    "167.9145,-22.8258": {
+      "name": "11 Beta Crt",
+      "catalog": "HIP 54682 · HD 97277 · HR 4343",
+      "magnitude": 4.46
+    },
+    "170.8412,-18.7800": {
+      "name": "13 Lambda Crt",
+      "catalog": "HIP 55598 · HD 98991 · HR 4395",
+      "magnitude": 5.08
+    },
+    "171.2205,-17.6840": {
+      "name": "15 Gamma Crt",
+      "catalog": "HIP 55705 · HD 99211 · HR 4405",
+      "magnitude": 4.06
+    },
+    "176.1907,-18.3507": {
+      "name": "27 Zeta Crt",
+      "catalog": "HIP 57283 · HD 102070 · HR 4514",
+      "magnitude": 4.71
+    },
+    "179.0040,-17.1508": {
+      "name": "30 Eta Crt",
+      "catalog": "HIP 58188 · HD 103632 · HR 4567",
+      "magnitude": 5.17
+    },
+    "-168.0697,-59.6888": {
+      "name": "Mimosa",
+      "catalog": "HIP 62434 · HD 111123 · HR 4853",
+      "magnitude": 1.25
+    },
+    "-176.2137,-58.7489": {
+      "name": "Imai",
+      "catalog": "HIP 59747 · HD 106490 · HR 4656",
+      "magnitude": 2.79
+    },
+    "-173.3504,-63.0991": {
+      "name": "Acrux",
+      "catalog": "HIP 60718 · HD 108248 · HR 4730",
+      "magnitude": 0.77
+    },
+    "-172.2085,-57.1132": {
+      "name": "Gacrux",
+      "catalog": "HIP 61084 · HD 108903 · HR 4763",
+      "magnitude": 1.59
+    },
+    "-41.7659,30.2269": {
+      "name": "64 Zeta Cyg",
+      "catalog": "HIP 104732 · HD 202109 · HR 8115",
+      "magnitude": 3.21
+    },
+    "-48.4472,33.9703": {
+      "name": "Aljanah",
+      "catalog": "HIP 102488 · HD 197989 · HR 7949",
+      "magnitude": 2.48
+    },
+    "-54.4429,40.2567": {
+      "name": "Sadr",
+      "catalog": "HIP 100453 · HD 194093 · HR 7796",
+      "magnitude": 2.23
+    },
+    "-63.7563,45.1308": {
+      "name": "Fawaris",
+      "catalog": "HIP 97165 · HD 186882 · HR 7528",
+      "magnitude": 2.86
+    },
+    "-67.5735,51.7298": {
+      "name": "10 Iota-2 Cyg",
+      "catalog": "HIP 95853 · HD 184006 · HR 7420",
+      "magnitude": 3.76
+    },
+    "-70.7243,53.3685": {
+      "name": "1 Kappa Cyg",
+      "catalog": "HIP 94779 · HD 181276 · HR 7328",
+      "magnitude": 3.8
+    },
+    "-49.6420,45.2803": {
+      "name": "Deneb",
+      "catalog": "HIP 102098 · HD 197345 · HR 7924",
+      "magnitude": 1.25
+    },
+    "-60.9235,35.0834": {
+      "name": "21 Eta Cyg",
+      "catalog": "HIP 98110 · HD 188947 · HR 7615",
+      "magnitude": 3.89
+    },
+    "-67.3197,27.9597": {
+      "name": "Albireo",
+      "catalog": "HIP 95947 · HD 183912 · HR 7417",
+      "magnitude": 3.05
+    },
+    "-51.6968,11.3033": {
+      "name": "Aldulfin",
+      "catalog": "HIP 101421 · HD 195810 · HR 7852",
+      "magnitude": 4.03
+    },
+    "-50.6127,14.5951": {
+      "name": "Rotanev",
+      "catalog": "HIP 101769 · HD 196524 · HR 7882",
+      "magnitude": 3.64
+    },
+    "-50.0905,15.9121": {
+      "name": "Sualocin",
+      "catalog": "HIP 101958 · HD 196867 · HR 7906",
+      "magnitude": 3.77
+    },
+    "-48.3381,16.1241": {
+      "name": "12 Gamma-1 Del",
+      "catalog": "HIP 102531 · HD 197963 · HR 7947",
+      "magnitude": 5.15
+    },
+    "-49.1353,15.0746": {
+      "name": "11 Delta Del",
+      "catalog": "HIP 102281 · HD 197461 · HR 7928",
+      "magnitude": 4.43
+    },
+    "64.0066,-51.4866": {
+      "name": "Gamma Dor",
+      "catalog": "HIP 19893 · HD 27290 · HR 1338",
+      "magnitude": 4.26
+    },
+    "68.4991,-55.0450": {
+      "name": "Alpha Dor",
+      "catalog": "HIP 21281 · HD 29305 · HR 1465",
+      "magnitude": 3.3
+    },
+    "83.4063,-62.4898": {
+      "name": "Beta Dor",
+      "catalog": "HIP 26069 · HD 37350 · HR 1922",
+      "magnitude": 3.76
+    },
+    "86.1932,-65.7355": {
+      "name": "Delta Dor",
+      "catalog": "HIP 27100 · HD 39014 · HR 2015",
+      "magnitude": 4.34
+    },
+    "88.5252,-63.0896": {
+      "name": "HR 2102",
+      "catalog": "HIP 27890 · HD 40409 · HR 2102",
+      "magnitude": 4.65
+    },
+    "76.3777,-57.4727": {
+      "name": "Zeta Dor",
+      "catalog": "HIP 23693 · HD 33262 · HR 1674",
+      "magnitude": 4.71
+    },
+    "-91.6178,56.8726": {
+      "name": "Grumium",
+      "catalog": "HIP 87585 · HD 163588 · HR 6688",
+      "magnitude": 3.73
+    },
+    "-90.8485,51.4889": {
+      "name": "Eltanin",
+      "catalog": "HIP 87833 · HD 164058 · HR 6705",
+      "magnitude": 2.24
+    },
+    "-97.3918,52.3014": {
+      "name": "Rastaban",
+      "catalog": "HIP 85670 · HD 159181 · HR 6536",
+      "magnitude": 2.79
+    },
+    "-96.9332,55.1730": {
+      "name": "25 Nu-2 Dra",
+      "catalog": "HIP 85829 · HD 159560 · HR 6555",
+      "magnitude": 4.86
+    },
+    "-71.8612,67.6615": {
+      "name": "Altais",
+      "catalog": "HIP 94376 · HD 180711 · HR 7310",
+      "magnitude": 3.07
+    },
+    "-84.8107,71.3378": {
+      "name": "43 Phi Dra",
+      "catalog": "HIP 89908 · HD 170000 · HR 6920",
+      "magnitude": 4.22
+    },
+    "-102.8034,65.7147": {
+      "name": "Aldhibah",
+      "catalog": "HIP 83895 · HD 155763 · HR 6396",
+      "magnitude": 3.17
+    },
+    "-114.0021,61.5142": {
+      "name": "Athebyne",
+      "catalog": "HIP 80331 · HD 148387 · HR 6132",
+      "magnitude": 2.73
+    },
+    "-119.5277,58.5653": {
+      "name": "13 Theta Dra",
+      "catalog": "HIP 78527 · HD 144284 · HR 5986",
+      "magnitude": 4.01
+    },
+    "-128.7676,58.9661": {
+      "name": "Edasich",
+      "catalog": "HIP 75458 · HD 137759 · HR 5744",
+      "magnitude": 3.29
+    },
+    "-148.9027,64.3759": {
+      "name": "Thuban",
+      "catalog": "HIP 68756 · HD 123299 · HR 5291",
+      "magnitude": 3.67
+    },
+    "-171.6294,69.7882": {
+      "name": "5 Kappa Dra",
+      "catalog": "HIP 61281 · HD 109387 · HR 4787",
+      "magnitude": 3.85
+    },
+    "172.8509,69.3311": {
+      "name": "Giausar",
+      "catalog": "HIP 56211 · HD 100029 · HR 4434",
+      "magnitude": 3.82
+    },
+    "-84.7359,72.7328": {
+      "name": "44 Chi Dra",
+      "catalog": "HIP 89937 · HD 170153 · HR 6927",
+      "magnitude": 3.55
+    },
+    "-62.9569,70.2679": {
+      "name": "63 Epsilon Dra",
+      "catalog": "HIP 97433 · HD 188119 · HR 7582",
+      "magnitude": 3.84
+    },
+    "-41.0440,5.2478": {
+      "name": "Kitalpha",
+      "catalog": "HIP 104987 · HD 202447 · HR 8131",
+      "magnitude": 3.92
+    },
+    "-41.3799,10.0070": {
+      "name": "7 Delta Equ",
+      "catalog": "HIP 104858 · HD 202275 · HR 8123",
+      "magnitude": 4.47
+    },
+    "-42.4146,10.1316": {
+      "name": "5 Gamma Equ",
+      "catalog": "HIP 104521 · HD 201601 · HR 8097",
+      "magnitude": 4.7
+    },
+    "76.9624,-5.0864": {
+      "name": "Cursa",
+      "catalog": "HIP 23875 · HD 33111 · HR 1666",
+      "magnitude": 2.78
+    },
+    "71.3756,-3.2547": {
+      "name": "57 Mu Eri",
+      "catalog": "HIP 22109 · HD 30211 · HR 1520",
+      "magnitude": 4.01
+    },
+    "69.0798,-3.3525": {
+      "name": "48 Nu Eri",
+      "catalog": "HIP 21444 · HD 29248 · HR 1463",
+      "magnitude": 3.93
+    },
+    "62.9664,-6.8376": {
+      "name": "Beid",
+      "catalog": "HIP 19587 · HD 26574 · HR 1298",
+      "magnitude": 4.04
+    },
+    "59.5074,-13.5085": {
+      "name": "Zaurak",
+      "catalog": "HIP 18543 · HD 25025 · HR 1231",
+      "magnitude": 2.97
+    },
+    "56.5356,-12.1016": {
+      "name": "26 Pi Eri",
+      "catalog": "HIP 17593 · HD 23614 · HR 1162",
+      "magnitude": 4.43
+    },
+    "55.8121,-9.7634": {
+      "name": "Rana",
+      "catalog": "HIP 17378 · HD 23249 · HR 1136",
+      "magnitude": 3.52
+    },
+    "53.2327,-9.4583": {
+      "name": "Ran",
+      "catalog": "HIP 16537 · HD 22049 · HR 1084",
+      "magnitude": 3.72
+    },
+    "44.1069,-8.8981": {
+      "name": "Azha",
+      "catalog": "HIP 13701 · HD 18322 · HR 874",
+      "magnitude": 3.89
+    },
+    "41.0306,-13.8587": {
+      "name": "89 Pi Cet",
+      "catalog": "HIP 12770 · HD 17081 · HR 811",
+      "magnitude": 4.24
+    },
+    "41.2758,-18.5726": {
+      "name": "1 Tau-1 Eri",
+      "catalog": "HIP 12843 · HD 17206 · HR 818",
+      "magnitude": 4.47
+    },
+    "45.5979,-23.6245": {
+      "name": "11 Tau-3 Eri",
+      "catalog": "HIP 14146 · HD 18978 · HR 919",
+      "magnitude": 4.08
+    },
+    "49.8792,-21.7579": {
+      "name": "16 Tau-4 Eri",
+      "catalog": "HIP 15474 · HD 20720 · HR 1003",
+      "magnitude": 3.7
+    },
+    "53.4470,-21.6329": {
+      "name": "19 Tau-5 Eri",
+      "catalog": "HIP 16611 · HD 22203 · HR 1088",
+      "magnitude": 4.26
+    },
+    "56.7120,-23.2497": {
+      "name": "27 Tau-6 Eri",
+      "catalog": "HIP 17651 · HD 23754 · HR 1173",
+      "magnitude": 4.22
+    },
+    "68.8877,-30.5623": {
+      "name": "Theemin",
+      "catalog": "HIP 21393 · HD 29291 · HR 1464",
+      "magnitude": 3.81
+    },
+    "66.0092,-34.0168": {
+      "name": "Beemim",
+      "catalog": "HIP 20535 · HD 28028 · HR 1393",
+      "magnitude": 3.97
+    },
+    "64.4736,-33.7983": {
+      "name": "41 Upsilon-4 Eri",
+      "catalog": "HIP 20042 · HD 27376 · HR 1347",
+      "magnitude": 3.55
+    },
+    "57.3635,-36.2003": {
+      "name": "HR 1195",
+      "catalog": "HIP 17874 · HD 24160 · HR 1195",
+      "magnitude": 4.17
+    },
+    "54.2737,-40.2745": {
+      "name": "HR 1106",
+      "catalog": "HIP 16870 · HD 22663 · HR 1106",
+      "magnitude": 4.57
+    },
+    "49.9819,-43.0698": {
+      "name": "82 G. Eri",
+      "catalog": "HIP 15510 · HD 20794 · HR 1008",
+      "magnitude": 4.26
+    },
+    "44.5653,-40.3047": {
+      "name": "Acamar",
+      "catalog": "HIP 13847 · HD 18622 · HR 897",
+      "magnitude": 2.88
+    },
+    "40.1668,-39.8554": {
+      "name": "Iota Eri",
+      "catalog": "HIP 12486 · HD 16815 · HR 794",
+      "magnitude": 4.11
+    },
+    "36.7463,-47.7038": {
+      "name": "Kappa Eri",
+      "catalog": "HIP 11407 · HD 15371 · HR 721",
+      "magnitude": 4.24
+    },
+    "34.1274,-51.5122": {
+      "name": "Phi Eri",
+      "catalog": "HIP 10602 · HD 14228 · HR 674",
+      "magnitude": 3.56
+    },
+    "28.9895,-51.6089": {
+      "name": "Chi Eri",
+      "catalog": "HIP 9007 · HD 11937 · HR 566",
+      "magnitude": 3.69
+    },
+    "24.4285,-57.2368": {
+      "name": "Achernar",
+      "catalog": "HIP 7588 · HD 10144 · HR 472",
+      "magnitude": 0.45
+    },
+    "48.0189,-28.9876": {
+      "name": "Dalim",
+      "catalog": "HIP 14879 · HD 20010 · HR 963",
+      "magnitude": 3.8
+    },
+    "42.2726,-32.4059": {
+      "name": "Beta For",
+      "catalog": "HIP 13147 · HD 17652 · HR 841",
+      "magnitude": 4.45
+    },
+    "31.1227,-29.2968": {
+      "name": "Nu For",
+      "catalog": "HIP 9677 · HD 12767 · HR 612",
+      "magnitude": 4.68
+    },
+    "93.7194,22.5068": {
+      "name": "Propus",
+      "catalog": "HIP 29655 · HD 42995 · HR 2216",
+      "magnitude": 3.31
+    },
+    "95.7401,22.5136": {
+      "name": "Tejat",
+      "catalog": "HIP 30343 · HD 44478 · HR 2286",
+      "magnitude": 2.87
+    },
+    "100.9830,25.1311": {
+      "name": "Mebsuta",
+      "catalog": "HIP 32246 · HD 48329 · HR 2473",
+      "magnitude": 3.06
+    },
+    "107.7849,30.2452": {
+      "name": "46 Tau Gem",
+      "catalog": "HIP 34693 · HD 54719 · HR 2697",
+      "magnitude": 4.41
+    },
+    "113.6494,31.8883": {
+      "name": "Castor",
+      "catalog": "HIP 36850 · HD 60179 · HR 2891",
+      "magnitude": 1.58
+    },
+    "116.3290,28.0262": {
+      "name": "Pollux",
+      "catalog": "HIP 37826 · HD 62509 · HR 2990",
+      "magnitude": 1.16
+    },
+    "113.9806,26.8957": {
+      "name": "69 Upsilon Gem",
+      "catalog": "HIP 36962 · HD 60522 · HR 2905",
+      "magnitude": 4.06
+    },
+    "110.0307,21.9823": {
+      "name": "Wasat",
+      "catalog": "HIP 35550 · HD 56986 · HR 2777",
+      "magnitude": 3.5
+    },
+    "106.0272,20.5703": {
+      "name": "Mekbuda",
+      "catalog": "HIP 34088 · HD 52973 · HR 2650",
+      "magnitude": 4.01
+    },
+    "99.4279,16.3993": {
+      "name": "Alhena",
+      "catalog": "HIP 31681 · HD 47105 · HR 2421",
+      "magnitude": 1.93
+    },
+    "101.3224,12.8956": {
+      "name": "Alzirr",
+      "catalog": "HIP 32362 · HD 48737 · HR 2484",
+      "magnitude": 3.35
+    },
+    "109.5232,16.5404": {
+      "name": "54 Lambda Gem",
+      "catalog": "HIP 35350 · HD 56537 · HR 2763",
+      "magnitude": 3.58
+    },
+    "-14.7800,-52.7541": {
+      "name": "Zeta Gru",
+      "catalog": "HIP 113638 · HD 217364 · HR 8747",
+      "magnitude": 4.11
+    },
+    "-17.8613,-51.3169": {
+      "name": "Epsilon Gru",
+      "catalog": "HIP 112623 · HD 215789 · HR 8675",
+      "magnitude": 3.49
+    },
+    "-19.3331,-46.8846": {
+      "name": "Tiaki",
+      "catalog": "HIP 112122 · HD 214952 · HR 8636",
+      "magnitude": 2.07
+    },
+    "-22.5607,-43.7492": {
+      "name": "Delta-2 Gru",
+      "catalog": "HIP 111043 · HD 213080 · HR 8560",
+      "magnitude": 4.12
+    },
+    "-27.9417,-46.9610": {
+      "name": "Alnair",
+      "catalog": "HIP 109268 · HD 209952 · HR 8425",
+      "magnitude": 1.73
+    },
+    "-22.6826,-43.4956": {
+      "name": "Delta-1 Gru",
+      "catalog": "HIP 110997 · HD 213009 · HR 8556",
+      "magnitude": 3.97
+    },
+    "-26.0962,-41.3467": {
+      "name": "Mu-1 Gru",
+      "catalog": "HIP 109908 · HD 211088 · HR 8486",
+      "magnitude": 4.79
+    },
+    "-28.4713,-39.5434": {
+      "name": "Lambda Gru",
+      "catalog": "HIP 109111 · HD 209688 · HR 8411",
+      "magnitude": 4.47
+    },
+    "-31.5178,-37.3649": {
+      "name": "Aldhanab",
+      "catalog": "HIP 108085 · HD 207971 · HR 8353",
+      "magnitude": 3
+    },
+    "-114.5199,19.1531": {
+      "name": "20 Gamma Her",
+      "catalog": "HIP 80170 · HD 147547 · HR 6095",
+      "magnitude": 3.74
+    },
+    "-112.4450,21.4896": {
+      "name": "Kornephoros",
+      "catalog": "HIP 80816 · HD 148856 · HR 6148",
+      "magnitude": 2.78
+    },
+    "-109.6785,31.6027": {
+      "name": "40 Zeta Her",
+      "catalog": "HIP 81693 · HD 150680 · HR 6212",
+      "magnitude": 2.81
+    },
+    "-109.2760,38.9223": {
+      "name": "44 Eta Her",
+      "catalog": "HIP 81833 · HD 150997 · HR 6220",
+      "magnitude": 3.48
+    },
+    "-111.4742,42.4370": {
+      "name": "35 Sigma Her",
+      "catalog": "HIP 81126 · HD 149630 · HR 6168",
+      "magnitude": 4.2
+    },
+    "-115.0648,46.3134": {
+      "name": "22 Tau Her",
+      "catalog": "HIP 79992 · HD 147394 · HR 6092",
+      "magnitude": 3.91
+    },
+    "-117.8076,44.9349": {
+      "name": "11 Phi Her",
+      "catalog": "HIP 79101 · HD 145389 · HR 6023",
+      "magnitude": 4.23
+    },
+    "-121.8311,42.4515": {
+      "name": "1 Chi Her",
+      "catalog": "HIP 77760 · HD 142373 · HR 5914",
+      "magnitude": 4.6
+    },
+    "-104.9276,30.9264": {
+      "name": "58 Epsilon Her",
+      "catalog": "HIP 83207 · HD 153808 · HR 6324",
+      "magnitude": 3.92
+    },
+    "-101.2382,36.8092": {
+      "name": "67 Pi Her",
+      "catalog": "HIP 84380 · HD 156283 · HR 6418",
+      "magnitude": 3.16
+    },
+    "-90.9367,37.2505": {
+      "name": "91 Theta Her",
+      "catalog": "HIP 87808 · HD 163770 · HR 6695",
+      "magnitude": 3.86
+    },
+    "-99.0794,37.1459": {
+      "name": "75 Rho Her",
+      "catalog": "HIP 85112 · HD 157778 · HR 6484",
+      "magnitude": 4.15
+    },
+    "-101.2420,24.8392": {
+      "name": "Sarin",
+      "catalog": "HIP 84379 · HD 156164 · HR 6410",
+      "magnitude": 3.12
+    },
+    "-93.3853,27.7207": {
+      "name": "86 Mu Her",
+      "catalog": "HIP 86974 · HD 161797 · HR 6623",
+      "magnitude": 3.42
+    },
+    "-90.5588,29.2479": {
+      "name": "92 Xi Her",
+      "catalog": "HIP 87933 · HD 163993 · HR 6703",
+      "magnitude": 3.7
+    },
+    "-88.1144,28.7625": {
+      "name": "103 Omicron Her",
+      "catalog": "HIP 88794 · HD 166014 · HR 6779",
+      "magnitude": 3.84
+    },
+    "-101.3381,14.3903": {
+      "name": "Rasalgethi",
+      "catalog": "HIP 84345 · HD 156014 · HR 6406",
+      "magnitude": 2.78
+    },
+    "63.5005,-42.2944": {
+      "name": "Alpha Hor",
+      "catalog": "HIP 19747 · HD 26967 · HR 1326",
+      "magnitude": 3.85
+    },
+    "40.6394,-50.8003": {
+      "name": "Iota Hor",
+      "catalog": "HIP 12653 · HD 17051 · HR 810",
+      "magnitude": 5.4
+    },
+    "39.3515,-52.5431": {
+      "name": "Eta Hor",
+      "catalog": "HIP 12225 · HD 16555 · HR 778",
+      "magnitude": 5.3
+    },
+    "40.1651,-54.5499": {
+      "name": "Zeta Hor",
+      "catalog": "HIP 12484 · HD 16920 · HR 802",
+      "magnitude": 5.21
+    },
+    "45.9034,-59.7378": {
+      "name": "Mu Hor",
+      "catalog": "HIP 14240 · HD 19319 · HR 934",
+      "magnitude": 5.12
+    },
+    "44.6992,-64.0713": {
+      "name": "Beta Hor",
+      "catalog": "HIP 13884 · HD 18866 · HR 909",
+      "magnitude": 4.98
+    },
+    "131.6938,6.4188": {
+      "name": "Ashlesha",
+      "catalog": "HIP 43109 · HD 74874 · HR 3482",
+      "magnitude": 3.38
+    },
+    "132.1082,5.8378": {
+      "name": "13 Rho Hya",
+      "catalog": "HIP 43234 · HD 75137 · HR 3492",
+      "magnitude": 4.35
+    },
+    "130.8061,3.3987": {
+      "name": "7 Eta Hya",
+      "catalog": "HIP 42799 · HD 74280 · HR 3454",
+      "magnitude": 4.3
+    },
+    "129.6893,3.3414": {
+      "name": "Minchir",
+      "catalog": "HIP 42402 · HD 73471 · HR 3418",
+      "magnitude": 4.45
+    },
+    "129.4140,5.7038": {
+      "name": "4 Delta Hya",
+      "catalog": "HIP 42313 · HD 73262 · HR 3410",
+      "magnitude": 4.14
+    },
+    "133.8484,5.9456": {
+      "name": "16 Zeta Hya",
+      "catalog": "HIP 43813 · HD 76294 · HR 3547",
+      "magnitude": 3.11
+    },
+    "138.5911,2.3143": {
+      "name": "22 Theta Hya",
+      "catalog": "HIP 45336 · HD 79469 · HR 3665",
+      "magnitude": 3.89
+    },
+    "144.9640,-1.1428": {
+      "name": "Ukdah",
+      "catalog": "HIP 47431 · HD 83618 · HR 3845",
+      "magnitude": 3.9
+    },
+    "141.8968,-8.6586": {
+      "name": "Alphard",
+      "catalog": "HIP 46390 · HD 81797 · HR 3748",
+      "magnitude": 1.99
+    },
+    "147.8696,-14.8466": {
+      "name": "Zhang",
+      "catalog": "HIP 48356 · HD 85444 · HR 3903",
+      "magnitude": 4.11
+    },
+    "152.6470,-12.3541": {
+      "name": "41 Lambda Hya",
+      "catalog": "HIP 49841 · HD 88284 · HR 3994",
+      "magnitude": 3.61
+    },
+    "156.5226,-16.8363": {
+      "name": "42 Mu Hya",
+      "catalog": "HIP 51069 · HD 90432 · HR 4094",
+      "magnitude": 3.83
+    },
+    "162.4062,-16.1936": {
+      "name": "Nu Hya",
+      "catalog": "HIP 52943 · HD 93813 · HR 4232",
+      "magnitude": 3.11
+    },
+    "173.2505,-31.8576": {
+      "name": "Xi Hya",
+      "catalog": "HIP 56343 · HD 100407 · HR 4450",
+      "magnitude": 3.54
+    },
+    "178.2272,-33.9081": {
+      "name": "Beta Hya",
+      "catalog": "HIP 57936 · HD 103192 · HR 4552",
+      "magnitude": 4.29
+    },
+    "-160.2696,-23.1715": {
+      "name": "46 Gamma Hya",
+      "catalog": "HIP 64962 · HD 115659 · HR 5020",
+      "magnitude": 2.99
+    },
+    "-148.4071,-26.6824": {
+      "name": "49 Pi Hya",
+      "catalog": "HIP 68895 · HD 123123 · HR 5287",
+      "magnitude": 3.25
+    },
+    "-137.4279,-27.9604": {
+      "name": "Solitaire",
+      "catalog": "HIP 72571 · HD 130694 · HR 5526",
+      "magnitude": 4.42
+    },
+    "6.4378,-77.2542": {
+      "name": "Beta Hyi",
+      "catalog": "HIP 2021 · HD 2151 · HR 98",
+      "magnitude": 2.82
+    },
+    "56.8098,-74.2390": {
+      "name": "Gamma Hyi",
+      "catalog": "HIP 17678 · HD 24512 · HR 1208",
+      "magnitude": 3.26
+    },
+    "39.8973,-68.2669": {
+      "name": "Epsilon Hyi",
+      "catalog": "HIP 12394 · HD 16978 · HR 806",
+      "magnitude": 4.12
+    },
+    "35.4373,-68.6594": {
+      "name": "Delta Hyi",
+      "catalog": "HIP 11001 · HD 15008 · HR 705",
+      "magnitude": 4.08
+    },
+    "28.7339,-67.6473": {
+      "name": "Eta-2 Hyi",
+      "catalog": "HIP 8928 · HD 11977 · HR 570",
+      "magnitude": 4.68
+    },
+    "29.6925,-61.5699": {
+      "name": "Alpha Hyi",
+      "catalog": "HIP 9236 · HD 12311 · HR 591",
+      "magnitude": 2.86
+    },
+    "-50.6082,-47.2915": {
+      "name": "Alpha Ind",
+      "catalog": "HIP 101772 · HD 196171 · HR 7869",
+      "magnitude": 3.11
+    },
+    "-48.9903,-51.9210": {
+      "name": "Eta Ind",
+      "catalog": "HIP 102333 · HD 197157 · HR 7920",
+      "magnitude": 4.51
+    },
+    "-46.2975,-58.4542": {
+      "name": "Beta Ind",
+      "catalog": "HIP 103227 · HD 198700 · HR 7986",
+      "magnitude": 3.67
+    },
+    "-30.5205,-54.9926": {
+      "name": "Delta Ind",
+      "catalog": "HIP 108431 · HD 208450 · HR 8368",
+      "magnitude": 4.4
+    },
+    "-40.0334,-53.4494": {
+      "name": "Theta Ind",
+      "catalog": "HIP 105319 · HD 202730 · HR 8140",
+      "magnitude": 4.39
+    },
+    "-24.1099,52.2290": {
+      "name": "3 Beta Lac",
+      "catalog": "HIP 110538 · HD 212496 · HR 8538",
+      "magnitude": 4.42
+    },
+    "-22.1771,50.2825": {
+      "name": "Stellio",
+      "catalog": "HIP 111169 · HD 213558 · HR 8585",
+      "magnitude": 3.76
+    },
+    "-22.6174,47.7069": {
+      "name": "5 Lac",
+      "catalog": "HIP 111022 · HD 213310 · HR 8572",
+      "magnitude": 4.34
+    },
+    "-24.7436,46.5366": {
+      "name": "2 Lac",
+      "catalog": "HIP 110351 · HD 212120 · HR 8523",
+      "magnitude": 4.55
+    },
+    "-22.3781,43.1234": {
+      "name": "6 Lac",
+      "catalog": "HIP 111104 · HD 213420 · HR 8579",
+      "magnitude": 4.52
+    },
+    "-19.8714,44.2763": {
+      "name": "11 Lac",
+      "catalog": "HIP 111944 · HD 214868 · HR 8632",
+      "magnitude": 4.5
+    },
+    "-23.8709,49.4764": {
+      "name": "4 Lac",
+      "catalog": "HIP 110609 · HD 212593 · HR 8541",
+      "magnitude": 4.55
+    },
+    "-26.5303,39.7149": {
+      "name": "HR 8485",
+      "catalog": "HIP 109754 · HD 211073 · HR 8485",
+      "magnitude": 4.5
+    },
+    "-26.0076,37.7487": {
+      "name": "1 Lac",
+      "catalog": "HIP 109937 · HD 211388 · HR 8498",
+      "magnitude": 4.14
+    },
+    "152.0930,11.9672": {
+      "name": "Regulus",
+      "catalog": "HIP 49669 · HD 87901 · HR 3982",
+      "magnitude": 1.36
+    },
+    "151.8331,16.7627": {
+      "name": "30 Eta Leo",
+      "catalog": "HIP 49583 · HD 87737 · HR 3975",
+      "magnitude": 3.48
+    },
+    "154.9931,19.8415": {
+      "name": "Algieba",
+      "catalog": "HIP 50583 · HD 89484 · HR 4057",
+      "magnitude": 2.01
+    },
+    "168.5271,20.5237": {
+      "name": "Zosma",
+      "catalog": "HIP 54872 · HD 97603 · HR 4357",
+      "magnitude": 2.56
+    },
+    "177.2649,14.5721": {
+      "name": "Denebola",
+      "catalog": "HIP 57632 · HD 102647 · HR 4534",
+      "magnitude": 2.14
+    },
+    "168.5600,15.4296": {
+      "name": "Chertan",
+      "catalog": "HIP 54879 · HD 97633 · HR 4359",
+      "magnitude": 3.33
+    },
+    "154.1726,23.4173": {
+      "name": "Adhafera",
+      "catalog": "HIP 50335 · HD 89025 · HR 4031",
+      "magnitude": 3.43
+    },
+    "148.1909,26.0070": {
+      "name": "Rasalas",
+      "catalog": "HIP 48455 · HD 85503 · HR 3905",
+      "magnitude": 3.88
+    },
+    "146.4628,23.7743": {
+      "name": "Ras Elased Australis",
+      "catalog": "HIP 47908 · HD 84441 · HR 3873",
+      "magnitude": 2.97
+    },
+    "151.8573,35.2447": {
+      "name": "21 LMi",
+      "catalog": "HIP 49593 · HD 87696 · HR 3974",
+      "magnitude": 4.49
+    },
+    "156.4784,33.7961": {
+      "name": "30 LMi",
+      "catalog": "HIP 51056 · HD 90277 · HR 4090",
+      "magnitude": 4.72
+    },
+    "163.3279,34.2149": {
+      "name": "Praecipua",
+      "catalog": "HIP 53229 · HD 94264 · HR 4247",
+      "magnitude": 3.79
+    },
+    "156.9708,36.7072": {
+      "name": "31 Beta LMi",
+      "catalog": "HIP 51233 · HD 90537 · HR 4100",
+      "magnitude": 4.2
+    },
+    "143.5558,36.3976": {
+      "name": "10 LMi",
+      "catalog": "HIP 46952 · HD 82635 · HR 3800",
+      "magnitude": 4.54
+    },
+    "91.5388,-14.9353": {
+      "name": "18 Theta Lep",
+      "catalog": "HIP 28910 · HD 41695 · HR 2155",
+      "magnitude": 4.67
+    },
+    "89.1012,-14.1677": {
+      "name": "16 Eta Lep",
+      "catalog": "HIP 28103 · HD 40136 · HR 2085",
+      "magnitude": 3.71
+    },
+    "86.7389,-14.8220": {
+      "name": "14 Zeta Lep",
+      "catalog": "HIP 27288 · HD 38678 · HR 1998",
+      "magnitude": 3.55
+    },
+    "83.1826,-17.8223": {
+      "name": "Arneb",
+      "catalog": "HIP 25985 · HD 36673 · HR 1865",
+      "magnitude": 2.58
+    },
+    "78.2329,-16.2055": {
+      "name": "5 Mu Lep",
+      "catalog": "HIP 24305 · HD 33904 · HR 1702",
+      "magnitude": 3.29
+    },
+    "76.3653,-22.3710": {
+      "name": "2 Epsilon Lep",
+      "catalog": "HIP 23685 · HD 32887 · HR 1654",
+      "magnitude": 3.19
+    },
+    "82.0613,-20.7594": {
+      "name": "Nihal",
+      "catalog": "HIP 25606 · HD 36079 · HR 1829",
+      "magnitude": 2.81
+    },
+    "86.1158,-22.4484": {
+      "name": "13 Gamma Lep",
+      "catalog": "HIP 27072 · HD 38393 · HR 1983",
+      "magnitude": 3.59
+    },
+    "87.8304,-20.8791": {
+      "name": "15 Delta Lep",
+      "catalog": "HIP 27654 · HD 39364 · HR 2035",
+      "magnitude": 3.76
+    },
+    "78.3078,-12.9413": {
+      "name": "4 Kappa Lep",
+      "catalog": "HIP 24327 · HD 33949 · HR 1705",
+      "magnitude": 4.36
+    },
+    "79.8939,-13.1768": {
+      "name": "6 Lambda Lep",
+      "catalog": "HIP 24845 · HD 34816 · HR 1756",
+      "magnitude": 4.29
+    },
+    "-133.9824,-25.2820": {
+      "name": "Brachium",
+      "catalog": "HIP 73714 · HD 133216 · HR 5603",
+      "magnitude": 3.25
+    },
+    "-137.2804,-16.0418": {
+      "name": "Zubenelgenubi",
+      "catalog": "HIP 72622 · HD 130841 · HR 5531",
+      "magnitude": 2.75
+    },
+    "-130.7483,-9.3829": {
+      "name": "Zubeneschamali",
+      "catalog": "HIP 74785 · HD 135742 · HR 5685",
+      "magnitude": 2.61
+    },
+    "-126.1184,-14.7895": {
+      "name": "Zubenelhakrabi",
+      "catalog": "HIP 76333 · HD 138905 · HR 5787",
+      "magnitude": 3.91
+    },
+    "-125.7440,-28.1351": {
+      "name": "39 Upsilon Lib",
+      "catalog": "HIP 76470 · HD 139063 · HR 5794",
+      "magnitude": 3.6
+    },
+    "-125.3360,-29.7778": {
+      "name": "40 Tau Lib",
+      "catalog": "HIP 76600 · HD 139365 · HR 5812",
+      "magnitude": 3.66
+    },
+    "-122.2603,-33.6272": {
+      "name": "5 Chi Lup",
+      "catalog": "HIP 77634 · HD 141556 · HR 5883",
+      "magnitude": 3.97
+    },
+    "-125.0584,-34.4119": {
+      "name": "3 Psi-1 Lup",
+      "catalog": "HIP 76705 · HD 139521 · HR 5820",
+      "magnitude": 4.66
+    },
+    "-129.5485,-36.2614": {
+      "name": "Phi-1 Lup",
+      "catalog": "HIP 75177 · HD 136422 · HR 5705",
+      "magnitude": 3.57
+    },
+    "-129.6570,-40.6475": {
+      "name": "Delta Lup",
+      "catalog": "HIP 75141 · HD 136298 · HR 5695",
+      "magnitude": 3.22
+    },
+    "-135.3670,-43.1340": {
+      "name": "Beta Lup",
+      "catalog": "HIP 73273 · HD 132058 · HR 5571",
+      "magnitude": 2.68
+    },
+    "-139.5177,-47.3882": {
+      "name": "Uridim",
+      "catalog": "HIP 71860 · HD 129056 · HR 5469",
+      "magnitude": 2.3
+    },
+    "-131.9288,-52.0992": {
+      "name": "Zeta Lup",
+      "catalog": "HIP 74395 · HD 134505 · HR 5649",
+      "magnitude": 3.41
+    },
+    "-130.3666,-47.8753": {
+      "name": "Mu Lup",
+      "catalog": "HIP 74911 · HD 135734 · HR 5683",
+      "magnitude": 4.27
+    },
+    "-129.3297,-44.6896": {
+      "name": "Epsilon Lup",
+      "catalog": "HIP 75264 · HD 136504 · HR 5708",
+      "magnitude": 3.37
+    },
+    "-126.2148,-41.1668": {
+      "name": "Gamma Lup",
+      "catalog": "HIP 76297 · HD 138690 · HR 5776",
+      "magnitude": 2.8
+    },
+    "-119.9695,-38.3967": {
+      "name": "Eta Lup",
+      "catalog": "HIP 78384 · HD 143118 · HR 5948",
+      "magnitude": 3.42
+    },
+    "-118.3519,-36.8023": {
+      "name": "Theta Lup",
+      "catalog": "HIP 78918 · HD 144294 · HR 5987",
+      "magnitude": 4.22
+    },
+    "94.9058,59.0110": {
+      "name": "2 Lyn",
+      "catalog": "HIP 30060 · HD 43378 · HR 2238",
+      "magnitude": 4.44
+    },
+    "104.3192,58.4228": {
+      "name": "15 Lyn",
+      "catalog": "HIP 33449 · HD 50522 · HR 2560",
+      "magnitude": 4.35
+    },
+    "111.6785,49.2115": {
+      "name": "21 Lyn",
+      "catalog": "HIP 36145 · HD 58142 · HR 2818",
+      "magnitude": 4.61
+    },
+    "125.7088,43.1881": {
+      "name": "Alsciaukat",
+      "catalog": "HIP 41075 · HD 70272 · HR 3275",
+      "magnitude": 4.25
+    },
+    "135.1599,41.7829": {
+      "name": "HR 3579",
+      "catalog": "HIP 44248 · HD 76943 · HR 3579",
+      "magnitude": 3.96
+    },
+    "139.7110,36.8026": {
+      "name": "38 Lyn",
+      "catalog": "HIP 45688 · HD 80081 · HR 3690",
+      "magnitude": 3.82
+    },
+    "140.2638,34.3926": {
+      "name": "40 Alpha Lyn",
+      "catalog": "HIP 45860 · HD 80493 · HR 3705",
+      "magnitude": 3.14
+    },
+    "-78.8068,37.6051": {
+      "name": "6 Zeta-1 Lyr",
+      "catalog": "HIP 91971 · HD 173648 · HR 7056",
+      "magnitude": 4.34
+    },
+    "-78.9051,39.6127": {
+      "name": "5 Epsilon-2 Lyr",
+      "catalog": "HIP 91926 · HD 173607 · HR 7053",
+      "magnitude": 4.59
+    },
+    "-80.7653,38.7837": {
+      "name": "Vega",
+      "catalog": "HIP 91262 · HD 172167 · HR 7001",
+      "magnitude": 0.03
+    },
+    "-76.3738,36.8986": {
+      "name": "12 Delta-2 Lyr",
+      "catalog": "HIP 92791 · HD 175588 · HR 7139",
+      "magnitude": 4.22
+    },
+    "-75.2641,32.6896": {
+      "name": "Sulafat",
+      "catalog": "HIP 93194 · HD 176437 · HR 7178",
+      "magnitude": 3.25
+    },
+    "-77.4800,33.3627": {
+      "name": "Sheliak",
+      "catalog": "HIP 92420 · HD 174638 · HR 7106",
+      "magnitude": 3.52
+    },
+    "92.5603,-74.7530": {
+      "name": "Hoerikwaggo",
+      "catalog": "HIP 29271 · HD 43834 · HR 2261",
+      "magnitude": 5.08
+    },
+    "82.9709,-76.3410": {
+      "name": "Gamma Men",
+      "catalog": "HIP 25918 · HD 37763 · HR 1953",
+      "magnitude": 5.18
+    },
+    "73.7967,-74.9369": {
+      "name": "Eta Men",
+      "catalog": "HIP 22871 · HD 32440 · HR 1629",
+      "magnitude": 5.47
+    },
+    "75.6792,-71.3143": {
+      "name": "Beta Men",
+      "catalog": "HIP 23467 · HD 33285 · HR 1677",
+      "magnitude": 5.3
+    },
+    "-47.5080,-33.7797": {
+      "name": "Alpha Mic",
+      "catalog": "HIP 102831 · HD 198232 · HR 7965",
+      "magnitude": 4.89
+    },
+    "-47.8786,-43.9885": {
+      "name": "Iota Mic",
+      "catalog": "HIP 102693 · HD 197937 · HR 7943",
+      "magnitude": 5.11
+    },
+    "-39.8098,-40.8095": {
+      "name": "Theta-1 Mic",
+      "catalog": "HIP 105382 · HD 203006 · HR 8151",
+      "magnitude": 4.8
+    },
+    "-40.5155,-32.1725": {
+      "name": "Epsilon Mic",
+      "catalog": "HIP 105140 · HD 202627 · HR 8135",
+      "magnitude": 4.71
+    },
+    "-44.6772,-32.2578": {
+      "name": "Gamma Mic",
+      "catalog": "HIP 103738 · HD 199951 · HR 8039",
+      "magnitude": 4.67
+    },
+    "115.3118,-9.5511": {
+      "name": "26 Alpha Mon",
+      "catalog": "HIP 37447 · HD 61935 · HR 2970",
+      "magnitude": 3.94
+    },
+    "122.1485,-2.9838": {
+      "name": "29 Zeta Mon",
+      "catalog": "HIP 39863 · HD 67594 · HR 3188",
+      "magnitude": 4.36
+    },
+    "107.9661,-0.4928": {
+      "name": "22 Delta Mon",
+      "catalog": "HIP 34769 · HD 55185 · HR 2714",
+      "magnitude": 4.15
+    },
+    "97.2045,-7.0331": {
+      "name": "11 Beta Mon",
+      "catalog": "HIP 30867 · HD 45725 · HR 2356",
+      "magnitude": 3.76
+    },
+    "93.7139,-6.2748": {
+      "name": "5 Gamma Mon",
+      "catalog": "HIP 29651 · HD 43232 · HR 2227",
+      "magnitude": 3.99
+    },
+    "101.9652,2.4122": {
+      "name": "18 Mon",
+      "catalog": "HIP 32578 · HD 49293 · HR 2506",
+      "magnitude": 4.48
+    },
+    "95.9420,4.5929": {
+      "name": "8 Epsilon Mon",
+      "catalog": "HIP 30419 · HD 44769 · HR 2298",
+      "magnitude": 4.39
+    },
+    "98.2259,7.3330": {
+      "name": "HD 46454",
+      "catalog": "HIP 31297 · HD 46454",
+      "magnitude": 7.76
+    },
+    "100.2444,9.8958": {
+      "name": "15 Mon",
+      "catalog": "HIP 31978 · HD 47839 · HR 2456",
+      "magnitude": 4.66
+    },
+    "176.4017,-66.7288": {
+      "name": "Lambda Mus",
+      "catalog": "HIP 57363 · HD 102249 · HR 4520",
+      "magnitude": 3.63
+    },
+    "-175.6072,-67.9607": {
+      "name": "Epsilon Mus",
+      "catalog": "HIP 59929 · HD 106849 · HR 4671",
+      "magnitude": 4.06
+    },
+    "-170.7041,-69.1356": {
+      "name": "Alpha Mus",
+      "catalog": "HIP 61585 · HD 109668 · HR 4798",
+      "magnitude": 2.69
+    },
+    "-168.4300,-68.1081": {
+      "name": "Beta Mus",
+      "catalog": "HIP 62322 · HD 110879 · HR 4844",
+      "magnitude": 3.04
+    },
+    "-164.4322,-71.5489": {
+      "name": "Delta Mus",
+      "catalog": "HIP 63613 · HD 112985 · HR 4923",
+      "magnitude": 3.61
+    },
+    "-171.8833,-72.1330": {
+      "name": "Gamma Mus",
+      "catalog": "HIP 61199 · HD 109026 · HR 4773",
+      "magnitude": 3.84
+    },
+    "-118.3773,-45.1732": {
+      "name": "Delta Nor",
+      "catalog": "HIP 78914 · HD 144197 · HR 5980",
+      "magnitude": 4.73
+    },
+    "-113.2040,-47.5548": {
+      "name": "Epsilon Nor",
+      "catalog": "HIP 80582 · HD 147971 · HR 6115",
+      "magnitude": 4.46
+    },
+    "-115.0399,-50.1555": {
+      "name": "Gamma-2 Nor",
+      "catalog": "HIP 80000 · HD 146686 · HR 6072",
+      "magnitude": 4.01
+    },
+    "-119.1963,-49.2297": {
+      "name": "Eta Nor",
+      "catalog": "HIP 78639 · HD 143546 · HR 5962",
+      "magnitude": 4.65
+    },
+    "-143.2699,-83.6679": {
+      "name": "Delta Oct",
+      "catalog": "HIP 70638 · HD 124882 · HR 5339",
+      "magnitude": 4.31
+    },
+    "-18.4854,-81.3816": {
+      "name": "Beta Oct",
+      "catalog": "HIP 112405 · HD 214846 · HR 8630",
+      "magnitude": 4.13
+    },
+    "-34.6306,-77.3900": {
+      "name": "Nu Oct",
+      "catalog": "HIP 107089 · HD 205478 · HR 8254",
+      "magnitude": 3.73
+    },
+    "-90.2434,-9.7736": {
+      "name": "64 Nu Oph",
+      "catalog": "HIP 88048 · HD 163917 · HR 6698",
+      "magnitude": 3.32
+    },
+    "-93.0268,2.7073": {
+      "name": "Bake-eo",
+      "catalog": "HIP 87108 · HD 161868 · HR 6629",
+      "magnitude": 3.75
+    },
+    "-94.1319,4.5673": {
+      "name": "Cebalrai",
+      "catalog": "HIP 86742 · HD 161096 · HR 6603",
+      "magnitude": 2.76
+    },
+    "-96.2664,12.5600": {
+      "name": "Rasalhague",
+      "catalog": "HIP 86032 · HD 159561 · HR 6556",
+      "magnitude": 2.08
+    },
+    "-105.5829,9.3750": {
+      "name": "27 Kappa Oph",
+      "catalog": "HIP 83000 · HD 153210 · HR 6299",
+      "magnitude": 3.19
+    },
+    "-112.2716,1.9839": {
+      "name": "Marfik",
+      "catalog": "HIP 80883 · HD 148857 · HR 6149",
+      "magnitude": 3.82
+    },
+    "-116.4136,-3.6943": {
+      "name": "Yed Prior",
+      "catalog": "HIP 79593 · HD 146051 · HR 6056",
+      "magnitude": 2.73
+    },
+    "-115.4196,-4.6925": {
+      "name": "Yed Posterior",
+      "catalog": "HIP 79882 · HD 146791 · HR 6075",
+      "magnitude": 3.23
+    },
+    "-110.7103,-10.5671": {
+      "name": "13 Zeta Oph",
+      "catalog": "HIP 81377 · HD 149757 · HR 6175",
+      "magnitude": 2.54
+    },
+    "-102.4055,-15.7249": {
+      "name": "Sabik",
+      "catalog": "HIP 84012 · HD 155125 · HR 6378",
+      "magnitude": 2.43
+    },
+    "-112.2151,-16.6127": {
+      "name": "8 Phi Oph",
+      "catalog": "HIP 80894 · HD 148786 · HR 6147",
+      "magnitude": 4.29
+    },
+    "-113.2440,-18.4563": {
+      "name": "7 Chi Oph",
+      "catalog": "HIP 80569 · HD 148184 · HR 6118",
+      "magnitude": 4.22
+    },
+    "-113.9742,-20.0373": {
+      "name": "4 Psi Oph",
+      "catalog": "HIP 80343 · HD 147700 · HR 6104",
+      "magnitude": 4.48
+    },
+    "-113.6037,-23.4472": {
+      "name": "5 Rho Oph",
+      "catalog": "HIP 80473 · HD 147933 · HR 6112",
+      "magnitude": 4.57
+    },
+    "-99.4976,-24.9995": {
+      "name": "42 Theta Oph",
+      "catalog": "HIP 84970 · HD 157056 · HR 6453",
+      "magnitude": 3.27
+    },
+    "-98.1614,-29.8670": {
+      "name": "45 Oph",
+      "catalog": "HIP 85423 · HD 157919 · HR 6492",
+      "magnitude": 4.28
+    },
+    "91.8930,14.7685": {
+      "name": "67 Nu Ori",
+      "catalog": "HIP 29038 · HD 41753 · HR 2159",
+      "magnitude": 4.42
+    },
+    "88.5958,20.2762": {
+      "name": "54 Chi-1 Ori",
+      "catalog": "HIP 27913 · HD 39587 · HR 2047",
+      "magnitude": 4.39
+    },
+    "90.9799,20.1385": {
+      "name": "62 Chi-2 Ori",
+      "catalog": "HIP 28716 · HD 41117 · HR 2135",
+      "magnitude": 4.64
+    },
+    "92.9850,14.2088": {
+      "name": "70 Xi Ori",
+      "catalog": "HIP 29426 · HD 42560 · HR 2199",
+      "magnitude": 4.45
+    },
+    "90.5958,9.6473": {
+      "name": "61 Mu Ori",
+      "catalog": "HIP 28614 · HD 40932 · HR 2124",
+      "magnitude": 4.12
+    },
+    "88.7929,7.4071": {
+      "name": "Betelgeuse",
+      "catalog": "HIP 27989 · HD 39801 · HR 2061",
+      "magnitude": 0.45
+    },
+    "81.2828,6.3497": {
+      "name": "Bellatrix",
+      "catalog": "HIP 25336 · HD 35468 · HR 1790",
+      "magnitude": 1.64
+    },
+    "73.7239,10.1508": {
+      "name": "7 Pi-1 Ori",
+      "catalog": "HIP 22845 · HD 31295 · HR 1570",
+      "magnitude": 4.64
+    },
+    "74.6371,1.7140": {
+      "name": "10 Pi-6 Ori",
+      "catalog": "HIP 23123 · HD 31767 · HR 1601",
+      "magnitude": 4.47
+    },
+    "73.5629,2.4407": {
+      "name": "8 Pi-5 Ori",
+      "catalog": "HIP 22797 · HD 31237 · HR 1567",
+      "magnitude": 3.71
+    },
+    "72.8015,5.6051": {
+      "name": "3 Pi-4 Ori",
+      "catalog": "HIP 22549 · HD 30836 · HR 1552",
+      "magnitude": 3.68
+    },
+    "72.4600,6.9613": {
+      "name": "Tabit",
+      "catalog": "HIP 22449 · HD 30652 · HR 1543",
+      "magnitude": 3.19
+    },
+    "72.6530,8.9002": {
+      "name": "2 Pi-2 Ori",
+      "catalog": "HIP 22509 · HD 30739 · HR 1544",
+      "magnitude": 4.35
+    },
+    "74.0928,13.5145": {
+      "name": "9 Omicron-2 Ori",
+      "catalog": "HIP 22957 · HD 31421 · HR 1580",
+      "magnitude": 4.06
+    },
+    "76.1423,15.4041": {
+      "name": "11 Ori",
+      "catalog": "HIP 23607 · HD 32549 · HR 1638",
+      "magnitude": 4.65
+    },
+    "77.4248,15.5972": {
+      "name": "15 Ori",
+      "catalog": "HIP 24010 · HD 33276 · HR 1676",
+      "magnitude": 4.81
+    },
+    "78.6345,-8.2016": {
+      "name": "Rigel",
+      "catalog": "HIP 24436 · HD 34085 · HR 1713",
+      "magnitude": 0.18
+    },
+    "81.1192,-2.3971": {
+      "name": "28 Eta Ori",
+      "catalog": "HIP 25281 · HD 35411 · HR 1788",
+      "magnitude": 3.35
+    },
+    "83.0017,-0.2991": {
+      "name": "Mintaka",
+      "catalog": "HIP 25930 · HD 36486 · HR 1852",
+      "magnitude": 2.25
+    },
+    "83.7845,9.9342": {
+      "name": "Meissa",
+      "catalog": "HIP 26207 · HD 36861 · HR 1879",
+      "magnitude": 3.39
+    },
+    "85.1897,-1.9426": {
+      "name": "Alnitak",
+      "catalog": "HIP 26727 · HD 37742 · HR 1948",
+      "magnitude": 1.74
+    },
+    "86.9391,-9.6696": {
+      "name": "Saiph",
+      "catalog": "HIP 27366 · HD 38771 · HR 2004",
+      "magnitude": 2.07
+    },
+    "84.0534,-1.2019": {
+      "name": "Alnilam",
+      "catalog": "HIP 26311 · HD 37128 · HR 1903",
+      "magnitude": 1.69
+    },
+    "-53.5881,-56.7351": {
+      "name": "Peacock",
+      "catalog": "HIP 100751 · HD 193924 · HR 7790",
+      "magnitude": 1.94
+    },
+    "-48.7604,-66.2032": {
+      "name": "Beta Pav",
+      "catalog": "HIP 102395 · HD 197051 · HR 7913",
+      "magnitude": 3.42
+    },
+    "-57.8183,-66.1821": {
+      "name": "Delta Pav",
+      "catalog": "HIP 99240 · HD 190248 · HR 7665",
+      "magnitude": 3.55
+    },
+    "-76.9457,-62.1876": {
+      "name": "Lambda Pav",
+      "catalog": "HIP 92609 · HD 173948 · HR 7074",
+      "magnitude": 4.22
+    },
+    "-84.1932,-61.4939": {
+      "name": "Xi Pav",
+      "catalog": "HIP 90098 · HD 168339 · HR 6855",
+      "magnitude": 4.35
+    },
+    "-87.8549,-63.6686": {
+      "name": "Pi Pav",
+      "catalog": "HIP 88866 · HD 165040 · HR 6745",
+      "magnitude": 4.33
+    },
+    "-93.5667,-64.7239": {
+      "name": "Eta Pav",
+      "catalog": "HIP 86929 · HD 160635 · HR 6582",
+      "magnitude": 3.61
+    },
+    "-79.2411,-71.4281": {
+      "name": "Zeta Pav",
+      "catalog": "HIP 91792 · HD 171759 · HR 6982",
+      "magnitude": 4.01
+    },
+    "-59.8519,-72.9105": {
+      "name": "Epsilon Pav",
+      "catalog": "HIP 98495 · HD 188228 · HR 7590",
+      "magnitude": 3.97
+    },
+    "-38.3891,-65.3662": {
+      "name": "Gamma Pav",
+      "catalog": "HIP 105858 · HD 203608 · HR 8181",
+      "magnitude": 4.21
+    },
+    "-27.5031,33.1782": {
+      "name": "29 Pi-2 Peg",
+      "catalog": "HIP 109410 · HD 210459 · HR 8454",
+      "magnitude": 4.28
+    },
+    "-19.2494,30.2212": {
+      "name": "Matar",
+      "catalog": "HIP 112158 · HD 215182 · HR 8650",
+      "magnitude": 2.93
+    },
+    "-14.0564,28.0828": {
+      "name": "Scheat",
+      "catalog": "HIP 113881 · HD 217906 · HR 8775",
+      "magnitude": 2.44
+    },
+    "3.3090,15.1836": {
+      "name": "Algenib",
+      "catalog": "HIP 1067 · HD 886 · HR 39",
+      "magnitude": 2.83
+    },
+    "-13.8098,15.2053": {
+      "name": "Markab",
+      "catalog": "HIP 113963 · HD 218045 · HR 8781",
+      "magnitude": 2.49
+    },
+    "-18.3267,12.1729": {
+      "name": "46 Xi Peg",
+      "catalog": "HIP 112447 · HD 215648 · HR 8665",
+      "magnitude": 4.2
+    },
+    "-19.6345,10.8314": {
+      "name": "Homam",
+      "catalog": "HIP 112029 · HD 214923 · HR 8634",
+      "magnitude": 3.41
+    },
+    "-27.4501,6.1979": {
+      "name": "Biham",
+      "catalog": "HIP 109427 · HD 210418 · HR 8450",
+      "magnitude": 3.52
+    },
+    "-33.9535,9.8750": {
+      "name": "Enif",
+      "catalog": "HIP 107315 · HD 206778 · HR 8308",
+      "magnitude": 2.38
+    },
+    "-17.4992,24.6016": {
+      "name": "Sadalbari",
+      "catalog": "HIP 112748 · HD 216131 · HR 8684",
+      "magnitude": 3.51
+    },
+    "-18.3672,23.5657": {
+      "name": "47 Lambda Peg",
+      "catalog": "HIP 112440 · HD 215665 · HR 8667",
+      "magnitude": 3.97
+    },
+    "-28.2472,25.3451": {
+      "name": "24 Iota Peg",
+      "catalog": "HIP 109176 · HD 210027 · HR 8430",
+      "magnitude": 3.77
+    },
+    "-33.8386,25.6450": {
+      "name": "10 Kappa Peg",
+      "catalog": "HIP 107354 · HD 206901 · HR 8315",
+      "magnitude": 4.14
+    },
+    "56.0797,32.2882": {
+      "name": "Atik",
+      "catalog": "HIP 17448 · HD 23180 · HR 1131",
+      "magnitude": 3.84
+    },
+    "58.5330,31.8836": {
+      "name": "44 Zeta Per",
+      "catalog": "HIP 18246 · HD 24398 · HR 1203",
+      "magnitude": 2.84
+    },
+    "59.7413,35.7910": {
+      "name": "Menkib",
+      "catalog": "HIP 18614 · HD 24912 · HR 1228",
+      "magnitude": 3.98
+    },
+    "59.4635,40.0102": {
+      "name": "45 Epsilon Per",
+      "catalog": "HIP 18532 · HD 24760 · HR 1220",
+      "magnitude": 2.9
+    },
+    "56.2985,42.5785": {
+      "name": "41 Nu Per",
+      "catalog": "HIP 17529 · HD 23230 · HR 1135",
+      "magnitude": 3.77
+    },
+    "55.7313,47.7876": {
+      "name": "39 Delta Per",
+      "catalog": "HIP 17358 · HD 22928 · HR 1122",
+      "magnitude": 3.01
+    },
+    "54.1224,48.1926": {
+      "name": "37 Psi Per",
+      "catalog": "HIP 16826 · HD 22192 · HR 1087",
+      "magnitude": 4.32
+    },
+    "51.0807,49.8612": {
+      "name": "Mirfak",
+      "catalog": "HIP 15863 · HD 20902 · HR 1017",
+      "magnitude": 1.79
+    },
+    "46.1991,53.5064": {
+      "name": "23 Gamma Per",
+      "catalog": "HIP 14328 · HD 18925 · HR 915",
+      "magnitude": 2.91
+    },
+    "42.6742,55.8955": {
+      "name": "Miram",
+      "catalog": "HIP 13268 · HD 17506 · HR 834",
+      "magnitude": 3.77
+    },
+    "43.5644,52.7625": {
+      "name": "18 Tau Per",
+      "catalog": "HIP 13531 · HD 17878 · HR 854",
+      "magnitude": 3.93
+    },
+    "47.2667,49.6133": {
+      "name": "Iota Per",
+      "catalog": "HIP 14632 · HD 19373 · HR 937",
+      "magnitude": 4.05
+    },
+    "47.3740,44.8575": {
+      "name": "Misam",
+      "catalog": "HIP 14668 · HD 19476 · HR 941",
+      "magnitude": 3.79
+    },
+    "47.0422,40.9556": {
+      "name": "Algol",
+      "catalog": "HIP 14576 · HD 19356 · HR 936",
+      "magnitude": 2.09
+    },
+    "47.8224,39.6116": {
+      "name": "28 Omega Per",
+      "catalog": "HIP 14817 · HD 19656 · HR 947",
+      "magnitude": 4.61
+    },
+    "46.2941,38.8403": {
+      "name": "25 Rho Per",
+      "catalog": "HIP 14354 · HD 19058 · HR 921",
+      "magnitude": 3.32
+    },
+    "44.6903,39.6627": {
+      "name": "22 Pi Per",
+      "catalog": "HIP 13879 · HD 18411 · HR 879",
+      "magnitude": 4.68
+    },
+    "44.9162,41.0329": {
+      "name": "HR 886",
+      "catalog": "HIP 13949 · HD 18482 · HR 886",
+      "magnitude": 5.89
+    },
+    "61.6460,50.3513": {
+      "name": "47 Lambda Per",
+      "catalog": "HIP 19167 · HD 25642 · HR 1261",
+      "magnitude": 4.25
+    },
+    "63.7244,48.4093": {
+      "name": "51 Mu Per",
+      "catalog": "HIP 19812 · HD 26630 · HR 1303",
+      "magnitude": 4.12
+    },
+    "62.1654,47.7125": {
+      "name": "48 Per",
+      "catalog": "HIP 19343 · HD 25940 · HR 1273",
+      "magnitude": 3.96
+    },
+    "41.0499,49.2284": {
+      "name": "13 Theta Per",
+      "catalog": "HIP 12777 · HD 16895 · HR 799",
+      "magnitude": 4.1
+    },
+    "25.9152,50.6887": {
+      "name": "Phi Per",
+      "catalog": "HIP 8068 · HD 10516 · HR 496",
+      "magnitude": 4.01
+    },
+    "6.5710,-42.3060": {
+      "name": "Ankaa",
+      "catalog": "HIP 2081 · HD 2261 · HR 99",
+      "magnitude": 2.4
+    },
+    "16.5210,-46.7184": {
+      "name": "HD 6869",
+      "catalog": "HIP 5363 · HD 6869",
+      "magnitude": 6.89
+    },
+    "22.0914,-43.3182": {
+      "name": "Gamma Phe",
+      "catalog": "HIP 6867 · HD 9053 · HR 429",
+      "magnitude": 3.41
+    },
+    "22.8129,-49.0727": {
+      "name": "Delta Phe",
+      "catalog": "HIP 7083 · HD 9362 · HR 440",
+      "magnitude": 3.93
+    },
+    "17.0962,-55.2458": {
+      "name": "Wurren",
+      "catalog": "HIP 5348 · HD 6882 · HR 338",
+      "magnitude": 3.94
+    },
+    "2.3527,-45.7474": {
+      "name": "Epsilon Phe",
+      "catalog": "HIP 765 · HD 496 · HR 25",
+      "magnitude": 3.88
+    },
+    "102.0477,-61.9414": {
+      "name": "Alpha Pic",
+      "catalog": "HIP 32607 · HD 50241 · HR 2550",
+      "magnitude": 3.24
+    },
+    "87.4569,-56.1667": {
+      "name": "Gamma Pic",
+      "catalog": "HIP 27530 · HD 39523 · HR 2042",
+      "magnitude": 4.5
+    },
+    "86.8212,-51.0665": {
+      "name": "Beta Pic",
+      "catalog": "HIP 27321 · HD 39060 · HR 2020",
+      "magnitude": 3.85
+    },
+    "18.4373,24.5837": {
+      "name": "85 Phi Psc",
+      "catalog": "HIP 5742 · HD 7318 · HR 360",
+      "magnitude": 4.67
+    },
+    "17.9152,30.0896": {
+      "name": "83 Tau Psc",
+      "catalog": "HIP 5586 · HD 7106 · HR 352",
+      "magnitude": 4.51
+    },
+    "19.8666,27.2641": {
+      "name": "90 Upsilon Psc",
+      "catalog": "HIP 6193 · HD 7964 · HR 383",
+      "magnitude": 4.74
+    },
+    "17.8634,21.0347": {
+      "name": "84 Chi Psc",
+      "catalog": "HIP 5571 · HD 7087 · HR 351",
+      "magnitude": 4.66
+    },
+    "22.8709,15.3458": {
+      "name": "Alpherg",
+      "catalog": "HIP 7097 · HD 9270 · HR 437",
+      "magnitude": 3.62
+    },
+    "26.3485,9.1577": {
+      "name": "Torcular",
+      "catalog": "HIP 8198 · HD 10761 · HR 510",
+      "magnitude": 4.26
+    },
+    "30.5118,2.7638": {
+      "name": "Alrescha",
+      "catalog": "HIP 9487 · HD 12446 · HR 595",
+      "magnitude": 3.82
+    },
+    "28.3890,3.1875": {
+      "name": "111 Xi Psc",
+      "catalog": "HIP 8833 · HD 11559 · HR 549",
+      "magnitude": 4.61
+    },
+    "25.3579,5.4876": {
+      "name": "106 Nu Psc",
+      "catalog": "HIP 7884 · HD 10380 · HR 489",
+      "magnitude": 4.45
+    },
+    "22.5463,6.1438": {
+      "name": "98 Mu Psc",
+      "catalog": "HIP 7007 · HD 9138 · HR 434",
+      "magnitude": 4.84
+    },
+    "18.4329,7.5754": {
+      "name": "Revati",
+      "catalog": "HIP 5737 · HD 7344 · HR 361",
+      "magnitude": 5.21
+    },
+    "15.7359,7.8901": {
+      "name": "71 Epsilon Psc",
+      "catalog": "HIP 4906 · HD 6186 · HR 294",
+      "magnitude": 4.27
+    },
+    "12.1706,7.5851": {
+      "name": "63 Delta Psc",
+      "catalog": "HIP 3786 · HD 4656 · HR 224",
+      "magnitude": 4.44
+    },
+    "-0.1721,6.8633": {
+      "name": "28 Omega Psc",
+      "catalog": "HIP 118268 · HD 224617 · HR 9072",
+      "magnitude": 4.03
+    },
+    "-5.0123,5.6263": {
+      "name": "17 Iota Psc",
+      "catalog": "HIP 116771 · HD 222368 · HR 8969",
+      "magnitude": 4.13
+    },
+    "-8.0079,6.3790": {
+      "name": "10 Theta Psc",
+      "catalog": "HIP 115830 · HD 220954 · HR 8916",
+      "magnitude": 4.27
+    },
+    "-9.9142,5.3813": {
+      "name": "7 Psc",
+      "catalog": "HIP 115227 · HD 220009 · HR 8878",
+      "magnitude": 5.05
+    },
+    "-10.7086,3.2823": {
+      "name": "6 Gamma Psc",
+      "catalog": "HIP 114971 · HD 219615 · HR 8852",
+      "magnitude": 3.7
+    },
+    "-8.2669,1.2556": {
+      "name": "8 Kappa Psc",
+      "catalog": "HIP 115738 · HD 220825 · HR 8911",
+      "magnitude": 4.95
+    },
+    "-4.4883,1.7800": {
+      "name": "18 Lambda Psc",
+      "catalog": "HIP 116928 · HD 222603 · HR 8984",
+      "magnitude": 4.49
+    },
+    "-3.4020,3.4868": {
+      "name": "19 Psc",
+      "catalog": "HIP 117245 · HD 223075 · HR 9004",
+      "magnitude": 4.95
+    },
+    "-14.0308,3.8200": {
+      "name": "Fumalsamakah",
+      "catalog": "HIP 113889 · HD 217891 · HR 8773",
+      "magnitude": 4.48
+    },
+    "-19.8361,-27.0436": {
+      "name": "18 Epsilon PsA",
+      "catalog": "HIP 111954 · HD 214748 · HR 8628",
+      "magnitude": 4.18
+    },
+    "-15.5873,-29.6222": {
+      "name": "Fomalhaut",
+      "catalog": "HIP 113368 · HD 216956 · HR 8728",
+      "magnitude": 1.17
+    },
+    "-16.0129,-32.5396": {
+      "name": "23 Delta PsA",
+      "catalog": "HIP 113246 · HD 216763 · HR 8720",
+      "magnitude": 4.2
+    },
+    "-16.8686,-32.8755": {
+      "name": "22 Gamma PsA",
+      "catalog": "HIP 112948 · HD 216336 · HR 8695",
+      "magnitude": 4.46
+    },
+    "-22.1236,-32.3461": {
+      "name": "17 Beta PsA",
+      "catalog": "HIP 111188 · HD 213398 · HR 8576",
+      "magnitude": 4.29
+    },
+    "-27.9041,-32.9885": {
+      "name": "14 Mu PsA",
+      "catalog": "HIP 109285 · HD 210049 · HR 8431",
+      "magnitude": 4.5
+    },
+    "-33.7633,-33.0258": {
+      "name": "9 Iota PsA",
+      "catalog": "HIP 107380 · HD 206742 · HR 8305",
+      "magnitude": 4.35
+    },
+    "-33.0660,-30.8983": {
+      "name": "10 Theta PsA",
+      "catalog": "HIP 107608 · HD 207155 · HR 8326",
+      "magnitude": 5.02
+    },
+    "109.2857,-37.0975": {
+      "name": "Pi Pup",
+      "catalog": "HIP 35264 · HD 56855 · HR 2773",
+      "magnitude": 2.71
+    },
+    "113.8454,-28.3693": {
+      "name": "HR 2922",
+      "catalog": "HIP 36917 · HD 60863 · HR 2922",
+      "magnitude": 4.65
+    },
+    "114.7078,-26.8038": {
+      "name": "HR 2948",
+      "catalog": "HIP 37229 · HD 61555 · HR 2948",
+      "magnitude": 3.8
+    },
+    "117.3236,-24.8598": {
+      "name": "Azmidi",
+      "catalog": "HIP 38170 · HD 63700 · HR 3045",
+      "magnitude": 3.34
+    },
+    "119.2147,-22.8801": {
+      "name": "11 Pup",
+      "catalog": "HIP 38835 · HD 65228 · HR 3102",
+      "magnitude": 4.2
+    },
+    "121.8860,-24.3043": {
+      "name": "Tureis",
+      "catalog": "HIP 39757 · HD 67523 · HR 3185",
+      "magnitude": 2.83
+    },
+    "120.8960,-40.0031": {
+      "name": "Naos",
+      "catalog": "HIP 39429 · HD 66811 · HR 3165",
+      "magnitude": 2.21
+    },
+    "117.0215,-25.9372": {
+      "name": "Omicron Pup",
+      "catalog": "HIP 38070 · HD 63462 · HR 3034",
+      "magnitude": 4.4
+    },
+    "115.9520,-28.9548": {
+      "name": "HD 62558",
+      "catalog": "HIP 37639 · HD 62558",
+      "magnitude": 8.23
+    },
+    "130.0256,-35.3084": {
+      "name": "Beta Pyx",
+      "catalog": "HIP 42515 · HD 74006 · HR 3438",
+      "magnitude": 3.97
+    },
+    "130.8981,-33.1864": {
+      "name": "Alpha Pyx",
+      "catalog": "HIP 42828 · HD 74575 · HR 3468",
+      "magnitude": 3.68
+    },
+    "132.6330,-27.7098": {
+      "name": "Gamma Pyx",
+      "catalog": "HIP 43409 · HD 75691 · HR 3518",
+      "magnitude": 4.02
+    },
+    "63.6062,-62.4739": {
+      "name": "Rhombus",
+      "catalog": "HIP 19780 · HD 27256 · HR 1336",
+      "magnitude": 3.33
+    },
+    "64.1210,-59.3022": {
+      "name": "Epsilon Ret",
+      "catalog": "HIP 19921 · HD 27442 · HR 1355",
+      "magnitude": 4.44
+    },
+    "59.6865,-61.4002": {
+      "name": "Delta Ret",
+      "catalog": "HIP 18597 · HD 25422 · HR 1247",
+      "magnitude": 4.56
+    },
+    "56.0499,-64.8069": {
+      "name": "Beta Ret",
+      "catalog": "HIP 17440 · HD 23817 · HR 1175",
+      "magnitude": 3.84
+    },
+    "-64.9759,18.0139": {
+      "name": "Sham",
+      "catalog": "HIP 96757 · HD 185758 · HR 7479",
+      "magnitude": 4.39
+    },
+    "-63.1531,18.5343": {
+      "name": "7 Delta Sge",
+      "catalog": "HIP 97365 · HD 187076 · HR 7536",
+      "magnitude": 3.68
+    },
+    "-60.3107,19.4921": {
+      "name": "12 Gamma Sge",
+      "catalog": "HIP 98337 · HD 189319 · HR 7635",
+      "magnitude": 3.51
+    },
+    "-64.7378,17.4760": {
+      "name": "6 Beta Sge",
+      "catalog": "HIP 96837 · HD 185958 · HR 7488",
+      "magnitude": 4.39
+    },
+    "-85.5932,-36.7617": {
+      "name": "Eta Sgr",
+      "catalog": "HIP 89642 · HD 167618 · HR 6832",
+      "magnitude": 3.1
+    },
+    "-83.9570,-34.3846": {
+      "name": "Kaus Australis",
+      "catalog": "HIP 90185 · HD 169022 · HR 6879",
+      "magnitude": 1.79
+    },
+    "-84.7515,-29.8281": {
+      "name": "Kaus Media",
+      "catalog": "HIP 89931 · HD 168454 · HR 6859",
+      "magnitude": 2.72
+    },
+    "-83.0073,-25.4217": {
+      "name": "Kaus Borealis",
+      "catalog": "HIP 90496 · HD 169916 · HR 6913",
+      "magnitude": 2.82
+    },
+    "-86.5591,-21.0588": {
+      "name": "HD 167225",
+      "catalog": "HIP 89425 · HD 167225",
+      "magnitude": 7.86
+    },
+    "-69.3404,-44.4590": {
+      "name": "Arkab Prior",
+      "catalog": "HIP 95241 · HD 181454 · HR 7337",
+      "magnitude": 3.96
+    },
+    "-69.0284,-40.6159": {
+      "name": "Rukbat",
+      "catalog": "HIP 95347 · HD 181869 · HR 7348",
+      "magnitude": 3.96
+    },
+    "-74.3470,-29.8801": {
+      "name": "Ascella",
+      "catalog": "HIP 93506 · HD 176687 · HR 7194",
+      "magnitude": 2.6
+    },
+    "-78.5859,-26.9908": {
+      "name": "27 Phi Sgr",
+      "catalog": "HIP 92041 · HD 173300 · HR 7039",
+      "magnitude": 3.17
+    },
+    "-61.1846,-41.8683": {
+      "name": "Iota Sgr",
+      "catalog": "HIP 98032 · HD 188114 · HR 7581",
+      "magnitude": 4.12
+    },
+    "-60.0659,-35.2763": {
+      "name": "Theta-1 Sgr",
+      "catalog": "HIP 98412 · HD 189103 · HR 7623",
+      "magnitude": 4.37
+    },
+    "-61.0402,-26.2995": {
+      "name": "Terebellum",
+      "catalog": "HIP 98066 · HD 188376 · HR 7597",
+      "magnitude": 4.7
+    },
+    "-65.8232,-24.8836": {
+      "name": "52 Sgr",
+      "catalog": "HIP 96465 · HD 184707 · HR 7440",
+      "magnitude": 4.59
+    },
+    "-68.6813,-24.5086": {
+      "name": "47 Chi-1 Sgr",
+      "catalog": "HIP 95477 · HD 182369 · HR 7362",
+      "magnitude": 5.02
+    },
+    "-71.1149,-25.2567": {
+      "name": "42 Psi Sgr",
+      "catalog": "HIP 94643 · HD 179950 · HR 7292",
+      "magnitude": 4.86
+    },
+    "-76.1836,-26.2967": {
+      "name": "Nunki",
+      "catalog": "HIP 92855 · HD 175191 · HR 7121",
+      "magnitude": 2.05
+    },
+    "-88.5480,-30.4241": {
+      "name": "Alnasl",
+      "catalog": "HIP 88635 · HD 165135 · HR 6746",
+      "magnitude": 2.98
+    },
+    "-73.2650,-27.6704": {
+      "name": "40 Tau Sgr",
+      "catalog": "HIP 93864 · HD 177716 · HR 7234",
+      "magnitude": 3.32
+    },
+    "-73.8292,-21.7415": {
+      "name": "39 Omicron Sgr",
+      "catalog": "HIP 93683 · HD 177241 · HR 7217",
+      "magnitude": 3.76
+    },
+    "-72.5590,-21.0236": {
+      "name": "Albaldah",
+      "catalog": "HIP 94141 · HD 178524 · HR 7264",
+      "magnitude": 2.88
+    },
+    "-70.5913,-18.9529": {
+      "name": "43 Sgr",
+      "catalog": "HIP 94820 · HD 180540 · HR 7304",
+      "magnitude": 4.88
+    },
+    "-69.5818,-17.8472": {
+      "name": "44 Rho-1 Sgr",
+      "catalog": "HIP 95168 · HD 181577 · HR 7340",
+      "magnitude": 3.92
+    },
+    "-69.5682,-15.9550": {
+      "name": "46 Upsilon Sgr",
+      "catalog": "HIP 95176 · HD 181615 · HR 7342",
+      "magnitude": 4.52
+    },
+    "-75.5675,-21.1067": {
+      "name": "37 Xi-2 Sgr",
+      "catalog": "HIP 93085 · HD 175775 · HR 7150",
+      "magnitude": 3.52
+    },
+    "-76.4576,-22.7448": {
+      "name": "Ainalrami",
+      "catalog": "HIP 92761 · HD 174974 · HR 7116",
+      "magnitude": 4.86
+    },
+    "-120.2870,-26.1141": {
+      "name": "Fang",
+      "catalog": "HIP 78265 · HD 143018 · HR 5944",
+      "magnitude": 2.89
+    },
+    "-119.9166,-22.6217": {
+      "name": "Dschubba",
+      "catalog": "HIP 78401 · HD 143275 · HR 5953",
+      "magnitude": 2.29
+    },
+    "-118.6407,-19.8055": {
+      "name": "Acrab",
+      "catalog": "HIP 78820 · HD 144217 · HR 5984",
+      "magnitude": 2.56
+    },
+    "-114.7028,-25.5928": {
+      "name": "Alniyat",
+      "catalog": "HIP 80112 · HD 147165 · HR 6084",
+      "magnitude": 2.9
+    },
+    "-112.6481,-26.4320": {
+      "name": "Antares",
+      "catalog": "HIP 80763 · HD 148478 · HR 6134",
+      "magnitude": 1.06
+    },
+    "-111.0294,-28.2160": {
+      "name": "Paikauhale",
+      "catalog": "HIP 81266 · HD 149438 · HR 6165",
+      "magnitude": 2.82
+    },
+    "-107.4591,-34.2932": {
+      "name": "Larawag",
+      "catalog": "HIP 82396 · HD 151680 · HR 6241",
+      "magnitude": 2.29
+    },
+    "-107.0324,-38.0474": {
+      "name": "Xamidimura",
+      "catalog": "HIP 82514 · HD 151890 · HR 6247",
+      "magnitude": 3
+    },
+    "-106.3541,-42.3613": {
+      "name": "Zeta-2 Sco",
+      "catalog": "HIP 82729 · HD 152334 · HR 6271",
+      "magnitude": 3.62
+    },
+    "-101.9617,-43.2392": {
+      "name": "Eta Sco",
+      "catalog": "HIP 84143 · HD 155203 · HR 6380",
+      "magnitude": 3.32
+    },
+    "-95.6703,-42.9978": {
+      "name": "Sargas",
+      "catalog": "HIP 86228 · HD 159532 · HR 6553",
+      "magnitude": 1.86
+    },
+    "-93.1038,-40.1270": {
+      "name": "Iota-1 Sco",
+      "catalog": "HIP 87073 · HD 161471 · HR 6615",
+      "magnitude": 2.99
+    },
+    "-94.3780,-39.0300": {
+      "name": "Kappa Sco",
+      "catalog": "HIP 86670 · HD 160578 · HR 6580",
+      "magnitude": 2.39
+    },
+    "-96.5978,-37.1038": {
+      "name": "Shaula",
+      "catalog": "HIP 85927 · HD 158926 · HR 6527",
+      "magnitude": 1.62
+    },
+    "14.6515,-29.3574": {
+      "name": "Alpha Scl",
+      "catalog": "HIP 4577 · HD 5737 · HR 280",
+      "magnitude": 4.3
+    },
+    "-2.7686,-28.1303": {
+      "name": "Delta Scl",
+      "catalog": "HIP 117452 · HD 223352 · HR 9016",
+      "magnitude": 4.59
+    },
+    "-10.2940,-32.5320": {
+      "name": "Gamma Scl",
+      "catalog": "HIP 115102 · HD 219784 · HR 8863",
+      "magnitude": 4.41
+    },
+    "-6.7573,-37.8183": {
+      "name": "Beta Scl",
+      "catalog": "HIP 116231 · HD 221507 · HR 8937",
+      "magnitude": 4.38
+    },
+    "-81.1982,-8.2441": {
+      "name": "Alpha Sct",
+      "catalog": "HIP 91117 · HD 171443 · HR 6973",
+      "magnitude": 3.85
+    },
+    "-78.2064,-4.7479": {
+      "name": "Beta Sct",
+      "catalog": "HIP 92175 · HD 173764 · HR 7063",
+      "magnitude": 4.22
+    },
+    "-79.4316,-9.0525": {
+      "name": "Delta Sct",
+      "catalog": "HIP 91726 · HD 172748 · HR 7020",
+      "magnitude": 4.7
+    },
+    "-82.7006,-14.5658": {
+      "name": "Gamma Sct",
+      "catalog": "HIP 90595 · HD 170296 · HR 6930",
+      "magnitude": 4.67
+    },
+    "-123.4531,15.4218": {
+      "name": "Zhou",
+      "catalog": "HIP 77233 · HD 141003 · HR 5867",
+      "magnitude": 3.65
+    },
+    "-124.6123,19.6704": {
+      "name": "21 Iota Ser",
+      "catalog": "HIP 76852 · HD 140159 · HR 5842",
+      "magnitude": 4.51
+    },
+    "-122.8151,18.1416": {
+      "name": "Gudja",
+      "catalog": "HIP 77450 · HD 141477 · HR 5879",
+      "magnitude": 4.09
+    },
+    "-120.8867,15.6616": {
+      "name": "41 Gamma Ser",
+      "catalog": "HIP 78072 · HD 142860 · HR 5933",
+      "magnitude": 3.85
+    },
+    "-126.2994,10.5389": {
+      "name": "13 Delta Ser",
+      "catalog": "HIP 76276 · HD 138917 · HR 5788",
+      "magnitude": 3.8
+    },
+    "-123.9330,6.4256": {
+      "name": "Unukalhai",
+      "catalog": "HIP 77070 · HD 140573 · HR 5854",
+      "magnitude": 2.63
+    },
+    "-122.2960,4.4777": {
+      "name": "37 Epsilon Ser",
+      "catalog": "HIP 77622 · HD 141795 · HR 5892",
+      "magnitude": 3.71
+    },
+    "-95.6033,-15.3986": {
+      "name": "55 Xi Ser",
+      "catalog": "HIP 86263 · HD 159876 · HR 6561",
+      "magnitude": 3.54
+    },
+    "-89.2295,-8.1803": {
+      "name": "69 Tau Oph",
+      "catalog": "HIP 88404 · HD 164764 · HR 6733",
+      "magnitude": 4.77
+    },
+    "-84.6725,-2.8988": {
+      "name": "58 Eta Ser",
+      "catalog": "HIP 89962 · HD 168723 · HR 6869",
+      "magnitude": 3.23
+    },
+    "-75.9451,4.2036": {
+      "name": "Alya",
+      "catalog": "HIP 92946 · HD 175638 · HR 7141",
+      "magnitude": 4.62
+    },
+    "151.9845,-0.3716": {
+      "name": "15 Alpha Sex",
+      "catalog": "HIP 49641 · HD 87887 · HR 3981",
+      "magnitude": 4.48
+    },
+    "148.1268,-8.1050": {
+      "name": "8 Gamma Sex",
+      "catalog": "HIP 48437 · HD 85558 · HR 3909",
+      "magnitude": 5.07
+    },
+    "157.3696,-2.7391": {
+      "name": "29 Delta Sex",
+      "catalog": "HIP 51362 · HD 90882 · HR 4116",
+      "magnitude": 5.19
+    },
+    "157.5728,-0.6370": {
+      "name": "30 Beta Sex",
+      "catalog": "HIP 51437 · HD 90994 · HR 4119",
+      "magnitude": 5.08
+    },
+    "84.4112,21.1425": {
+      "name": "Tianguan",
+      "catalog": "HIP 26451 · HD 37202 · HR 1910",
+      "magnitude": 2.97
+    },
+    "68.9802,16.5093": {
+      "name": "Aldebaran",
+      "catalog": "HIP 21421 · HD 29139 · HR 1457",
+      "magnitude": 0.87
+    },
+    "67.1656,15.8709": {
+      "name": "Chamukuy",
+      "catalog": "HIP 20894 · HD 28319 · HR 1412",
+      "magnitude": 3.4
+    },
+    "64.9483,15.6276": {
+      "name": "Prima Hyadum",
+      "catalog": "HIP 20205 · HD 27371 · HR 1346",
+      "magnitude": 3.65
+    },
+    "65.7337,17.5425": {
+      "name": "Secunda Hyadum",
+      "catalog": "HIP 20455 · HD 27697 · HR 1373",
+      "magnitude": 3.77
+    },
+    "67.1542,19.1804": {
+      "name": "Ain",
+      "catalog": "HIP 20889 · HD 28305 · HR 1409",
+      "magnitude": 3.53
+    },
+    "60.1701,12.4903": {
+      "name": "35 Lambda Tau",
+      "catalog": "HIP 18724 · HD 25204 · HR 1239",
+      "magnitude": 3.41
+    },
+    "51.7923,9.7327": {
+      "name": "2 Xi Tau",
+      "catalog": "HIP 16083 · HD 21364 · HR 1038",
+      "magnitude": 3.73
+    },
+    "60.7891,5.9893": {
+      "name": "38 Nu Tau",
+      "catalog": "HIP 18907 · HD 25490 · HR 1251",
+      "magnitude": 3.91
+    },
+    "51.2033,9.0289": {
+      "name": "1 Omicron Tau",
+      "catalog": "HIP 15900 · HD 21120 · HR 1030",
+      "magnitude": 3.61
+    },
+    "54.2183,0.4017": {
+      "name": "10 Tau",
+      "catalog": "HIP 16852 · HD 22484 · HR 1101",
+      "magnitude": 4.29
+    },
+    "-87.1927,-45.9544": {
+      "name": "Epsilon Tel",
+      "catalog": "HIP 89112 · HD 166063 · HR 6783",
+      "magnitude": 4.52
+    },
+    "-83.2566,-45.9685": {
+      "name": "Alpha Tel",
+      "catalog": "HIP 90422 · HD 169467 · HR 6897",
+      "magnitude": 3.49
+    },
+    "-82.7923,-49.0706": {
+      "name": "Zeta Tel",
+      "catalog": "HIP 90568 · HD 169767 · HR 6905",
+      "magnitude": 4.1
+    },
+    "28.2704,29.5788": {
+      "name": "Mothallah",
+      "catalog": "HIP 8796 · HD 11443 · HR 544",
+      "magnitude": 3.42
+    },
+    "32.3859,34.9873": {
+      "name": "4 Beta Tri",
+      "catalog": "HIP 10064 · HD 13161 · HR 622",
+      "magnitude": 3
+    },
+    "34.3286,33.8472": {
+      "name": "9 Gamma Tri",
+      "catalog": "HIP 10670 · HD 14055 · HR 664",
+      "magnitude": 4.03
+    },
+    "-107.8338,-69.0277": {
+      "name": "Atria",
+      "catalog": "HIP 82273 · HD 150798 · HR 6217",
+      "magnitude": 1.91
+    },
+    "-121.2143,-63.4307": {
+      "name": "Beta TrA",
+      "catalog": "HIP 77952 · HD 141891 · HR 5897",
+      "magnitude": 2.83
+    },
+    "-130.2726,-68.6795": {
+      "name": "Gamma TrA",
+      "catalog": "HIP 74946 · HD 135382 · HR 5671",
+      "magnitude": 2.87
+    },
+    "-25.3746,-60.2596": {
+      "name": "Lang-Exster",
+      "catalog": "HIP 110130 · HD 211416 · HR 8502",
+      "magnitude": 2.87
+    },
+    "-10.6426,-58.2357": {
+      "name": "Gamma Tuc",
+      "catalog": "HIP 114996 · HD 219571 · HR 8848",
+      "magnitude": 3.99
+    },
+    "7.8861,-62.9582": {
+      "name": "Beta-1 Tuc",
+      "catalog": "HIP 2484 · HD 2884 · HR 126",
+      "magnitude": 4.36
+    },
+    "5.0178,-64.8748": {
+      "name": "Zeta Tuc",
+      "catalog": "HIP 1599 · HD 1581 · HR 77",
+      "magnitude": 4.23
+    },
+    "-0.0209,-65.5771": {
+      "name": "Epsilon Tuc",
+      "catalog": "HIP 118322 · HD 224686 · HR 9076",
+      "magnitude": 4.49
+    },
+    "-23.1668,-64.9664": {
+      "name": "Delta Tuc",
+      "catalog": "HIP 110838 · HD 212581 · HR 8540",
+      "magnitude": 4.51
+    },
+    "-176.1435,57.0326": {
+      "name": "Megrez",
+      "catalog": "HIP 59774 · HD 106591 · HR 4660",
+      "magnitude": 3.32
+    },
+    "165.9320,61.7510": {
+      "name": "Dubhe",
+      "catalog": "HIP 54061 · HD 95689 · HR 4301",
+      "magnitude": 1.81
+    },
+    "165.4603,56.3824": {
+      "name": "Merak",
+      "catalog": "HIP 53910 · HD 95418 · HR 4295",
+      "magnitude": 2.34
+    },
+    "178.4577,53.6948": {
+      "name": "Phecda",
+      "catalog": "HIP 58001 · HD 103287 · HR 4554",
+      "magnitude": 2.41
+    },
+    "-166.4927,55.9598": {
+      "name": "Alioth",
+      "catalog": "HIP 62956 · HD 112185 · HR 4905",
+      "magnitude": 1.76
+    },
+    "-159.0186,54.9254": {
+      "name": "Mizar",
+      "catalog": "HIP 65378 · HD 116656 · HR 5054",
+      "magnitude": 2.23
+    },
+    "-153.1148,49.3133": {
+      "name": "Alkaid",
+      "catalog": "HIP 67301 · HD 120315 · HR 5191",
+      "magnitude": 1.85
+    },
+    "176.5126,47.7794": {
+      "name": "Taiyangshou",
+      "catalog": "HIP 57399 · HD 102224 · HR 4518",
+      "magnitude": 3.69
+    },
+    "169.6197,33.0943": {
+      "name": "Alula Borealis",
+      "catalog": "HIP 55219 · HD 98262 · HR 4377",
+      "magnitude": 3.49
+    },
+    "169.5468,31.5308": {
+      "name": "Alula Australis B",
+      "catalog": "HD 98230 · HR 4374",
+      "magnitude": 4.8
+    },
+    "167.4159,44.4985": {
+      "name": "52 Psi UMa",
+      "catalog": "HIP 54539 · HD 96833 · HR 4335",
+      "magnitude": 3
+    },
+    "155.5823,41.4995": {
+      "name": "Tania Australis",
+      "catalog": "HIP 50801 · HD 89758 · HR 4069",
+      "magnitude": 3.06
+    },
+    "154.2741,42.9144": {
+      "name": "Tania Borealis",
+      "catalog": "HIP 50372 · HD 89021 · HR 4033",
+      "magnitude": 3.45
+    },
+    "142.8821,63.0619": {
+      "name": "23 UMa",
+      "catalog": "HIP 46733 · HD 81937 · HR 3757",
+      "magnitude": 3.65
+    },
+    "127.5661,60.7182": {
+      "name": "Muscida",
+      "catalog": "HIP 41704 · HD 71369 · HR 3323",
+      "magnitude": 3.35
+    },
+    "147.7473,59.0387": {
+      "name": "29 Upsilon UMa",
+      "catalog": "HIP 48319 · HD 84999 · HR 3888",
+      "magnitude": 3.78
+    },
+    "148.0265,54.0643": {
+      "name": "30 Phi UMa",
+      "catalog": "HIP 48402 · HD 85235 · HR 3894",
+      "magnitude": 4.55
+    },
+    "143.2143,51.6773": {
+      "name": "25 Theta UMa",
+      "catalog": "HIP 46853 · HD 82328 · HR 3775",
+      "magnitude": 3.17
+    },
+    "134.8019,48.0418": {
+      "name": "Talitha",
+      "catalog": "HIP 44127 · HD 76644 · HR 3569",
+      "magnitude": 3.12
+    },
+    "135.9064,47.1565": {
+      "name": "Alkaphrah",
+      "catalog": "HIP 44471 · HD 77327 · HR 3594",
+      "magnitude": 3.57
+    },
+    "-123.9853,77.7945": {
+      "name": "16 Zeta UMi",
+      "catalog": "HIP 77055 · HD 142105 · HR 5903",
+      "magnitude": 4.29
+    },
+    "-115.6238,75.7553": {
+      "name": "21 Eta UMi",
+      "catalog": "HIP 79822 · HD 148048 · HR 6116",
+      "magnitude": 4.95
+    },
+    "-129.8179,71.8340": {
+      "name": "Pherkad",
+      "catalog": "HIP 75097 · HD 137422 · HR 5735",
+      "magnitude": 3
+    },
+    "-137.3236,74.1555": {
+      "name": "Kochab",
+      "catalog": "HIP 72607 · HD 131873 · HR 5563",
+      "magnitude": 2.07
+    },
+    "-108.5073,82.0373": {
+      "name": "22 Epsilon UMi",
+      "catalog": "HIP 82080 · HD 153751 · HR 6322",
+      "magnitude": 4.21
+    },
+    "-96.9458,86.5865": {
+      "name": "Yildun",
+      "catalog": "HIP 85822 · HD 166205 · HR 6789",
+      "magnitude": 4.35
+    },
+    "37.9545,89.2641": {
+      "name": "Polaris",
+      "catalog": "HIP 11767 · HD 8890 · HR 424",
+      "magnitude": 1.97
+    },
+    "140.5284,-55.0107": {
+      "name": "Markeb",
+      "catalog": "HIP 45941 · HD 81188 · HR 3734",
+      "magnitude": 2.47
+    },
+    "149.2156,-54.5678": {
+      "name": "Phi Vel",
+      "catalog": "HIP 48774 · HD 86440 · HR 3940",
+      "magnitude": 3.52
+    },
+    "161.6924,-49.4203": {
+      "name": "Mu Vel",
+      "catalog": "HIP 52727 · HD 93497 · HR 4216",
+      "magnitude": 2.69
+    },
+    "153.6840,-42.1219": {
+      "name": "HR 4023",
+      "catalog": "HIP 50191 · HD 88955 · HR 4023",
+      "magnitude": 3.85
+    },
+    "142.6750,-40.4668": {
+      "name": "Psi Vel",
+      "catalog": "HIP 46651 · HD 82434 · HR 3786",
+      "magnitude": 3.6
+    },
+    "136.9990,-43.4326": {
+      "name": "Suhail",
+      "catalog": "HIP 44816 · HD 78647 · HR 3634",
+      "magnitude": 2.23
+    },
+    "176.4648,6.5294": {
+      "name": "3 Nu Vir",
+      "catalog": "HIP 57380 · HD 102212 · HR 4517",
+      "magnitude": 4.04
+    },
+    "177.6738,1.7647": {
+      "name": "Zavijava",
+      "catalog": "HIP 57757 · HD 102870 · HR 4540",
+      "magnitude": 3.59
+    },
+    "-175.0235,-0.6668": {
+      "name": "Zaniah",
+      "catalog": "HIP 60129 · HD 107259 · HR 4689",
+      "magnitude": 3.89
+    },
+    "-169.5848,-1.4494": {
+      "name": "Porrima",
+      "catalog": "HIP 61941 · HD 110379 · HR 4825",
+      "magnitude": 2.74
+    },
+    "-162.5125,-5.5390": {
+      "name": "51 Theta Vir",
+      "catalog": "HIP 64238 · HD 114330 · HR 4963",
+      "magnitude": 4.38
+    },
+    "-158.7018,-11.1613": {
+      "name": "Spica",
+      "catalog": "HIP 65474 · HD 116658 · HR 5056",
+      "magnitude": 0.98
+    },
+    "-145.9964,-6.0005": {
+      "name": "Syrma",
+      "catalog": "HIP 69701 · HD 124850 · HR 5338",
+      "magnitude": 4.07
+    },
+    "-139.2349,-5.6582": {
+      "name": "107 Mu Vir",
+      "catalog": "HIP 71957 · HD 129502 · HR 5487",
+      "magnitude": 3.87
+    },
+    "-164.4558,10.9592": {
+      "name": "Vindemiatrix",
+      "catalog": "HIP 63608 · HD 113226 · HR 4932",
+      "magnitude": 2.85
+    },
+    "-166.0991,3.3975": {
+      "name": "Minelauva",
+      "catalog": "HIP 63090 · HD 112300 · HR 4910",
+      "magnitude": 3.39
+    },
+    "-156.3267,-0.5958": {
+      "name": "Heze",
+      "catalog": "HIP 66249 · HD 118098 · HR 5107",
+      "magnitude": 3.38
+    },
+    "-149.5884,1.5445": {
+      "name": "93 Tau Vir",
+      "catalog": "HIP 68520 · HD 122408 · HR 5264",
+      "magnitude": 4.23
+    },
+    "-138.4378,1.8929": {
+      "name": "109 Vir",
+      "catalog": "HIP 72220 · HD 130109 · HR 5511",
+      "magnitude": 3.73
+    },
+    "135.6116,-66.3961": {
+      "name": "Alpha Vol",
+      "catalog": "HIP 44382 · HD 78045 · HR 3615",
+      "magnitude": 4
+    },
+    "126.4341,-66.1369": {
+      "name": "Beta Vol",
+      "catalog": "HIP 41312 · HD 71878 · HR 3347",
+      "magnitude": 3.77
+    },
+    "121.9825,-68.6171": {
+      "name": "Epsilon Vol",
+      "catalog": "HIP 39794 · HD 68520 · HR 3223",
+      "magnitude": 4.35
+    },
+    "109.2076,-67.9572": {
+      "name": "Delta Vol",
+      "catalog": "HIP 35228 · HD 57623 · HR 2803",
+      "magnitude": 3.97
+    },
+    "107.1869,-70.4989": {
+      "name": "Gamma-2 Vol",
+      "catalog": "HIP 34481 · HD 55865 · HR 2736",
+      "magnitude": 3.78
+    },
+    "-70.9457,21.3904": {
+      "name": "1 Vul",
+      "catalog": "HIP 94703 · HD 180554 · HR 7306",
+      "magnitude": 4.76
+    },
+    "-67.8236,24.6649": {
+      "name": "Anser",
+      "catalog": "HIP 95771 · HD 183439 · HR 7405",
+      "magnitude": 4.44
+    },
+    "-61.6346,24.0796": {
+      "name": "13 Vul",
+      "catalog": "HIP 97886 · HD 188260 · HR 7592",
+      "magnitude": 4.57
+    },
+    "-59.7248,27.7536": {
+      "name": "15 Vul",
+      "catalog": "HIP 98543 · HD 189849 · HR 7653",
+      "magnitude": 4.66
+    },
+    "-56.0578,27.8142": {
+      "name": "23 Vul",
+      "catalog": "HIP 99874 · HD 192806 · HR 7744",
+      "magnitude": 4.5
+    }
+  }
+}

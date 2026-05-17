@@ -300,6 +300,13 @@ export class Camera {
     this.setWheelZoomGoal(closeDistance, wheelSteps);
   }
 
+  lookFromEyeToTarget(eye: Vec3, target: Vec3): void {
+    this.cancelTravelAnimation();
+    this.clearWheelZoomGoal();
+    this.setViewFromEyeAndTarget(eye, target);
+    this.lockTarget = true;
+  }
+
   private setViewFromEyeAndTarget(eye: Vec3, target: Vec3): void {
     const dx = eye[0] - target[0];
     const dy = eye[1] - target[1];

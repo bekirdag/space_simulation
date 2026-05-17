@@ -82,6 +82,7 @@ function unique(values) {
 
 const lines = loadJson("public/cache/nasa/constellations-lines.geojson");
 const names = loadJson("public/cache/nasa/constellations-names.geojson");
+const starNames = loadJson("public/cache/nasa/constellation-stars.json");
 const stars = loadFloat32("public/data/visible-stars-100k.bin");
 const starCache = buildStarCache(stars);
 
@@ -100,12 +101,19 @@ if (extraNames.length) fail(`unexpected name IDs: ${extraNames.join(", ")}`);
 
 const orionName = (names.features ?? []).find(feature => feature.id === "Ori")?.properties?.name;
 if (orionName !== "Orion") fail(`Ori label resolved to ${JSON.stringify(orionName)}, expected "Orion"`);
+if (starNames.stars?.["88.7929,7.4071"]?.name !== "Betelgeuse") {
+  fail("Orion endpoint 88.7929,7.4071 should resolve to Betelgeuse in constellation-stars.json");
+}
+if (starNames.stars?.["78.6345,-8.2016"]?.name !== "Rigel") {
+  fail("Orion endpoint 78.6345,-8.2016 should resolve to Rigel in constellation-stars.json");
+}
 
 let featureCount = 0;
 let segmentCount = 0;
 let endpointCount = 0;
 let maxSnapError = 0;
 const looseEndpoints = [];
+const missingStarNames = [];
 
 for (const feature of lines.features ?? []) {
   if (feature.geometry?.type !== "MultiLineString") continue;
@@ -121,6 +129,8 @@ for (const feature of lines.features ?? []) {
       segmentCount++;
       for (const coord of [a, b]) {
         endpointCount++;
+        const key = `${coord[0].toFixed(4)},${coord[1].toFixed(4)}`;
+        if (!starNames.stars?.[key]?.name) missingStarNames.push({ id: feature.id, key });
         const error = closestSnapErrorDeg(coord, starCache);
         maxSnapError = Math.max(maxSnapError, error);
         if (error > MAX_SNAP_ERROR_DEG) {
@@ -138,6 +148,10 @@ for (const feature of lines.features ?? []) {
 
 if (featureCount !== 89) fail(`expected 89 constellation figures including Serpens halves, got ${featureCount}`);
 if (segmentCount <= 0) fail("no constellation line segments found");
+if (missingStarNames.length) {
+  fail(`${missingStarNames.length} constellation endpoints have no star-label cache entry`);
+  console.table(missingStarNames.slice(0, 12));
+}
 if (looseEndpoints.length) {
   fail(`${looseEndpoints.length} endpoints exceed ${MAX_SNAP_ERROR_DEG} deg snap tolerance`);
   console.table(looseEndpoints.slice(0, 12));

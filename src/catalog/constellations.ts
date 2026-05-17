@@ -4,6 +4,7 @@ export const CONSTELLATION_FLOATS = 4; // pos xyz + alpha
 
 const CONSTELLATION_LINES_URL = "/cache/nasa/constellations-lines.geojson";
 const CONSTELLATION_NAMES_URL = "/cache/nasa/constellations-names.geojson";
+const CONSTELLATION_STAR_NAMES_URL = "/cache/nasa/constellation-stars.json";
 const VISIBLE_STAR_DATA_URL = "/data/visible-stars-100k.bin";
 const STAR_CACHE_FLOATS = 6; // pos xyz + unit direction xyz
 const LABEL_DISTANCE_SCALE = 1.035;
@@ -32,6 +33,7 @@ interface ConstellationGeoJSON {
 
 export interface ConstellationLineLoad {
   data: Float32Array;
+  figures: ConstellationFigure[];
   labels: ConstellationLabel[];
   source: string;
   featureCount: number;
@@ -52,12 +54,43 @@ export interface ConstellationLabel {
   alpha: number;
 }
 
+export interface ConstellationStarLabel {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  z: number;
+  alpha: number;
+  magnitude?: number;
+  catalog?: string;
+}
+
+export interface ConstellationFigure {
+  id: string;
+  abbreviation: string;
+  name: string;
+  data: Float32Array;
+  label: ConstellationLabel;
+  starLabels: ConstellationStarLabel[];
+}
+
 interface SnappedStar {
+  key: string;
   x: number;
   y: number;
   z: number;
   distance: number;
   angularErrorDeg: number;
+}
+
+interface ConstellationStarName {
+  name: string;
+  catalog?: string;
+  magnitude?: number;
+}
+
+interface ConstellationStarNameCache {
+  stars?: Record<string, ConstellationStarName>;
 }
 
 function isLonLat(value: unknown): value is LonLat {
@@ -136,6 +169,7 @@ function closestCatalogStar(coord: LonLat, starCache: Float32Array): SnappedStar
   const y = starCache[bestOffset + 1]!;
   const z = starCache[bestOffset + 2]!;
   return {
+    key: coordKey(coord),
     x, y, z,
     distance: Math.hypot(x, y, z),
     angularErrorDeg: Math.acos(clamp(bestDot, -1, 1)) * 180 / Math.PI,
@@ -250,6 +284,16 @@ async function loadJson<T>(url: string): Promise<T> {
   return await resp.json() as T;
 }
 
+async function loadConstellationStarNameCache(): Promise<Map<string, ConstellationStarName>> {
+  try {
+    const json = await loadJson<ConstellationStarNameCache>(CONSTELLATION_STAR_NAMES_URL);
+    return new Map(Object.entries(json.stars ?? {}));
+  } catch (err) {
+    console.warn("Constellation star-name cache unavailable:", err);
+    return new Map();
+  }
+}
+
 async function loadVisibleStarSnapshot(): Promise<Float32Array> {
   const resp = await fetch(VISIBLE_STAR_DATA_URL, { cache: "force-cache" });
   if (!resp.ok) throw new Error(`${VISIBLE_STAR_DATA_URL} returned HTTP ${resp.status}`);
@@ -260,10 +304,36 @@ async function loadVisibleStarSnapshot(): Promise<Float32Array> {
   return new Float32Array(buffer);
 }
 
+function fallbackStarName(abbreviation: string, index: number): string {
+  return `${abbreviation} star ${index + 1}`;
+}
+
+function constellationStarLabel(
+  abbreviation: string,
+  featureId: string,
+  star: SnappedStar,
+  nameCache: Map<string, ConstellationStarName>,
+  index: number,
+  alpha: number,
+): ConstellationStarLabel {
+  const cached = nameCache.get(star.key);
+  return {
+    id: `${featureId}:star:${star.key}`,
+    name: cached?.name ?? fallbackStarName(abbreviation, index),
+    x: star.x,
+    y: star.y,
+    z: star.z,
+    alpha: Math.min(alpha + 0.34, 0.92),
+    ...(cached?.magnitude !== undefined ? { magnitude: cached.magnitude } : {}),
+    ...(cached?.catalog ? { catalog: cached.catalog } : {}),
+  };
+}
+
 export async function loadConstellationLines(): Promise<ConstellationLineLoad> {
-  const [lineJson, nameJson, visibleStars] = await Promise.all([
+  const [lineJson, nameJson, starNameCache, visibleStars] = await Promise.all([
     loadJson<ConstellationGeoJSON>(CONSTELLATION_LINES_URL),
     loadJson<ConstellationGeoJSON>(CONSTELLATION_NAMES_URL),
+    loadConstellationStarNameCache(),
     loadVisibleStarSnapshot(),
   ]);
 
@@ -275,6 +345,7 @@ export async function loadConstellationLines(): Promise<ConstellationLineLoad> {
   const featureCounters = new Map<string, number>();
   const snapCache = new Map<string, SnappedStar>();
   const vertices: number[] = [];
+  const figures: ConstellationFigure[] = [];
   const labels: ConstellationLabel[] = [];
   let featureCount = 0;
   let segmentCount = 0;
@@ -287,9 +358,12 @@ export async function loadConstellationLines(): Promise<ConstellationLineLoad> {
     featureCounters.set(id, featureIndex + 1);
     const labelFeature = nextNameFeature(id, namesById, nameCounters);
     const featureStars: SnappedStar[] = [];
+    const featureStarLabels = new Map<string, ConstellationStarLabel>();
+    const featureVertices: number[] = [];
     featureCount++;
 
     const alpha = alphaForRank(feature.properties?.rank);
+    const featureId = `${id}-${featureIndex}`;
     for (const stroke of feature.geometry.coordinates) {
       if (!Array.isArray(stroke)) continue;
       for (let i = 0; i < stroke.length - 1; i++) {
@@ -298,9 +372,29 @@ export async function loadConstellationLines(): Promise<ConstellationLineLoad> {
         if (!isLonLat(a) || !isLonLat(b)) continue;
         const starA = snapCatalogStar(a, starCache, snapCache);
         const starB = snapCatalogStar(b, starCache, snapCache);
-        pushVertex(vertices, starA, alpha);
-        pushVertex(vertices, starB, alpha);
+        pushVertex(featureVertices, starA, alpha);
+        pushVertex(featureVertices, starB, alpha);
         featureStars.push(starA, starB);
+        if (!featureStarLabels.has(starA.key)) {
+          featureStarLabels.set(starA.key, constellationStarLabel(
+            id,
+            featureId,
+            starA,
+            starNameCache,
+            featureStarLabels.size,
+            alpha,
+          ));
+        }
+        if (!featureStarLabels.has(starB.key)) {
+          featureStarLabels.set(starB.key, constellationStarLabel(
+            id,
+            featureId,
+            starB,
+            starNameCache,
+            featureStarLabels.size,
+            alpha,
+          ));
+        }
         segmentCount++;
       }
     }
@@ -308,14 +402,26 @@ export async function loadConstellationLines(): Promise<ConstellationLineLoad> {
     if (featureStars.length > 0) {
       const center = labelPosition(pointCoordinates(labelFeature), featureStars);
       const [x, y, z] = center;
-      labels.push({
-        id: `${id}-${featureIndex}`,
+      const label = {
+        id: featureId,
         abbreviation: id,
         name: labelName(feature, labelFeature),
         x, y, z,
         radius: labelRadius(center, featureStars),
         rank: labelRank(feature, labelFeature),
         alpha: Math.min(alpha + 0.22, 0.72),
+      };
+      labels.push(label);
+      vertices.push(...featureVertices);
+      figures.push({
+        id: featureId,
+        abbreviation: id,
+        name: label.name,
+        data: new Float32Array(featureVertices),
+        label,
+        starLabels: [...featureStarLabels.values()].sort((a, b) => (
+          (a.magnitude ?? 99) - (b.magnitude ?? 99) || a.name.localeCompare(b.name)
+        )),
       });
     }
   }
@@ -327,6 +433,7 @@ export async function loadConstellationLines(): Promise<ConstellationLineLoad> {
 
   return {
     data: new Float32Array(vertices),
+    figures,
     labels,
     source: "J2000 constellation endpoints snapped to HYG 4.2 visible-star 3D positions",
     featureCount,
@@ -356,7 +463,7 @@ function constellationSearchRank(label: ConstellationLabel, query: string): numb
   return (exact ? -100 : starts ? 0 : 1000) + index + label.rank * 2;
 }
 
-function constellationToSearchResult(label: ConstellationLabel): StarSearchResult {
+export function constellationToSearchResult(label: ConstellationLabel): StarSearchResult {
   return {
     id: `constellation:${label.id}`,
     label: label.name,
@@ -367,6 +474,18 @@ function constellationToSearchResult(label: ConstellationLabel): StarSearchResul
     focusDistance: Math.max(25, label.radius * CONSTELLATION_FOCUS_DISTANCE_FACTOR),
     color: [0.46, 0.70, 1.00],
   };
+}
+
+export function constellationFigureToSearchResult(figure: ConstellationFigure): StarSearchResult {
+  return constellationToSearchResult(figure.label);
+}
+
+export function constellationsToSearchResults(
+  figures: readonly ConstellationFigure[],
+): StarSearchResult[] {
+  return figures
+    .map(constellationFigureToSearchResult)
+    .sort((a, b) => a.label.localeCompare(b.label));
 }
 
 export function searchConstellations(

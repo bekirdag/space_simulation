@@ -20,6 +20,7 @@ interface CatalogSearchOptions {
   searchCatalog:      (query: string) => StarSearchResult[];
   getCatalogStatus:   () => string;
   modelObjects?:      readonly StarSearchResult[];
+  constellationObjects?: readonly StarSearchResult[];
   /** Called when any catalog search result is clicked, with its id. */
   onCatalogItemClick?: (id: string) => void;
   /** Called when navigation focus changes so the page can show the current focus. */
@@ -33,6 +34,8 @@ export class NavPanel {
   private catalogResults: HTMLElement;
   private modelList: HTMLElement | null = null;
   private modelPager: HTMLElement | null = null;
+  private constellationList: HTMLElement | null = null;
+  private constellationPager: HTMLElement | null = null;
   private _focusedBodyName: string | null = null;
   private focusedSystemCenterName: string | null = null;
   private _selectedCatalogStar: StarSearchResult | null = null;
@@ -40,7 +43,9 @@ export class NavPanel {
   private selectedCatalogTracksCamera = false;
   private enterKeyCenteredLock = false;
   private modelPage = 0;
+  private constellationPage = 0;
   private readonly modelPageSize = 10;
+  private readonly constellationPageSize = 10;
   private open     = true;
 
   /** The catalog/map object most recently selected from search results or map labels. */
@@ -56,6 +61,18 @@ export class NavPanel {
     this.catalogSearch?.onFocusTitleChange?.(hit.label, hit.subtitle, this.catalogObjectType(hit));
     this.camera.travelTo(hit.x, hit.y, hit.z, hit.focusDistance, durationSeconds);
     this.camera.lockTarget = true;
+    this.renderCatalogLists();
+  }
+
+  selectCatalogItem(hit: StarSearchResult): void {
+    this.clearFocusedBody();
+    this.resetEnterKeyNavigation();
+    this._selectedCatalogStar = hit;
+    this.selectedCatalogTracksCamera = false;
+    this.catalogSearch?.onFocusTitleChange?.(hit.label, hit.subtitle, this.catalogObjectType(hit));
+    this.camera.clearWheelZoomGoal();
+    this.camera.lockTarget = false;
+    this.renderCatalogLists();
   }
 
   selectCatalogStarForWheelZoom(hit: StarSearchResult, wheelSteps = 10): void {
@@ -66,6 +83,7 @@ export class NavPanel {
     this.catalogSearch?.onFocusTitleChange?.(hit.label, hit.subtitle, this.catalogObjectType(hit));
     this.camera.lockTarget = false;
     this.camera.setWheelZoomPointGoal(hit.x, hit.y, hit.z, hit.focusDistance, wheelSteps);
+    this.renderCatalogLists();
   }
 
   constructor(
@@ -80,6 +98,8 @@ export class NavPanel {
     this.catalogResults = document.getElementById("catalog-search-results")!;
     this.modelList = document.getElementById("mw-model-list");
     this.modelPager = document.getElementById("mw-model-pagination");
+    this.constellationList = document.getElementById("constellation-list");
+    this.constellationPager = document.getElementById("constellation-pagination");
 
     this.toggle.addEventListener("click", () => this.setOpen(!this.open));
     this.search.addEventListener("input",  () => this.filter());
@@ -87,7 +107,7 @@ export class NavPanel {
     this.catalogResults.addEventListener("click", e => e.stopPropagation());
 
     this.bindLinks();
-    this.renderModelList();
+    this.renderCatalogLists();
   }
 
   private bindLinks(): void {
@@ -197,6 +217,7 @@ export class NavPanel {
       if (isFocused) focusedEl = el;
     });
     if (focusedEl) (focusedEl as HTMLElement).scrollIntoView({ block: "nearest", behavior: "smooth" });
+    this.renderCatalogLists();
   }
 
   clearFocusedBody(): void {
@@ -212,6 +233,7 @@ export class NavPanel {
     this.panel.querySelectorAll<HTMLElement>("[data-travel].focused").forEach(el => {
       el.classList.remove("focused");
     });
+    this.renderCatalogLists();
   }
 
   updateFocusedBody(): void {
@@ -322,16 +344,101 @@ export class NavPanel {
       el.style.display = (!q || text.includes(q)) ? "" : "none";
     });
 
+    this.panel.querySelectorAll<HTMLElement>("[data-constellation]").forEach(el => {
+      const text = (el.textContent ?? "").toLowerCase();
+      el.style.display = (!q || text.includes(q)) ? "" : "none";
+    });
+
     // Hide section headers + dividers when all their items are hidden
     this.panel.querySelectorAll<HTMLElement>(".nav-section-block").forEach(block => {
       const hasVisible = Array.from(
-        block.querySelectorAll<HTMLElement>("[data-travel],[data-preset],[data-catalog-model]"),
+        block.querySelectorAll<HTMLElement>("[data-travel],[data-preset],[data-catalog-model],[data-constellation]"),
       ).some(el => el.style.display !== "none");
       block.style.display = hasVisible ? "" : "none";
     });
 
     const catalogHits = this.catalogSearch?.searchCatalog(q) ?? [];
     this.renderCatalogResults(searchingCatalog ? q : "", catalogHits);
+  }
+
+  private renderCatalogLists(): void {
+    this.renderConstellationList();
+    this.renderModelList();
+  }
+
+  private renderConstellationList(): void {
+    if (!this.constellationList || !this.constellationPager) return;
+    const constellations = this.catalogSearch?.constellationObjects ?? [];
+    this.constellationList.replaceChildren();
+    this.constellationPager.replaceChildren();
+
+    if (constellations.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "nav-model-empty";
+      empty.textContent = "No constellations";
+      this.constellationList.appendChild(empty);
+      return;
+    }
+
+    const pageCount = Math.max(1, Math.ceil(constellations.length / this.constellationPageSize));
+    this.constellationPage = Math.max(0, Math.min(this.constellationPage, pageCount - 1));
+    const start = this.constellationPage * this.constellationPageSize;
+
+    for (const hit of constellations.slice(start, start + this.constellationPageSize)) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "nav-item nav-model-item";
+      btn.classList.toggle("focused", this._selectedCatalogStar?.id === hit.id);
+      btn.dataset["constellation"] = hit.id;
+
+      const dot = document.createElement("span");
+      dot.className = "nav-dot";
+      dot.style.background = `rgb(${Math.round(hit.color[0] * 255)}, ${Math.round(hit.color[1] * 255)}, ${Math.round(hit.color[2] * 255)})`;
+
+      const copy = document.createElement("span");
+      copy.className = "nav-model-copy";
+      const name = document.createElement("span");
+      name.className = "nav-model-name";
+      name.textContent = hit.label;
+      const meta = document.createElement("span");
+      meta.className = "nav-model-meta";
+      meta.textContent = hit.subtitle;
+      copy.append(name, meta);
+      btn.append(dot, copy);
+      btn.addEventListener("click", () => {
+        this.selectCatalogItem(hit);
+        this.catalogSearch?.onCatalogItemClick?.(hit.id);
+      });
+      this.constellationList.appendChild(btn);
+    }
+
+    const prev = document.createElement("button");
+    prev.type = "button";
+    prev.className = "nav-model-page-btn";
+    prev.textContent = "‹";
+    prev.disabled = this.constellationPage <= 0;
+    prev.addEventListener("click", () => {
+      this.constellationPage--;
+      this.renderConstellationList();
+      this.filter();
+    });
+
+    const label = document.createElement("span");
+    label.className = "nav-model-page-label";
+    label.textContent = `${this.constellationPage + 1} / ${pageCount}`;
+
+    const next = document.createElement("button");
+    next.type = "button";
+    next.className = "nav-model-page-btn";
+    next.textContent = "›";
+    next.disabled = this.constellationPage >= pageCount - 1;
+    next.addEventListener("click", () => {
+      this.constellationPage++;
+      this.renderConstellationList();
+      this.filter();
+    });
+
+    this.constellationPager.append(prev, label, next);
   }
 
   private renderModelList(): void {
@@ -356,6 +463,7 @@ export class NavPanel {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "nav-item nav-model-item";
+      btn.classList.toggle("focused", this._selectedCatalogStar?.id === hit.id);
       btn.dataset["catalogModel"] = hit.id;
 
       const dot = document.createElement("span");
@@ -454,7 +562,8 @@ export class NavPanel {
       copy.append(label, subtitle);
       btn.append(swatch, copy);
       btn.addEventListener("click", () => {
-        this.selectCatalogStar(hit);
+        if (hit.id.startsWith("constellation:")) this.selectCatalogItem(hit);
+        else this.selectCatalogStar(hit);
         this.search.value = hit.label;
         this.renderCatalogResults("", []);
         // Notify main.ts so it can load exoplanet bodies for this star/planet
