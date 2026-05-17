@@ -16,6 +16,9 @@ help from Claude and Codex 5.5.
   time controls.
 - NASA/JPL Horizons starting vectors cached for 33 simulated bodies: the Sun,
   planets, major moons, Pluto/Charon, and selected dwarf planets.
+- NASA Science 3D Resources meshes for Mercury through Neptune are loaded
+  through the backend cache and rendered in place of procedural planet
+  billboards once available.
 - Solar-system-barycentric state data, so the Sun has a real starting position
   and velocity instead of being treated as fixed at the origin.
 - Local circular galactic-frame model that adds a small external tidal
@@ -146,6 +149,9 @@ astrophysical solver.
 - The Milky Way object model list exposes 46 real mesh assets from NASA 3D
   Resources. Direct GLB/STL files and archive-backed STL files are fetched
   through the local backend and cached under `cache/nasa/models/`.
+- Solar-system planet meshes are render-only visual models. The Sun currently
+  uses an emissive generated sphere because NASA's downloadable Sun package is
+  USDZ with a binary USDC scene, while the planets use official NASA GLB files.
 - Large star and galaxy catalogs are mapped visually and do not exert gravity.
 - Galaxy distances are scaled with a Local Group linear range and a logarithmic
   deep-field range so large structures remain navigable in one scene.

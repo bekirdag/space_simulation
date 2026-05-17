@@ -6,6 +6,7 @@ import galaxyTexturedWGSL from "./galaxy-textured.wgsl?raw";
 import nebulaWGSL         from "./nebula.wgsl?raw";
 import nebulaTexturedWGSL from "./nebula-textured.wgsl?raw";
 import milkyWayModelWGSL  from "./milkyway-model.wgsl?raw";
+import solarSystemModelWGSL from "./solar-system-model.wgsl?raw";
 import dustImpostorWGSL from "./dust-impostor.wgsl?raw";
 import dustWGSL     from "./dust.wgsl?raw";
 import bloomExtractWGSL from "./bloom-extract.wgsl?raw";
@@ -20,6 +21,7 @@ import { MW_FLOATS } from "../catalog/milkyway";
 import { GALAXY_FLOATS } from "../catalog/galaxies";
 import { GALAXY_MODEL_FLOATS, type GalaxyTextureModel } from "../catalog/galaxy-models";
 import { type MilkyWayModelObject } from "../catalog/milkyway-models";
+import { type SolarSystemModelAsset } from "../catalog/solar-system-models";
 import { NEBULA_FLOATS } from "../catalog/nebulas";
 import {
   DUST_CLOUD_CAPACITY,
@@ -30,7 +32,13 @@ import { CONSTELLATION_FLOATS } from "../catalog/constellations";
 import { type TrailSystem, TRAIL_VTXFLOATS, TRAIL_SLOT_BYTES } from "../scene/trail-system";
 import { type OctantRange } from "./sky-cull";
 import { type CameraUniforms } from "../scene/camera";
-import { MILKY_WAY_MODEL_VERTEX_FLOATS, parseMilkyWayModel, type ParsedMilkyWayMaterial } from "./model-loader";
+import {
+  MILKY_WAY_MODEL_VERTEX_FLOATS,
+  createUvSphereMesh,
+  parseMilkyWayModel,
+  type ParsedMilkyWayMaterial,
+  type ParsedModelFormat,
+} from "./model-loader";
 import { BackendUnavailableError, backendFetch } from "../services/backend";
 
 // Camera uniform: mat4 (64) + right/min vec4 + up/focal vec4 + eye vec4 + screen/target vec4 + eye-offset vec4 = 144 bytes
@@ -75,6 +83,17 @@ interface MilkyWayModelEntry {
   vertexCount: number;
 }
 
+interface SolarSystemModelEntry {
+  id: string;
+  bodyName: string;
+  emissive: number;
+  fallbackColor: [number, number, number];
+  uniformBuffer: GPUBuffer;
+  parts: MilkyWayModelPartEntry[];
+  textures: GPUTexture[];
+  vertexCount: number;
+}
+
 interface MilkyWayModelPartEntry {
   vertexBuffer: GPUBuffer;
   materialBuffer: GPUBuffer;
@@ -112,6 +131,12 @@ function hasGlbMagic(buffer: ArrayBuffer): boolean {
   return bytes[0] === 0x67 && bytes[1] === 0x6c && bytes[2] === 0x54 && bytes[3] === 0x46;
 }
 
+function hasUsdzMagic(buffer: ArrayBuffer): boolean {
+  if (buffer.byteLength < 4) return false;
+  const bytes = new Uint8Array(buffer, 0, 4);
+  return bytes[0] === 0x50 && bytes[1] === 0x4b;
+}
+
 function responseOrigin(response: Response): string {
   try {
     return response.url ? new URL(response.url).origin : "unknown origin";
@@ -121,7 +146,7 @@ function responseOrigin(response: Response): string {
 }
 
 function validateMilkyWayModelResponse(
-  model: MilkyWayModelObject,
+  model: { format: ParsedModelFormat },
   response: Response,
   buffer: ArrayBuffer,
 ): void {
@@ -131,6 +156,9 @@ function validateMilkyWayModelResponse(
   }
   if (model.format === "glb" && !hasGlbMagic(buffer)) {
     throw new Error(`model route returned non-GLB data (${contentType || "unknown content type"})`);
+  }
+  if (model.format === "usdz" && !hasUsdzMagic(buffer)) {
+    throw new Error(`model route returned non-USDZ data (${contentType || "unknown content type"})`);
   }
   if (model.format === "stl" && buffer.byteLength < 84) {
     throw new Error(`model route returned invalid STL data (${contentType || "unknown content type"})`);
@@ -146,6 +174,7 @@ export class Renderer {
   private nebulaPipeline!:          GPURenderPipeline;
   private nebulaTexturedPipeline!:  GPURenderPipeline;
   private milkyWayModelPipeline!:   GPURenderPipeline;
+  private solarSystemModelPipeline!: GPURenderPipeline;
   private dustImpostorPipeline!: GPURenderPipeline;
   private dustPipeline!:    GPURenderPipeline;
   private bloomExtractPipeline!: GPURenderPipeline;
@@ -191,6 +220,9 @@ export class Renderer {
   private milkyWayModelFailedAt = new Map<string, number>();
   private milkyWayModelBackendRetryAt = 0;
   private activeMilkyWayModelId: string | null = null;
+  private solarSystemModelEntries = new Map<string, SolarSystemModelEntry>();
+  private solarSystemModelLoading = new Set<string>();
+  private solarSystemModelFailedAt = new Map<string, number>();
   private dustBindGroup!:   GPUBindGroup;
   private bloomExtractBindGroup: GPUBindGroup | null = null;
   private bloomBlurHBindGroup:   GPUBindGroup | null = null;
@@ -819,6 +851,42 @@ export class Renderer {
       depthStencil: SCENE_DEPTH_DISABLED,
     });
 
+    const solarSystemModelShader = device.createShaderModule({ code: solarSystemModelWGSL });
+    this.solarSystemModelPipeline = device.createRenderPipeline({
+      label: "solar-system-model-pipeline",
+      layout: device.createPipelineLayout({ bindGroupLayouts: [this.milkyWayModelBGL] }),
+      vertex: {
+        module: solarSystemModelShader,
+        entryPoint: "vs_main",
+        buffers: [{
+          arrayStride: MILKY_WAY_MODEL_VERTEX_FLOATS * 4,
+          attributes: [
+            { shaderLocation: 0, offset: 0,     format: "float32x3" },
+            { shaderLocation: 1, offset: 3 * 4, format: "float32x3" },
+            { shaderLocation: 2, offset: 6 * 4, format: "float32x2" },
+            { shaderLocation: 3, offset: 8 * 4, format: "float32x4" },
+          ],
+        }],
+      },
+      fragment: {
+        module: solarSystemModelShader,
+        entryPoint: "fs_main",
+        targets: [{
+          format: sceneFormat,
+          blend: {
+            color: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" },
+            alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" },
+          },
+        }],
+      },
+      primitive: { topology: "triangle-list" },
+      depthStencil: {
+        format: MODEL_DEPTH_FORMAT,
+        depthWriteEnabled: true,
+        depthCompare: "less",
+      },
+    });
+
     // ── Partial galactic dust cloud pipeline ───────────────────────────────
     this.dustBGL = device.createBindGroupLayout({
       label: "dust-cloud-bgl",
@@ -1193,6 +1261,91 @@ export class Renderer {
     }
   }
 
+  async loadSolarSystemModels(models: readonly SolarSystemModelAsset[]): Promise<void> {
+    await Promise.allSettled(models.map(model => this.ensureSolarSystemModelLoaded(model)));
+    const loaded = models.filter(model => this.solarSystemModelEntries.has(model.bodyName)).length;
+    console.info(`Loaded ${loaded}/${models.length} solar-system 3D body models.`);
+  }
+
+  async ensureSolarSystemModelLoaded(model: SolarSystemModelAsset): Promise<void> {
+    if (this.solarSystemModelEntries.has(model.bodyName) || this.solarSystemModelLoading.has(model.id)) return;
+    if (this.solarSystemModelFailedAt.has(model.id)) return;
+    this.solarSystemModelLoading.add(model.id);
+    try {
+      const mesh = model.format === "procedural-sphere"
+        ? createUvSphereMesh()
+        : await (async (format: ParsedModelFormat) => {
+          const resp = await backendFetch(model.assetUrl, { cache: "force-cache" });
+          if (!resp.ok) throw new Error(`asset ${resp.status}`);
+          const buffer = await resp.arrayBuffer();
+          validateMilkyWayModelResponse({ format }, resp, buffer);
+          return parseMilkyWayModel(buffer, format);
+        })(model.format);
+      if (mesh.vertexCount <= 0) throw new Error("empty mesh");
+
+      const { device } = this.ctx;
+      const uniformBuffer = device.createBuffer({
+        label: `solar-system-model-uniform-${model.id}`,
+        size: MILKY_WAY_MODEL_UNIFORM_BYTES,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      });
+      const textures = mesh.textures.map((texture, index) => {
+        const gpuTexture = this.createMilkyWayModelTexture(texture.bitmap, `solar-system-model-texture-${model.id}-${index}`);
+        texture.bitmap.close();
+        return gpuTexture;
+      });
+      const parts: MilkyWayModelPartEntry[] = mesh.parts.map((part, index) => {
+        const vertexBuffer = device.createBuffer({
+          label: `solar-system-model-vertices-${model.id}-${index}`,
+          size: part.vertices.byteLength,
+          usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+        });
+        device.queue.writeBuffer(vertexBuffer, 0, part.vertices as GPUAllowSharedBufferSource);
+        const materialBuffer = this.createSolarSystemModelMaterialBuffer(model, part.material, index);
+        const texture = part.material.textureIndex >= 0
+          ? textures[part.material.textureIndex] ?? this.milkyWayModelWhiteTexture
+          : this.milkyWayModelWhiteTexture;
+        return {
+          vertexBuffer,
+          materialBuffer,
+          bindGroup: device.createBindGroup({
+            label: `solar-system-model-bg-${model.id}-${index}`,
+            layout: this.milkyWayModelBGL,
+            entries: [
+              { binding: 0, resource: { buffer: this.cameraBuffer } },
+              { binding: 1, resource: { buffer: uniformBuffer } },
+              { binding: 2, resource: { buffer: materialBuffer } },
+              { binding: 3, resource: texture.createView() },
+              { binding: 4, resource: this.milkyWayModelSampler },
+            ],
+          }),
+          vertexCount: part.vertexCount,
+        };
+      });
+
+      this.solarSystemModelEntries.set(model.bodyName, {
+        id: model.id,
+        bodyName: model.bodyName,
+        emissive: model.emissive ?? 0,
+        fallbackColor: model.fallbackColor,
+        uniformBuffer,
+        parts,
+        textures,
+        vertexCount: mesh.vertexCount,
+      });
+      console.info(
+        `Loaded ${model.bodyName} solar-system model: ${mesh.usedTriangleCount.toLocaleString()} / ${mesh.sourceTriangleCount.toLocaleString()} triangles.`,
+      );
+    } catch (e) {
+      this.solarSystemModelFailedAt.set(model.id, Date.now());
+      if (e instanceof BackendUnavailableError) return;
+      console.warn(`Failed to load solar-system model ${model.bodyName}:`, e);
+      throw e;
+    } finally {
+      this.solarSystemModelLoading.delete(model.id);
+    }
+  }
+
   ensureVisibleMilkyWayModels(models: readonly MilkyWayModelObject[], eye: readonly [number, number, number]): void {
     if (Date.now() < this.milkyWayModelBackendRetryAt) return;
     this.pruneMilkyWayModelFailures();
@@ -1397,6 +1550,72 @@ export class Renderer {
     return buffer;
   }
 
+  private createSolarSystemModelMaterialBuffer(
+    model: SolarSystemModelAsset,
+    material: ParsedMilkyWayMaterial,
+    partIndex: number,
+  ): GPUBuffer {
+    const { device } = this.ctx;
+    const buffer = device.createBuffer({
+      label: `solar-system-model-material-${model.id}-${partIndex}`,
+      size: MILKY_WAY_MODEL_MATERIAL_BYTES,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    const baseColor = material.baseColor;
+    const data = new Float32Array(MILKY_WAY_MODEL_MATERIAL_BYTES / 4);
+    data[0] = baseColor[0];
+    data[1] = baseColor[1];
+    data[2] = baseColor[2];
+    data[3] = baseColor[3];
+    data[4] = material.emissive[0];
+    data[5] = material.emissive[1];
+    data[6] = material.emissive[2];
+    data[7] = Math.max(material.emissive[3], model.emissive ?? 0);
+    data[8] = material.useTexture;
+    data[9] = material.useProcedural;
+    data[10] = material.useVertexColor;
+    data[11] = material.textureEmission;
+    device.queue.writeBuffer(buffer, 0, data);
+    return buffer;
+  }
+
+  private updateSolarSystemModelUniforms(bodies: readonly Body[]): void {
+    if (this.solarSystemModelEntries.size <= 0) return;
+    const byName = new Map<string, Body>();
+    for (const body of bodies) byName.set(body.name, body);
+    const sun = byName.get("Sun");
+
+    for (const entry of this.solarSystemModelEntries.values()) {
+      const body = byName.get(entry.bodyName);
+      if (!body) continue;
+      let lx = 1;
+      let ly = 0;
+      let lz = 0;
+      if (sun && entry.bodyName !== "Sun") {
+        lx = sun.x - body.x;
+        ly = sun.y - body.y;
+        lz = sun.z - body.z;
+        const len = Math.hypot(lx, ly, lz) || 1;
+        lx /= len; ly /= len; lz /= len;
+      }
+      const data = new Float32Array(MILKY_WAY_MODEL_UNIFORM_BYTES / 4);
+      data[0] = body.x;
+      data[1] = body.y;
+      data[2] = body.z;
+      data[3] = body.radius;
+      data[4] = lx;
+      data[5] = ly;
+      data[6] = lz;
+      data[7] = entry.bodyName === "Sun" ? 1 : 0;
+      data[8] = entry.fallbackColor[0];
+      data[9] = entry.fallbackColor[1];
+      data[10] = entry.fallbackColor[2];
+      data[11] = 1;
+      data[12] = entry.emissive;
+      this.ctx.device.queue.writeBuffer(entry.uniformBuffer, 0, data);
+    }
+  }
+
   private pruneMilkyWayModelFailures(): void {
     const now = Date.now();
     for (const [id, failedAt] of this.milkyWayModelFailedAt) {
@@ -1492,10 +1711,12 @@ export class Renderer {
       data[o+4]=b.vx; data[o+5]=b.vy; data[o+6]=b.vz; data[o+7]=b.radius;
       // vec4 acc_type (x=brightness; y=reference observer distance AU; z=render visibility; w=type)
       data[o+8]=brightness.display; data[o+9]=brightness.observerDistanceAU; data[o+10]=visibility.get(b.id) ?? 1; data[o+11]=b.type;
+      if (this.solarSystemModelEntries.has(b.name)) data[o+10] = 0;
       // vec4 col_id
       data[o+12]=b.color[0]; data[o+13]=b.color[1]; data[o+14]=b.color[2]; data[o+15]=b.id;
     }
     this.ctx.device.queue.writeBuffer(this.bodyBuffer, 0, data);
+    this.updateSolarSystemModelUniforms(bodies);
   }
 
   private bodyBrightnessFactor(): BodyBrightnessSample {
@@ -2044,6 +2265,17 @@ export class Renderer {
     pass.setPipeline(this.bodyPipeline);
     pass.setBindGroup(0, this.bodyBindGroup);
     pass.draw(6, this.bodyCount, 0, 0);
+
+    if (this.solarSystemModelEntries.size > 0) {
+      pass.setPipeline(this.solarSystemModelPipeline);
+      for (const entry of this.solarSystemModelEntries.values()) {
+        for (const part of entry.parts) {
+          pass.setBindGroup(0, part.bindGroup);
+          pass.setVertexBuffer(0, part.vertexBuffer);
+          pass.draw(part.vertexCount);
+        }
+      }
+    }
 
       pass.end();
     };

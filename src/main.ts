@@ -55,6 +55,7 @@ import {
   type NamedGalaxy,
 } from "./catalog/galaxies";
 import { galaxyModelFocusDistance, galaxyTextureModels } from "./catalog/galaxy-models";
+import { SOLAR_SYSTEM_MODEL_ASSETS } from "./catalog/solar-system-models";
 import {
   MILKY_WAY_MODEL_OBJECTS,
   milkyWayModelById,
@@ -971,7 +972,7 @@ async function main(): Promise<void> {
   const labels = new LabelManager();
   applySettings();
 
-  const STARTUP_ASSET_TOTAL = 11;
+  const STARTUP_ASSET_TOTAL = 12;
   let startupLoading = true;
   let startupAssetsReady = 0;
   const startupAssetPromises: Promise<void>[] = [];
@@ -1064,6 +1065,9 @@ async function main(): Promise<void> {
   }));
   startupAssetPromises.push(trackStartupAsset("textured galaxy LODs", () => (
     renderer.loadGalaxyTextureModels(galaxyTextureModels())
+  )));
+  startupAssetPromises.push(trackStartupAsset("solar-system 3D models", () => (
+    renderer.loadSolarSystemModels(SOLAR_SYSTEM_MODEL_ASSETS)
   )));
 
   // ── Milky Way background star catalog (galaxy-scale LOD layer) ───────────

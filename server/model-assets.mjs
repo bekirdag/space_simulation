@@ -15,6 +15,7 @@ const FETCH_TIMEOUT_MS = 45_000;
 const NASA_3D_RAW_BASE = "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/master";
 const GLB_CONTENT_TYPE = "model/gltf-binary";
 const STL_CONTENT_TYPE = "application/vnd.ms-pki.stl";
+const USDZ_CONTENT_TYPE = "model/vnd.usdz+zip";
 const MODEL_ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable";
 
 function nasa3d(pathname) {
@@ -25,8 +26,16 @@ function glb(filename, pathname) {
   return { filename, contentType: GLB_CONTENT_TYPE, upstream: nasa3d(pathname) };
 }
 
+function glbUrl(filename, upstream) {
+  return { filename, contentType: GLB_CONTENT_TYPE, upstream };
+}
+
 function stl(filename, pathname) {
   return { filename, contentType: STL_CONTENT_TYPE, upstream: nasa3d(pathname) };
+}
+
+function usdzUrl(filename, upstream) {
+  return { filename, contentType: USDZ_CONTENT_TYPE, upstream };
 }
 
 function stlArchive(filename, pathname, archiveMember) {
@@ -39,6 +48,15 @@ function stlArchive(filename, pathname, archiveMember) {
 }
 
 const MODEL_ASSETS = new Map([
+  ["solar-sun", usdzUrl("solar-sun.usdz", "https://assets.science.nasa.gov/content/dam/science/psd/solar/2023/09/s/Sun_1_1391000.usdz")],
+  ["solar-mercury", glbUrl("solar-mercury.glb", "https://assets.science.nasa.gov/content/dam/science/psd/solar/2023/09/m/Mercury_1_4878.glb")],
+  ["solar-venus", glbUrl("solar-venus.glb", "https://assets.science.nasa.gov/content/dam/science/psd/solar/2023/09/v/Venus_1_12103.glb")],
+  ["solar-earth", glbUrl("solar-earth.glb", "https://assets.science.nasa.gov/content/dam/science/psd/solar/2023/09/e/Earth_1_12756.glb")],
+  ["solar-mars", glbUrl("solar-mars.glb", "https://assets.science.nasa.gov/content/dam/science/psd/mars/resources/gltf_files/24881_Mars_1_6792.glb")],
+  ["solar-jupiter", glbUrl("solar-jupiter.glb", "https://assets.science.nasa.gov/content/dam/science/psd/solar/2023/09/j/Jupiter_1_142984.glb")],
+  ["solar-saturn", glbUrl("solar-saturn.glb", "https://assets.science.nasa.gov/content/dam/science/psd/solar/2023/09/s/Saturn_1_120536.glb")],
+  ["solar-uranus", glbUrl("solar-uranus.glb", "https://assets.science.nasa.gov/content/dam/science/psd/solar/2023/09/u/Uranus_1_51118.glb")],
+  ["solar-neptune", glbUrl("solar-neptune.glb", "https://assets.science.nasa.gov/content/dam/science/psd/solar/2023/09/n/Neptune_1_49528.glb")],
   ["crab-nebula", glb("crab-nebula.glb", "3D Printing/Crab Nebula/Crab Nebula.glb")],
   ["crab-nebula-disc", stl("crab-nebula-disc.stl", "3D Printing/Crab Nebula/Crab Nebula (disc).stl")],
   ["crab-nebula-jet-1", stl("crab-nebula-jet-1.stl", "3D Printing/Crab Nebula/Crab Nebula (jet 1).stl")],
@@ -267,6 +285,11 @@ async function isValidModelFile(asset, filePath) {
     if (header.length < 84) return false;
     const triangles = header.readUInt32LE(80);
     return 84 + triangles * 50 === info.size;
+  }
+
+  if (asset.contentType === USDZ_CONTENT_TYPE) {
+    const header = await readHeader(filePath, 4);
+    return header.length >= 4 && header.subarray(0, 2).toString("ascii") === "PK";
   }
 
   return true;

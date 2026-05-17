@@ -1,8 +1,10 @@
-import { Matrix3, Vector3, type Material, type Mesh, type Texture } from "three";
+import { Matrix3, Vector3, type Material, type Mesh, type Object3D, type Texture } from "three";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { USDZLoader } from "three/examples/jsm/loaders/USDZLoader.js";
 
 export const MILKY_WAY_MODEL_VERTEX_FLOATS = 12;
+export type ParsedModelFormat = "glb" | "stl" | "usdz";
 
 export interface ParsedMilkyWayTexture {
   bitmap: ImageBitmap;
@@ -300,16 +302,14 @@ function materialAt(mesh: Mesh, index: number): Material | null {
   return material ?? null;
 }
 
-export async function parseGlbMesh(buffer: ArrayBuffer): Promise<ParsedMilkyWayMesh> {
-  const loader = getGltfLoader();
-  const gltf = await loader.parseAsync(buffer.slice(0), "");
-  gltf.scene.updateMatrixWorld(true);
+function collectMeshPrimitives(root: Object3D): PrimitiveData[] {
   const prims: PrimitiveData[] = [];
   const tmp = new Vector3();
   const normalTmp = new Vector3();
   const normalMatrix = new Matrix3();
 
-  gltf.scene.traverse((object) => {
+  root.updateMatrixWorld(true);
+  root.traverse((object) => {
     const mesh = object as Mesh;
     if (!mesh.isMesh || !mesh.geometry) return;
     const geometry = mesh.geometry;
@@ -387,7 +387,19 @@ export async function parseGlbMesh(buffer: ArrayBuffer): Promise<ParsedMilkyWayM
     }
   });
 
-  return normalizeAndPack(prims);
+  return prims;
+}
+
+export async function parseGlbMesh(buffer: ArrayBuffer): Promise<ParsedMilkyWayMesh> {
+  const loader = getGltfLoader();
+  const gltf = await loader.parseAsync(buffer.slice(0), "");
+  return normalizeAndPack(collectMeshPrimitives(gltf.scene));
+}
+
+export async function parseUsdzMesh(buffer: ArrayBuffer): Promise<ParsedMilkyWayMesh> {
+  const loader = new USDZLoader();
+  const scene = loader.parse(buffer.slice(0));
+  return normalizeAndPack(collectMeshPrimitives(scene));
 }
 
 function looksLikeBinaryStl(buffer: ArrayBuffer): boolean {
@@ -518,6 +530,59 @@ export function parseStlMesh(buffer: ArrayBuffer): ParsedMilkyWayMesh {
   };
 }
 
-export async function parseMilkyWayModel(buffer: ArrayBuffer, format: "glb" | "stl"): Promise<ParsedMilkyWayMesh> {
-  return format === "glb" ? parseGlbMesh(buffer) : parseStlMesh(buffer);
+export function createUvSphereMesh(latitudeBands = 64, longitudeBands = 128): ParsedMilkyWayMesh {
+  const latBands = Math.max(8, Math.floor(latitudeBands));
+  const lonBands = Math.max(16, Math.floor(longitudeBands));
+  const packed: number[] = [];
+
+  const pushVertex = (lat: number, lon: number): void => {
+    const v = lat / latBands;
+    const u = lon / lonBands;
+    const theta = v * Math.PI;
+    const phi = (1 - u) * Math.PI * 2;
+    const sinTheta = Math.sin(theta);
+    const x = Math.cos(phi) * sinTheta;
+    const y = Math.cos(theta);
+    const z = Math.sin(phi) * sinTheta;
+    packed.push(
+      x, y, z,
+      x, y, z,
+      u, v,
+      1, 1, 1, 1,
+    );
+  };
+
+  for (let lat = 0; lat < latBands; lat++) {
+    for (let lon = 0; lon < lonBands; lon++) {
+      const nextLat = lat + 1;
+      const nextLon = lon + 1;
+      pushVertex(lat, lon);
+      pushVertex(nextLat, lon);
+      pushVertex(lat, nextLon);
+      pushVertex(lat, nextLon);
+      pushVertex(nextLat, lon);
+      pushVertex(nextLat, nextLon);
+    }
+  }
+
+  const vertices = new Float32Array(packed);
+  const vertexCount = vertices.length / MILKY_WAY_MODEL_VERTEX_FLOATS;
+  const triangleCount = vertexCount / 3;
+  return {
+    parts: [{
+      vertices,
+      vertexCount,
+      material: defaultMaterial(0),
+    }],
+    textures: [],
+    vertexCount,
+    sourceTriangleCount: triangleCount,
+    usedTriangleCount: triangleCount,
+  };
+}
+
+export async function parseMilkyWayModel(buffer: ArrayBuffer, format: ParsedModelFormat): Promise<ParsedMilkyWayMesh> {
+  if (format === "glb") return parseGlbMesh(buffer);
+  if (format === "usdz") return parseUsdzMesh(buffer);
+  return parseStlMesh(buffer);
 }
