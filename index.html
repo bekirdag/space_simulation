@@ -1723,9 +1723,9 @@
           <div class="settings-row-range">
             <div class="settings-row-top">
               <span class="settings-row-label">Dust transparency</span>
-              <span id="set-dust-transparency-value" class="settings-value">76%</span>
+              <span id="set-dust-transparency-value" class="settings-value">55%</span>
             </div>
-            <input class="s-range" type="range" id="set-dust-transparency" min="0" max="100" step="1" value="76" aria-label="Dust transparency">
+            <input class="s-range" type="range" id="set-dust-transparency" min="0" max="100" step="1" value="55" aria-label="Dust transparency">
           </div>
           <div class="settings-row">
             <span class="settings-row-label">Sgr A* lensing</span>
@@ -1856,7 +1856,7 @@
             <li>Nearby visible stars use a 100,000-star HYG 4.2 render buffer.</li>
             <li>Exoplanet host stars are searchable from a NASA Exoplanet Archive snapshot.</li>
             <li>Constellation lines and names use cached NASA SVS Deep Star Maps source data.</li>
-            <li>Galactic dust is procedural: a cached 3D density texture raymarched at low step count through the Milky Way disk and spiral arms.</li>
+            <li>Galactic dust is procedural: partial dust cloud instances are sampled from the Milky Way background star field, so denser spiral-arm regions receive more clouds.</li>
             <li>Galaxy rendering combines real named galaxy entries with procedural deep-field fill.</li>
           </ul>
 

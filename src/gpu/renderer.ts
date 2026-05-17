@@ -20,11 +20,8 @@ import { GALAXY_MODEL_FLOATS, type GalaxyTextureModel } from "../catalog/galaxy-
 import { type MilkyWayModelObject } from "../catalog/milkyway-models";
 import { NEBULA_FLOATS } from "../catalog/nebulas";
 import {
-  DUST_MILKY_WAY_KPC_TO_AU,
-  DUST_VOLUME_CENTER_AU,
-  DUST_VOLUME_HALF_HEIGHT_AU,
-  DUST_VOLUME_RADIUS_AU,
-  DUST_VOLUME_SIZE,
+  DUST_CLOUD_CAPACITY,
+  DUST_CLOUD_FLOATS,
 } from "../catalog/dust";
 import { CONSTELLATION_FLOATS } from "../catalog/constellations";
 import { type TrailSystem, TRAIL_VTXFLOATS, TRAIL_SLOT_BYTES } from "../scene/trail-system";
@@ -45,12 +42,10 @@ const SCENE_DEPTH_DISABLED: GPUDepthStencilState = {
   depthCompare: "always",
 };
 const TEXTURED_GALAXY_MODEL_CAPACITY = 32;
-const DUST_VOLUME_UNIFORM_BYTES = 80;
-const DUST_COMPUTE_WORKGROUP_SIZE = 4;
+const DUST_CLOUD_UNIFORM_BYTES = 16;
 const DUST_RENDER_FADE_START_AU = 4_000;
 const DUST_RENDER_FADE_END_AU = 16_000;
-const DUST_DEFAULT_TRANSPARENCY = 0.76;
-const DUST_RAYMARCH_STEPS = 10;
+const DUST_DEFAULT_TRANSPARENCY = 0.55;
 const MILKY_WAY_MODEL_RETRY_MS = 120_000;
 const MILKY_WAY_MODEL_BACKEND_RETRY_MS = 120_000;
 
@@ -181,7 +176,6 @@ export class Renderer {
   private nebulaPipeline!:          GPURenderPipeline;
   private nebulaTexturedPipeline!:  GPURenderPipeline;
   private milkyWayModelPipeline!:   GPURenderPipeline;
-  private dustComputePipeline!: GPUComputePipeline;
   private dustPipeline!:    GPURenderPipeline;
   private blackHolePipeline!: GPURenderPipeline;
   private constellationPipeline!: GPURenderPipeline;
@@ -195,7 +189,8 @@ export class Renderer {
   private galaxyModelBuffer!: GPUBuffer;
   private nebulaBuffer!:          GPUBuffer;
   private homunculusBuffer!:      GPUBuffer;
-  private dustUniformBuffer!: GPUBuffer;
+  private dustCloudBuffer!:       GPUBuffer;
+  private dustUniformBuffer!:     GPUBuffer;
   private blackHoleBuffer!:   GPUBuffer;
   private constellationBuffer!: GPUBuffer;
   private trailVertexBuffer!: GPUBuffer;
@@ -221,10 +216,7 @@ export class Renderer {
   private milkyWayModelFailedAt = new Map<string, number>();
   private milkyWayModelBackendRetryAt = 0;
   private activeMilkyWayModelId: string | null = null;
-  private dustComputeBindGroup!: GPUBindGroup;
   private dustBindGroup!:   GPUBindGroup;
-  private dustTexture!:     GPUTexture;
-  private dustSampler!:     GPUSampler;
   private blackHoleBindGroup!: GPUBindGroup;
   private constellationBindGroup!: GPUBindGroup;
   private trailBindGroup!:  GPUBindGroup;
@@ -232,7 +224,6 @@ export class Renderer {
   private mwBGL!:           GPUBindGroupLayout;
   private galaxyBGL!:       GPUBindGroupLayout;
   private nebulaBGL!:       GPUBindGroupLayout;
-  private dustComputeBGL!:  GPUBindGroupLayout;
   private dustBGL!:         GPUBindGroupLayout;
   private blackHoleBGL!:    GPUBindGroupLayout;
   private constellationBGL!: GPUBindGroupLayout;
@@ -258,10 +249,10 @@ export class Renderer {
   private galaxyCount  = 0;
   private galaxyModelCount = 0;
   private nebulaCount  = 0;
+  private dustCloudCount = 0;
   private constellationCount = 0;
   private starCapacity = 0;
   private constellationCapacity = 0;
-  private dustVolumeReady = false;
 
   // Single-entry "Milky Way as a galaxy" billboard — fades in when individual
   // MW stars fade out (camera > 10 kpc). Uses the galaxy pipeline with actual=false
@@ -398,29 +389,15 @@ export class Renderer {
       addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge",
     });
 
+    this.dustCloudBuffer = device.createBuffer({
+      label: "galactic-dust-cloud-storage",
+      size: DUST_CLOUD_CAPACITY * DUST_CLOUD_FLOATS * 4,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
     this.dustUniformBuffer = device.createBuffer({
-      label: "galactic-dust-volume-uniform",
-      size: DUST_VOLUME_UNIFORM_BYTES,
+      label: "galactic-dust-cloud-uniform",
+      size: DUST_CLOUD_UNIFORM_BYTES,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
-    this.dustTexture = device.createTexture({
-      label: "galactic-dust-density-texture",
-      size: {
-        width: DUST_VOLUME_SIZE,
-        height: DUST_VOLUME_SIZE,
-        depthOrArrayLayers: DUST_VOLUME_SIZE,
-      },
-      dimension: "3d",
-      format: "rgba8unorm",
-      usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING,
-    });
-    this.dustSampler = device.createSampler({
-      label: "galactic-dust-volume-sampler",
-      magFilter: "linear",
-      minFilter: "linear",
-      addressModeU: "clamp-to-edge",
-      addressModeV: "clamp-to-edge",
-      addressModeW: "clamp-to-edge",
     });
 
     this.blackHoleBuffer = device.createBuffer({
@@ -808,60 +785,32 @@ export class Renderer {
       depthStencil: SCENE_DEPTH_DISABLED,
     });
 
-    // ── Procedural galactic dust volume pipeline ───────────────────────────
-    this.dustComputeBGL = device.createBindGroupLayout({
-      label: "dust-volume-compute-bgl",
-      entries: [
-        { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: "uniform" } },
-        {
-          binding: 4,
-          visibility: GPUShaderStage.COMPUTE,
-          storageTexture: { access: "write-only", format: "rgba8unorm", viewDimension: "3d" },
-        },
-      ],
-    });
+    // ── Partial galactic dust cloud pipeline ───────────────────────────────
     this.dustBGL = device.createBindGroupLayout({
-      label: "dust-volume-render-bgl",
+      label: "dust-cloud-bgl",
       entries: [
         { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
-        { binding: 1, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
-        { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float", viewDimension: "3d" } },
-        { binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "filtering" } },
-      ],
-    });
-    const dustTextureView = this.dustTexture.createView({ dimension: "3d" });
-    this.dustComputeBindGroup = device.createBindGroup({
-      label: "dust-volume-compute-bg", layout: this.dustComputeBGL,
-      entries: [
-        { binding: 1, resource: { buffer: this.dustUniformBuffer } },
-        { binding: 4, resource: dustTextureView },
+        { binding: 1, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "read-only-storage" } },
+        { binding: 2, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
       ],
     });
     this.dustBindGroup = device.createBindGroup({
-      label: "dust-volume-render-bg", layout: this.dustBGL,
+      label: "dust-cloud-bg", layout: this.dustBGL,
       entries: [
         { binding: 0, resource: { buffer: this.cameraBuffer } },
-        { binding: 1, resource: { buffer: this.dustUniformBuffer } },
-        { binding: 2, resource: dustTextureView },
-        { binding: 3, resource: this.dustSampler },
+        { binding: 1, resource: { buffer: this.dustCloudBuffer } },
+        { binding: 2, resource: { buffer: this.dustUniformBuffer } },
       ],
     });
     const dustShader = device.createShaderModule({ code: dustWGSL });
-    this.dustComputePipeline = device.createComputePipeline({
-      label: "dust-volume-compute-pipeline",
-      layout: device.createPipelineLayout({ bindGroupLayouts: [this.dustComputeBGL] }),
-      compute: { module: dustShader, entryPoint: "cs_main" },
-    });
     this.dustPipeline = device.createRenderPipeline({
-      label: "dust-volume-render-pipeline",
+      label: "dust-cloud-pipeline",
       layout: device.createPipelineLayout({ bindGroupLayouts: [this.dustBGL] }),
       vertex:   { module: dustShader, entryPoint: "vs_main" },
       fragment: {
         module: dustShader, entryPoint: "fs_main",
         targets: [{
           format,
-          // Standard translucent over blend. The shader caps final dust opacity
-          // near 10%; ray depth naturally makes dense lanes darker.
           blend: {
             color: { srcFactor: "src-alpha", dstFactor: "one-minus-src-alpha", operation: "add" },
             alpha: { srcFactor: "one",       dstFactor: "one-minus-src-alpha", operation: "add" },
@@ -871,7 +820,6 @@ export class Renderer {
       primitive: { topology: "triangle-list" },
       depthStencil: SCENE_DEPTH_DISABLED,
     });
-    this.rebuildDustVolume();
 
     // ── Sagittarius A* black-hole lensing post-process ────────────────────
     this.blackHoleBGL = device.createBindGroupLayout({
@@ -1093,6 +1041,15 @@ export class Renderer {
   uploadNebulas(nebulas: Float32Array): void {
     this.nebulaCount = nebulas.length / NEBULA_FLOATS;
     this.ctx.device.queue.writeBuffer(this.nebulaBuffer, 0, nebulas as GPUAllowSharedBufferSource);
+  }
+
+  uploadDustClouds(clouds: Float32Array): void {
+    const requested = Math.floor(clouds.length / DUST_CLOUD_FLOATS);
+    this.dustCloudCount = Math.min(DUST_CLOUD_CAPACITY, requested);
+    if (this.dustCloudCount <= 0) return;
+    const floats = this.dustCloudCount * DUST_CLOUD_FLOATS;
+    const upload = clouds.length === floats ? clouds : clouds.subarray(0, floats);
+    this.ctx.device.queue.writeBuffer(this.dustCloudBuffer, 0, upload as GPUAllowSharedBufferSource);
   }
 
   uploadHomunculus(buf: Float32Array): void {
@@ -1349,54 +1306,15 @@ export class Renderer {
     }
   }
 
-  private writeDustUniform(viewportWidth: number, viewportHeight: number): void {
+  private writeDustUniform(): void {
     if (!this.dustUniformBuffer) return;
     const dustVisibility = this.dustVisibility();
-    const data = new Float32Array(DUST_VOLUME_UNIFORM_BYTES / 4);
-    data[0] = DUST_VOLUME_CENTER_AU[0];
-    data[1] = DUST_VOLUME_CENTER_AU[1];
-    data[2] = DUST_VOLUME_CENTER_AU[2];
-    data[3] = DUST_VOLUME_RADIUS_AU;
-
-    data[4] = DUST_VOLUME_HALF_HEIGHT_AU;
-    data[5] = DUST_MILKY_WAY_KPC_TO_AU;
-    data[6] = 0.29; // galacticCoverage: higher values carve more empty lanes.
-    data[7] = DUST_VOLUME_SIZE;
-
-    data[8] = 5.4;   // absorption
-    data[9] = 0.34;  // scattering strength
-    data[10] = 0.62; // Henyey-Greenstein forward-scattering g
-    data[11] = this.dustOpacity() * dustVisibility;
-
-    data[12] = 1.0;
-    data[13] = 0.82;
-    data[14] = 0.55;
-    data[15] = DUST_RAYMARCH_STEPS;
-
-    data[16] = Math.max(1, viewportWidth);
-    data[17] = Math.max(1, viewportHeight);
-    data[18] = 0;
-    data[19] = 0;
+    const data = new Float32Array(DUST_CLOUD_UNIFORM_BYTES / 4);
+    data[0] = this.dustOpacity();
+    data[1] = dustVisibility;
+    data[2] = this._dustTransparency;
+    data[3] = 0;
     this.ctx.device.queue.writeBuffer(this.dustUniformBuffer, 0, data);
-  }
-
-  rebuildDustVolume(): void {
-    if (!this.dustComputePipeline || !this.dustComputeBindGroup) return;
-    this.writeDustUniform(1, 1);
-
-    const { device } = this.ctx;
-    const encoder = device.createCommandEncoder({ label: "dust-volume-build" });
-    const pass = encoder.beginComputePass({ label: "dust-volume-compute-pass" });
-    pass.setPipeline(this.dustComputePipeline);
-    pass.setBindGroup(0, this.dustComputeBindGroup);
-    pass.dispatchWorkgroups(
-      Math.ceil(DUST_VOLUME_SIZE / DUST_COMPUTE_WORKGROUP_SIZE),
-      Math.ceil(DUST_VOLUME_SIZE / DUST_COMPUTE_WORKGROUP_SIZE),
-      Math.ceil(DUST_VOLUME_SIZE / DUST_COMPUTE_WORKGROUP_SIZE),
-    );
-    pass.end();
-    device.queue.submit([encoder.finish()]);
-    this.dustVolumeReady = true;
   }
 
   updateBlackHoleVisual(
@@ -1675,7 +1593,7 @@ export class Renderer {
     data[24] = uniforms.eye[0];      data[25] = uniforms.eye[1];      data[26] = uniforms.eye[2];
     data[27] = 0;
     this.ctx.device.queue.writeBuffer(this.cameraBuffer, 0, data);
-    this.writeDustUniform(canvasWidth, canvasHeight);
+    this.writeDustUniform();
   }
 
   draw(trails: TrailSystem): void {
@@ -1793,17 +1711,17 @@ export class Renderer {
       () => pass.draw(6, Math.min(this.mwStarCount, this._mwStarLimit), 0, 0),
     );
 
-    // ── Procedural galactic dust — drawn after MW stars, before nearby catalog stars.
-    // Dust dims the galaxy background; nearby HYG stars render on top.
+    // ── Partial galactic dust clouds — drawn after MW stars, before nearby catalog stars.
+    // The cloud map is sampled from the MW star field, so spiral-arm density drives placement.
     if (
       this._showDust &&
-      this.dustVolumeReady &&
+      this.dustCloudCount > 0 &&
       this.dustVisibility() > 0.01 &&
       this.dustOpacity() > 0.001
     ) {
       pass.setPipeline(this.dustPipeline);
       pass.setBindGroup(0, this.dustBindGroup);
-      pass.draw(3, 1, 0, 0);
+      pass.draw(6, this.dustCloudCount, 0, 0);
     }
 
     // ── Static catalog stars (nearby HYG) — appear in front of dust ───────
