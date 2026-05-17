@@ -40,12 +40,20 @@ const GAL_TO_ECL = [
   [-0.096390,  0.862326,  0.497159],
 ] as const;
 
-const DUST_PALETTE: Array<[number, number, number]> = [
-  [0.54, 0.39, 0.23], // light brown
-  [0.22, 0.13, 0.07], // dark brown
-  [0.27, 0.265, 0.245], // gray
-  [0.028, 0.024, 0.020], // near-black
+const DUST_DARK_PALETTE: Array<[number, number, number]> = [
+  [0x0c / 255, 0x0a / 255, 0x0a / 255], // inky cosmic black
+  [0x1e / 255, 0x16 / 255, 0x13 / 255], // silhouette charcoal brown
 ];
+const DUST_REDDENING_PALETTE: Array<[number, number, number]> = [
+  [0x8a / 255, 0x3d / 255, 0x19 / 255], // deep cosmic rust
+  [0xd4 / 255, 0x6a / 255, 0x27 / 255], // muted sunset amber
+];
+const DUST_REFLECTION_PALETTE: Array<[number, number, number]> = [
+  [0x52 / 255, 0x8c / 255, 0xa3 / 255], // dusty sky blue
+  [0x31 / 255, 0x64 / 255, 0x7d / 255], // deep cosmic cyan
+];
+const DUST_DARK_SHARE = 0.785;
+const DUST_REDDENING_SHARE = 0.18;
 
 const ARMS = [
   { theta0: Math.PI * 0.0,  r0: 6.0, tanp: Math.tan(0.21), width: 0.45 },
@@ -191,12 +199,26 @@ function smoothstep(edge0: number, edge1: number, x: number): number {
 
 function dustColor(rand: () => number, density: number): [number, number, number] {
   const roll = rand();
-  const index = roll < density * 0.32 ? 3
-    : roll < 0.28 + density * 0.20 ? 1
-      : roll < 0.68 ? 2
-        : 0;
-  const base = DUST_PALETTE[index]!;
-  const jitter = index === 3 ? 0.015 : 0.055;
+  const d = clamp(density, 0, 1);
+  let base: [number, number, number];
+  let jitter: number;
+
+  // Approximate wide-angle visual abundance: ~80% dark obscuration,
+  // ~18% warm interstellar reddening, and a rare ~3.5% blue reflection component.
+  if (roll < DUST_DARK_SHARE) {
+    const blackBias = 0.58 + d * 0.32;
+    base = DUST_DARK_PALETTE[rand() < blackBias ? 0 : 1]!;
+    jitter = 0.010;
+  } else if (roll < DUST_DARK_SHARE + DUST_REDDENING_SHARE) {
+    const rustBias = 0.56 + d * 0.24;
+    base = DUST_REDDENING_PALETTE[rand() < rustBias ? 0 : 1]!;
+    jitter = 0.030;
+  } else {
+    const cyanBias = 0.48 + d * 0.24;
+    base = DUST_REFLECTION_PALETTE[rand() < cyanBias ? 1 : 0]!;
+    jitter = 0.022;
+  }
+
   return [
     clamp(base[0] + (rand() - 0.5) * jitter, 0, 1),
     clamp(base[1] + (rand() - 0.5) * jitter, 0, 1),
