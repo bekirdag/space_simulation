@@ -1,13 +1,9 @@
-// Close-range procedural Milky Way dust cloud renderer.
+// Distant Milky Way dust cloud impostor renderer.
 //
-// This intentionally renders partial cloud instances instead of a continuous
-// galactic disk. A cheaper impostor shader handles distant clouds; this pass
-// fades in only when an individual cloud is large enough on screen. The
-// instance layout matches the nebula buffer layout:
-//   vec4 pos_size:    xyz = ecliptic AU position, w = base radius AU
-//   vec4 color_alpha: rgb = dust color, w = per-cloud opacity
-//   vec4 params:      x = shape style, y = seed, z = density/contrast, w = rotation
-//   vec4 transform:   x/y = uniform scale axes, z = density, w = reserved
+// This pass is the cheap baked/proxy LOD for dust clouds. It uses the same
+// storage layout as the close procedural dust model shader, but avoids FBM
+// loops and fades out as soon as the projected cloud is large enough for the
+// high-detail model pass.
 
 struct Camera {
   viewProj:    mat4x4<f32>,
@@ -91,6 +87,7 @@ fn vs_main(
   let pxSize = radius * max(sx, sy) * camera.upAndFocal.w / clipCenter.w;
   let pixelRadius = pxSize * CAMERA_MIN_PIXEL_RADIUS / max(camera.rightAndMNR.w, 0.000001);
   out.px_size = pixelRadius;
+
   let microNdcRadius = camera.rightAndMNR.w * (MICRO_CLOUD_PIXEL_RADIUS / CAMERA_MIN_PIXEL_RADIUS);
   if (pxSize < microNdcRadius) {
     out.clip_pos = vec4<f32>(10.0, 10.0, 10.0, 1.0);
@@ -98,8 +95,10 @@ fn vs_main(
   }
 
   let modelLod = smoothstep(MODEL_LOD_BEGIN_PIXEL_RADIUS, MODEL_LOD_FULL_PIXEL_RADIUS, pixelRadius);
-  out.alpha *= modelLod;
-  if (modelLod <= 0.002 || out.alpha <= 0.001) {
+  let tinyLod = smoothstep(MICRO_CLOUD_PIXEL_RADIUS, 1.8, pixelRadius);
+  let impostorLod = (1.0 - modelLod) * tinyLod;
+  out.alpha *= impostorLod;
+  if (impostorLod <= 0.002 || out.alpha <= 0.001) {
     out.clip_pos = vec4<f32>(10.0, 10.0, 10.0, 1.0);
     return out;
   }
@@ -117,35 +116,11 @@ fn vs_main(
   return out;
 }
 
-fn hash2(p: vec2<f32>) -> f32 {
-  let k = vec2<f32>(0.31831, 0.36788);
-  let q = p * k + k.yx;
-  return -1.0 + 2.0 * fract(16.0 * k.x * fract(q.x * q.y * (q.x + q.y)));
-}
-
-fn noise2(p: vec2<f32>) -> f32 {
-  let i = floor(p);
-  let f = fract(p);
-  let u = f * f * (3.0 - 2.0 * f);
-  return mix(
-    mix(hash2(i), hash2(i + vec2<f32>(1.0, 0.0)), u.x),
-    mix(hash2(i + vec2<f32>(0.0, 1.0)), hash2(i + vec2<f32>(1.0, 1.0)), u.x),
-    u.y,
-  );
-}
-
-fn fbm(p0: vec2<f32>, octaves: i32) -> f32 {
-  var p = p0;
-  var amp = 0.54;
-  var sum = 0.0;
-  var norm = 0.0;
-  for (var i = 0; i < octaves; i = i + 1) {
-    sum += noise2(p) * amp;
-    norm += amp;
-    p = mat2x2<f32>(1.56, -1.12, 1.12, 1.56) * p + vec2<f32>(0.73, 1.31) * f32(i + 1);
-    amp *= 0.52;
-  }
-  return sum / max(0.0001, norm);
+fn seededWave(p: vec2<f32>, seed: f32) -> f32 {
+  let a = sin(dot(p, vec2<f32>(2.91, -1.73)) + seed * 0.017);
+  let b = sin(dot(p, vec2<f32>(-1.37, 3.23)) + seed * 0.031);
+  let c = sin((p.x + p.y) * 2.07 + seed * 0.011);
+  return clamp(0.5 + (a * 0.20 + b * 0.18 + c * 0.12), 0.0, 1.0);
 }
 
 @fragment
@@ -155,66 +130,35 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     discard;
   }
 
+  let edge = 1.0 - smoothstep(0.66, 0.99, d);
+  if (edge <= 0.02) {
+    discard;
+  }
+
   let seed = in.seed * 0.0137;
-  let p = in.uv * 3.2 + vec2<f32>(seed, seed * 1.271);
-  let edgeMask = 1.0 - smoothstep(0.72, 0.98, d);
-  if (edgeMask <= 0.05) {
-    discard;
-  }
+  let p = in.uv * 2.35 + vec2<f32>(seed, seed * 1.271);
+  let grain = seededWave(p, in.seed);
+  var shape = edge * (0.56 + grain * 0.32);
 
-  let compact = in.px_size < 22.0;
-  var base: f32;
-  var detail: f32;
-  if (compact) {
-    base = (fbm(p, 3) + 1.0) * 0.5;
-    detail = (noise2(p * 2.4 + vec2<f32>(2.7, 1.3)) + 1.0) * 0.5;
-  } else {
-    base = (fbm(p, 5) + 1.0) * 0.5;
-    detail = (fbm(p * 2.4 + vec2<f32>(2.7, 1.3), 4) + 1.0) * 0.5;
-  }
-  // Keep each cloud as a defined translucent object instead of a broad soft veil.
-  let edge = edgeMask;
-
-  var shape = base * edge;
-  if (in.style < 0.5) {
-    shape = smoothstep(0.48, 0.68, base * 0.72 + detail * 0.42) * edge;
-  } else if (in.style < 1.5) {
-    var laneNoise: f32;
-    if (compact) {
-      laneNoise = noise2(p * 1.6);
-    } else {
-      laneNoise = fbm(p * 1.6, 3);
-    }
-    let lane = 1.0 - smoothstep(0.04, 0.42, abs(in.uv.y + laneNoise * 0.28));
-    shape = smoothstep(0.44, 0.66, base * 0.58 + lane * 0.46) * edge;
+  if (in.style < 1.5) {
+    let lane = 1.0 - smoothstep(0.05, 0.38, abs(in.uv.y + sin(p.x * 1.7 + seed) * 0.18));
+    shape *= 0.80 + lane * 0.32;
   } else if (in.style < 2.5) {
-    let pocket = 1.0 - smoothstep(0.20, 0.88, detail);
-    shape = smoothstep(0.42, 0.64, base * 0.55 + pocket * 0.55) * edge;
+    let pocket = smoothstep(0.34, 0.84, grain);
+    shape *= 0.68 + pocket * 0.42;
   } else if (in.style < 3.5) {
-    let raggedP = p * 3.4 + vec2<f32>(7.1, 5.4);
-    var raggedNoise: f32;
-    if (compact) {
-      raggedNoise = noise2(raggedP);
-    } else {
-      raggedNoise = fbm(raggedP, 4);
-    }
-    let ragged = abs(raggedNoise);
-    shape = smoothstep(0.46, 0.67, base * 0.50 + ragged * 0.62) * edge;
+    shape *= 0.74 + abs(sin((p.x - p.y) * 1.9 + seed)) * 0.34;
   } else {
-    let shell = 1.0 - abs(d - 0.48) * 1.8;
-    shape = smoothstep(0.43, 0.66, base * 0.62 + max(shell, 0.0) * 0.36) * edge;
+    let shell = clamp(1.0 - abs(d - 0.50) * 1.9, 0.0, 1.0);
+    shape *= 0.70 + shell * 0.30;
   }
 
-  if (shape < 0.045) {
+  let densityBoost = 0.58 + clamp(in.density, 0.0, 1.0) * 0.36;
+  let alpha = clamp(shape * in.alpha * densityBoost, 0.0, 0.44);
+  if (alpha < 0.003) {
     discard;
   }
 
-  let densityBoost = 0.72 + clamp(in.density, 0.0, 1.0) * 0.42;
-  let alpha = clamp(shape * in.alpha * densityBoost, 0.0, 0.72);
-  if (alpha < 0.004) {
-    discard;
-  }
-
-  let darkCore = mix(in.color, vec3<f32>(0.010, 0.009, 0.008), shape * 0.24);
+  let darkCore = mix(in.color, vec3<f32>(0.010, 0.009, 0.008), shape * 0.16);
   return vec4<f32>(darkCore, alpha);
 }

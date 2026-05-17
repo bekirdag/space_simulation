@@ -6,6 +6,7 @@ import galaxyTexturedWGSL from "./galaxy-textured.wgsl?raw";
 import nebulaWGSL         from "./nebula.wgsl?raw";
 import nebulaTexturedWGSL from "./nebula-textured.wgsl?raw";
 import milkyWayModelWGSL  from "./milkyway-model.wgsl?raw";
+import dustImpostorWGSL from "./dust-impostor.wgsl?raw";
 import dustWGSL     from "./dust.wgsl?raw";
 import bloomExtractWGSL from "./bloom-extract.wgsl?raw";
 import bloomBlurWGSL from "./bloom-blur.wgsl?raw";
@@ -125,6 +126,7 @@ export class Renderer {
   private nebulaPipeline!:          GPURenderPipeline;
   private nebulaTexturedPipeline!:  GPURenderPipeline;
   private milkyWayModelPipeline!:   GPURenderPipeline;
+  private dustImpostorPipeline!: GPURenderPipeline;
   private dustPipeline!:    GPURenderPipeline;
   private bloomExtractPipeline!: GPURenderPipeline;
   private bloomBlurPipeline!: GPURenderPipeline;
@@ -800,6 +802,25 @@ export class Renderer {
         { binding: 2, resource: { buffer: this.dustUniformBuffer } },
       ],
     });
+    const dustImpostorShader = device.createShaderModule({ code: dustImpostorWGSL });
+    this.dustImpostorPipeline = device.createRenderPipeline({
+      label: "dust-cloud-impostor-pipeline",
+      layout: device.createPipelineLayout({ bindGroupLayouts: [this.dustBGL] }),
+      vertex:   { module: dustImpostorShader, entryPoint: "vs_main" },
+      fragment: {
+        module: dustImpostorShader, entryPoint: "fs_main",
+        targets: [{
+          format: sceneFormat,
+          blend: {
+            color: { srcFactor: "src-alpha", dstFactor: "one-minus-src-alpha", operation: "add" },
+            alpha: { srcFactor: "one",       dstFactor: "one-minus-src-alpha", operation: "add" },
+          },
+        }],
+      },
+      primitive: { topology: "triangle-list" },
+      depthStencil: SCENE_DEPTH_DISABLED,
+    });
+
     const dustShader = device.createShaderModule({ code: dustWGSL });
     this.dustPipeline = device.createRenderPipeline({
       label: "dust-cloud-pipeline",
@@ -1880,8 +1901,10 @@ export class Renderer {
       dustDrawCount > 0 &&
       this.dustOpacity() > 0.001
     ) {
-      pass.setPipeline(this.dustPipeline);
       pass.setBindGroup(0, this.dustBindGroup);
+      pass.setPipeline(this.dustImpostorPipeline);
+      pass.draw(6, dustDrawCount, 0, 0);
+      pass.setPipeline(this.dustPipeline);
       pass.draw(6, dustDrawCount, 0, 0);
     }
 
