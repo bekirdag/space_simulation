@@ -13,6 +13,7 @@ const DEFAULT_TRAVEL_DIST = 0.5;
 const MOON_SYSTEM_PADDING = 1.15;
 const MOON_SYSTEM_VIEW_FILL = 0.82;
 const CLOSE_TRAVEL_SECONDS = 2.5;
+const LOCK_CENTER_TRAVEL_SECONDS = 1;
 
 type TravelMode = "system" | "close";
 
@@ -373,7 +374,7 @@ export class NavPanel {
     this.enterKeyCenteredLock = false;
   }
 
-  /** First Enter centers the locked object; the next Enter flies close in 2 seconds. */
+  /** First Enter centers the locked object; the next Enter flies close. */
   handleLockedObjectEnter(): boolean {
     if (this._focusedBodyName) {
       const body = this.bodyByName(this._focusedBodyName);
@@ -383,7 +384,16 @@ export class NavPanel {
       }
 
       if (!this.enterKeyCenteredLock) {
-        this.travelToSystem(body.name);
+        this.focusedBodyTracksCamera = true;
+        this.camera.focusFromCurrentView(
+          body.x,
+          body.y,
+          body.z,
+          this.closeDistanceFor(body),
+          10,
+          LOCK_CENTER_TRAVEL_SECONDS,
+        );
+        this.camera.lockTarget = true;
         this.enterKeyCenteredLock = true;
         return true;
       }
@@ -403,6 +413,8 @@ export class NavPanel {
         selected.y,
         selected.z,
         selected.focusDistance,
+        10,
+        LOCK_CENTER_TRAVEL_SECONDS,
       );
       this.camera.lockTarget = true;
       this.enterKeyCenteredLock = true;

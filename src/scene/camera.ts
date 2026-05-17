@@ -31,6 +31,7 @@ interface CameraTravelAnimation {
   motionBlur: boolean;
   spaceWarp: boolean;
   approachTarget: boolean;
+  fixedEye?: Vec3;
 }
 
 interface WheelZoomGoal {
@@ -87,6 +88,11 @@ function interpolateTravelDistance(fromDistance: number, toDistance: number, t: 
   }
 
   return clampDistance(Math.exp(fromLog + (toLog - fromLog) * t));
+}
+
+function easeInOut(t: number): number {
+  const x = clamp(t, 0, 1);
+  return x * x * (3 - 2 * x);
 }
 
 function defaultTravelTiming(durationMs: number): { accelMs: number; cruiseMs: number; decelMs: number } {
@@ -364,9 +370,9 @@ export class Camera {
     this.flightMotionBlur = 0;
   }
 
-  setWheelZoomGoal(distance: number, steps = 10): void {
+  private configureWheelZoomGoal(distance: number, steps: number, referenceDistance: number): void {
     const targetDistance = clampDistance(distance);
-    if (!Number.isFinite(targetDistance) || targetDistance >= this.distance) {
+    if (!Number.isFinite(targetDistance) || targetDistance >= referenceDistance) {
       this.wheelZoomGoal = null;
       return;
     }
@@ -374,6 +380,10 @@ export class Camera {
       distance: targetDistance,
       remainingSteps: Math.max(1, Math.round(steps)),
     };
+  }
+
+  setWheelZoomGoal(distance: number, steps = 10): void {
+    this.configureWheelZoomGoal(distance, steps, this.distance);
   }
 
   setWheelZoomPointGoal(x: number, y: number, z: number, closeDistance: number, steps = 10): void {
@@ -398,14 +408,53 @@ export class Camera {
     this.wheelZoomGoal = null;
   }
 
-  focusFromCurrentView(x: number, y: number, z: number, closeDistance: number, wheelSteps = 10): void {
+  focusFromCurrentView(
+    x: number,
+    y: number,
+    z: number,
+    closeDistance: number,
+    wheelSteps = 10,
+    durationSeconds = 0,
+  ): void {
     this.cancelTravelAnimation();
 
     const target: Vec3 = [x, y, z];
     const eye = this._uniforms?.eye ?? this.currentEye();
-    this.setViewFromEyeAndTarget(eye, target);
+    const dx = eye[0] - target[0];
+    const dy = eye[1] - target[1];
+    const dz = eye[2] - target[2];
+    const finalDistance = Math.hypot(dx, dy, dz);
+    if (Number.isFinite(durationSeconds) && durationSeconds > 0 && Number.isFinite(finalDistance) && finalDistance > MIN_DISTANCE) {
+      const durationMs = Math.max(1, durationSeconds * 1000);
+      const finalAngles = orbitAnglesFromDirection([dx, dy, dz]);
+      this.travelAnimation = {
+        fromTarget: [...this.target],
+        toTarget: target,
+        fromDistance: this.distance,
+        toDistance: clampDistance(finalDistance),
+        fromAzimuth: this.azimuth,
+        toAzimuth: finalAngles.azimuth,
+        fromElevation: this.elevation,
+        toElevation: finalAngles.elevation,
+        startMs: performance.now(),
+        durationMs,
+        accelMs: 0,
+        cruiseMs: durationMs,
+        decelMs: 0,
+        motionBlur: false,
+        spaceWarp: false,
+        approachTarget: false,
+        fixedEye: [eye[0], eye[1], eye[2]],
+      };
+    } else {
+      this.setViewFromEyeAndTarget(eye, target);
+    }
     this.lockTarget = true;
-    this.setWheelZoomGoal(closeDistance, wheelSteps);
+    this.configureWheelZoomGoal(
+      closeDistance,
+      wheelSteps,
+      Number.isFinite(finalDistance) ? finalDistance : this.distance,
+    );
   }
 
   lookFromEyeToTarget(eye: Vec3, target: Vec3): void {
@@ -467,38 +516,54 @@ export class Camera {
 
     const elapsedMs = nowMs - anim.startMs;
     const linearT = Math.min(1, Math.max(0, elapsedMs / anim.durationMs));
-    const t = cinematicTravelProgress(
-      elapsedMs,
-      anim.durationMs,
-      anim.accelMs,
-      anim.cruiseMs,
-      anim.decelMs,
-    );
-    const effect = cinematicTravelEffect(elapsedMs, anim.durationMs, anim.accelMs, anim.decelMs);
+    const t = anim.fixedEye
+      ? easeInOut(linearT)
+      : cinematicTravelProgress(
+          elapsedMs,
+          anim.durationMs,
+          anim.accelMs,
+          anim.cruiseMs,
+          anim.decelMs,
+        );
+    const effect = anim.fixedEye
+      ? 0
+      : cinematicTravelEffect(elapsedMs, anim.durationMs, anim.accelMs, anim.decelMs);
     this.flightSpaceWarp = anim.spaceWarp ? effect : 0;
     this.flightMotionBlur = anim.motionBlur ? effect : 0;
     this.flightEffect = Math.max(this.flightSpaceWarp, this.flightMotionBlur);
-    this.target = anim.approachTarget
-      ? [...anim.toTarget]
-      : [
-          anim.fromTarget[0] + (anim.toTarget[0] - anim.fromTarget[0]) * t,
-          anim.fromTarget[1] + (anim.toTarget[1] - anim.fromTarget[1]) * t,
-          anim.fromTarget[2] + (anim.toTarget[2] - anim.fromTarget[2]) * t,
-        ];
-    this.distance = interpolateTravelDistance(anim.fromDistance, anim.toDistance, t, anim.approachTarget);
-    this.azimuth = anim.fromAzimuth + shortestAngleDelta(anim.fromAzimuth, anim.toAzimuth) * t;
-    this.elevation = clamp(
-      anim.fromElevation + (anim.toElevation - anim.fromElevation) * t,
-      -Math.PI / 2 + ORBIT_POLE_MARGIN,
-      Math.PI / 2 - ORBIT_POLE_MARGIN,
-    );
+    if (anim.fixedEye) {
+      this.setViewFromEyeAndTarget(anim.fixedEye, [
+        anim.fromTarget[0] + (anim.toTarget[0] - anim.fromTarget[0]) * t,
+        anim.fromTarget[1] + (anim.toTarget[1] - anim.fromTarget[1]) * t,
+        anim.fromTarget[2] + (anim.toTarget[2] - anim.fromTarget[2]) * t,
+      ]);
+    } else {
+      this.target = anim.approachTarget
+        ? [...anim.toTarget]
+        : [
+            anim.fromTarget[0] + (anim.toTarget[0] - anim.fromTarget[0]) * t,
+            anim.fromTarget[1] + (anim.toTarget[1] - anim.fromTarget[1]) * t,
+            anim.fromTarget[2] + (anim.toTarget[2] - anim.fromTarget[2]) * t,
+          ];
+      this.distance = interpolateTravelDistance(anim.fromDistance, anim.toDistance, t, anim.approachTarget);
+      this.azimuth = anim.fromAzimuth + shortestAngleDelta(anim.fromAzimuth, anim.toAzimuth) * t;
+      this.elevation = clamp(
+        anim.fromElevation + (anim.toElevation - anim.fromElevation) * t,
+        -Math.PI / 2 + ORBIT_POLE_MARGIN,
+        Math.PI / 2 - ORBIT_POLE_MARGIN,
+      );
+    }
 
     if (linearT >= 1) {
       this.travelAnimation = null;
-      this.target = [...anim.toTarget];
-      this.distance = anim.toDistance;
-      this.azimuth = anim.toAzimuth;
-      this.elevation = anim.toElevation;
+      if (anim.fixedEye) {
+        this.setViewFromEyeAndTarget(anim.fixedEye, anim.toTarget);
+      } else {
+        this.target = [...anim.toTarget];
+        this.distance = anim.toDistance;
+        this.azimuth = anim.toAzimuth;
+        this.elevation = anim.toElevation;
+      }
       this.flightEffect = 0;
       this.flightSpaceWarp = 0;
       this.flightMotionBlur = 0;
