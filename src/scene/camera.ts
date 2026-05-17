@@ -74,12 +74,32 @@ function cinematicTravelProgress(elapsedMs: number, durationMs: number): number 
   return clamp(accelDistance + cruiseDistance + decelDistance, 0, 1);
 }
 
+function cinematicTravelEffect(elapsedMs: number, durationMs: number): number {
+  if (!Number.isFinite(elapsedMs) || !Number.isFinite(durationMs) || durationMs <= 0) return 0;
+
+  const elapsed = clamp(elapsedMs, 0, durationMs);
+  const linearT = durationMs > 0 ? elapsed / durationMs : 1;
+  const accelMs = Math.min(CINEMATIC_TRAVEL_ACCEL_MS, durationMs * 0.25);
+  const decelMs = Math.min(CINEMATIC_TRAVEL_DECEL_MS, durationMs * 0.25);
+
+  let velocityRamp = 1;
+  if (accelMs > 0 && elapsed < accelMs) {
+    velocityRamp = elapsed / accelMs;
+  } else if (decelMs > 0 && elapsed > durationMs - decelMs) {
+    velocityRamp = (durationMs - elapsed) / decelMs;
+  }
+
+  const edgeFade = Math.sin(Math.PI * linearT);
+  return clamp(velocityRamp * Math.sqrt(Math.max(0, edgeFade)), 0, 1);
+}
+
 export interface CameraUniforms {
   viewProj:   Mat4;
   camRight:   Vec3;
   camUp:      Vec3;
   focalY:     number; // = 1 / tan(fovY/2), for perspective-correct min size
   eye:        Vec3;   // camera world-space position (for distance-based fades)
+  flightEffect: number; // 0..1 cinematic travel warp/blur strength
 }
 
 export class Camera {
@@ -100,6 +120,7 @@ export class Camera {
   private _uniforms!: CameraUniforms;
   private travelAnimation: CameraTravelAnimation | null = null;
   private wheelZoomGoal: WheelZoomGoal | null = null;
+  private flightEffect = 0;
 
   attach(canvas: HTMLCanvasElement): void {
     let orbiting = false;
@@ -232,6 +253,7 @@ export class Camera {
 
   private cancelTravelAnimation(): void {
     this.travelAnimation = null;
+    this.flightEffect = 0;
   }
 
   setWheelZoomGoal(distance: number, steps = 10): void {
@@ -311,11 +333,15 @@ export class Camera {
 
   private updateTravelAnimation(nowMs: number): void {
     const anim = this.travelAnimation;
-    if (!anim) return;
+    if (!anim) {
+      this.flightEffect = 0;
+      return;
+    }
 
     const elapsedMs = nowMs - anim.startMs;
     const linearT = Math.min(1, Math.max(0, elapsedMs / anim.durationMs));
     const t = cinematicTravelProgress(elapsedMs, anim.durationMs);
+    this.flightEffect = cinematicTravelEffect(elapsedMs, anim.durationMs);
     this.target = [
       anim.fromTarget[0] + (anim.toTarget[0] - anim.fromTarget[0]) * t,
       anim.fromTarget[1] + (anim.toTarget[1] - anim.fromTarget[1]) * t,
@@ -327,6 +353,7 @@ export class Camera {
       this.travelAnimation = null;
       this.target = [...anim.toTarget];
       this.distance = anim.toDistance;
+      this.flightEffect = 0;
     }
   }
 
@@ -336,6 +363,7 @@ export class Camera {
     this.wheelZoomGoal = null;
     if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
       this.travelAnimation = null;
+      this.flightEffect = 0;
       this.target = toTarget;
       this.distance = toDistance;
       return;
@@ -387,6 +415,7 @@ export class Camera {
       camUp:    up,
       focalY:   1 / Math.tan(FOV_Y / 2),
       eye,
+      flightEffect: this.flightEffect,
     };
     return this._uniforms;
   }

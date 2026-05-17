@@ -35,7 +35,7 @@ import { BackendUnavailableError, backendFetch } from "../services/backend";
 
 // Camera uniform: mat4 (64) + right/min vec4 + up/focal vec4 + eye vec4 = 112 bytes
 const CAMERA_BYTES = 112;
-const BLACK_HOLE_BYTES = 32;
+const BLACK_HOLE_BYTES = 48;
 const MILKY_WAY_MODEL_UNIFORM_BYTES = 64;
 const MILKY_WAY_MODEL_MATERIAL_BYTES = 48;
 const MODEL_DEPTH_FORMAT: GPUTextureFormat = "depth24plus";
@@ -264,6 +264,7 @@ export class Renderer {
   private _blackHoleUniform = new Float32Array([
     0, 0, 0, 0,
     0, 1, 1, 1,
+    0, 0, 0, 0,
   ]);
 
   applySettings(s: {
@@ -1774,6 +1775,7 @@ export class Renderer {
     data[23] = uniforms.focalY;
     data[24] = uniforms.eye[0];      data[25] = uniforms.eye[1];      data[26] = uniforms.eye[2];
     data[27] = this._objectBrightness;
+    this._blackHoleUniform[8] = clamp(uniforms.flightEffect, 0, 1);
     this.ctx.device.queue.writeBuffer(this.cameraBuffer, 0, data);
     this.writeDustUniform();
   }

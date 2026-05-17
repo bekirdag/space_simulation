@@ -16,6 +16,8 @@ struct BlackHole {
   pos_size: vec4<f32>,
   // x = time seconds, y = viewport width, z = viewport height, w = lens strength
   params:   vec4<f32>,
+  // x = cinematic flight warp/motion-blur strength
+  flight:   vec4<f32>,
 };
 
 const SHADOW_RADIUS_PER_HORIZON: f32 = 2.6;
@@ -75,8 +77,50 @@ fn aces_tonemap(color: vec3<f32>) -> vec3<f32> {
   return clamp(pow(clamp(mapped, vec3<f32>(0.0), vec3<f32>(1.0)), vec3<f32>(1.0 / 2.2)), vec3<f32>(0.0), vec3<f32>(1.0));
 }
 
+fn sample_composite(uv: vec2<f32>) -> vec3<f32> {
+  return sample_scene(uv) + sample_bloom(uv);
+}
+
+fn apply_flight_warp(hdrColor: vec3<f32>, uv: vec2<f32>) -> vec3<f32> {
+  let strength = clamp(blackHole.flight.x, 0.0, 1.0);
+  let base = hdrColor + sample_bloom(uv);
+  if strength <= 0.001 {
+    return base;
+  }
+
+  let center = vec2<f32>(0.5, 0.5);
+  let delta = uv - center;
+  let radius = length(delta);
+  if radius <= 0.001 {
+    return base;
+  }
+
+  let dir = delta / radius;
+  let viewport = max(blackHole.params.yz, vec2<f32>(1.0, 1.0));
+  let pixelSpan = max(1.0 / viewport.x, 1.0 / viewport.y);
+  let radialMask = smoothstep(0.035, 0.82, radius) * (1.0 - smoothstep(1.05, 1.35, radius));
+  let amount = strength * radialMask;
+  let warpScale = amount * (0.035 + 0.045 * radius);
+  let warpedUv = center + delta * (1.0 - warpScale);
+
+  var col = mix(base, sample_composite(warpedUv), amount * 0.52) * 0.38;
+  var weight = 0.38;
+  for (var i: i32 = 1; i <= 5; i = i + 1) {
+    let t = f32(i) / 5.0;
+    let tapOffset = dir * amount * (pixelSpan * 2.0 + 0.070 * t);
+    let tapWeight = (1.0 - t * 0.12) * 0.13;
+    col += sample_composite(warpedUv - tapOffset) * tapWeight;
+    weight += tapWeight;
+  }
+
+  let forwardTap = sample_bloom(warpedUv - dir * amount * 0.095);
+  let sideGlow = smoothstep(0.22, 0.95, radius) * (1.0 - smoothstep(1.02, 1.28, radius));
+  let warpTint = vec3<f32>(0.035, 0.050, 0.080) * amount * sideGlow;
+  return col / max(weight, 0.0001) + forwardTap * amount * 0.75 + warpTint;
+}
+
 fn present_color(hdrColor: vec3<f32>, uv: vec2<f32>) -> vec4<f32> {
-  return vec4<f32>(aces_tonemap(hdrColor + sample_bloom(uv)), 1.0);
+  return vec4<f32>(aces_tonemap(apply_flight_warp(hdrColor, uv)), 1.0);
 }
 
 fn hash1(x: f32) -> f32 {
