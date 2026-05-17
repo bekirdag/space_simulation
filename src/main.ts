@@ -120,6 +120,7 @@ const SGR_A_SEARCH_RESULT: StarSearchResult = {
   z: SGR_A_STAR_POS[2],
   focusDistance: SGR_A_BLACK_HOLE_FOCUS_AU,
   color: [1.0, 0.52, 0.18],
+  objectType: "black hole",
 };
 const KNOWN_GALAXY_ALIASES: Record<string, readonly string[]> = {
   "milky-way": ["home galaxy", "galaxy"],
@@ -763,6 +764,7 @@ async function main(): Promise<void> {
       z: galaxy.z,
       focusDistance: galaxySelectionFocusDistance(galaxy.id),
       color: [galaxy.color[0], galaxy.color[1], galaxy.color[2]],
+      objectType: "galaxy",
     };
   }
 
@@ -776,6 +778,7 @@ async function main(): Promise<void> {
       z: SGR_A_STAR_POS[2],
       focusDistance: camera.distanceForViewRadius(MILKY_WAY_RADIUS_AU * 1.18, 0.70),
       color: [0.82, 0.88, 1.00],
+      objectType: "galaxy",
     };
   }
 
@@ -812,6 +815,7 @@ async function main(): Promise<void> {
       x: r.x, y: r.y, z: r.z,
       focusDistance,
       color: [0.82, 0.88, 1.00],
+      objectType: "galaxy",
     };
   }
 
@@ -825,6 +829,177 @@ async function main(): Promise<void> {
       if (merged.length >= 8) break;
     }
     return merged;
+  }
+
+  function genericObjectSearchScore(query: string, values: readonly string[]): number | null {
+    let best: number | null = null;
+    for (const value of values) {
+      const normalized = normalizeGalaxySearchText(value);
+      if (!normalized) continue;
+      const index = normalized.indexOf(query);
+      if (index < 0) continue;
+      const score =
+        normalized === query ? 1000 :
+        normalized.startsWith(query) ? 700 :
+        350 - Math.min(index, 250);
+      best = best === null ? score : Math.max(best, score);
+    }
+    return best;
+  }
+
+  function bodyObjectTypeName(body: Body): string {
+    switch (body.type) {
+      case BodyType.Star: return "star";
+      case BodyType.Planet: return "planet";
+      case BodyType.Moon: return "moon";
+      case BodyType.Asteroid: return "asteroid";
+      case BodyType.DwarfPlanet: return "dwarf planet";
+      case BodyType.Exoplanet: return "exoplanet";
+      default: return "object";
+    }
+  }
+
+  function bodySearchResult(body: Body): StarSearchResult {
+    const objectType = bodyObjectTypeName(body);
+    return {
+      id: mapObjectSearchId("body", body.name),
+      label: body.name,
+      subtitle: `${objectType} · currently loaded simulation body`,
+      x: body.x,
+      y: body.y,
+      z: body.z,
+      focusDistance: camera.closeDistanceForRadius(body.radius),
+      color: body.color,
+      objectType,
+      radiusAU: body.radius,
+    };
+  }
+
+  function searchVisibleBodies(query: string, limit = 8): StarSearchResult[] {
+    const q = normalizeGalaxySearchText(query);
+    if (q.length < 2) return [];
+
+    return bodies
+      .map(body => {
+        const objectType = bodyObjectTypeName(body);
+        const score = genericObjectSearchScore(q, [
+          body.name,
+          objectType,
+          `${body.name} ${objectType}`,
+        ]);
+        if (score === null) return null;
+        return { body, score };
+      })
+      .filter((item): item is { body: Body; score: number } => item !== null)
+      .sort((a, b) => b.score - a.score || a.body.name.localeCompare(b.body.name))
+      .slice(0, limit)
+      .map(({ body }) => bodySearchResult(body));
+  }
+
+  function nearbyStarSearchResult(star: NearbyStarLabel): StarSearchResult {
+    const distanceLy = star.distPc * LIGHT_YEARS_PER_PARSEC;
+    return {
+      id: nearbyStarId(star),
+      label: star.name,
+      subtitle: `${star.distPc.toFixed(star.distPc < 10 ? 2 : 1)} pc · ${distanceLy.toFixed(distanceLy < 20 ? 1 : 0)} ly`,
+      x: star.x,
+      y: star.y,
+      z: star.z,
+      focusDistance: starFocusDistance(star.radiusAU),
+      color: star.color,
+      objectType: "star",
+      radiusAU: star.radiusAU,
+      radiusSolar: star.radiusSolar,
+      spectralType: star.spectralType,
+      starType: star.starType,
+    };
+  }
+
+  function searchNearbyStarLabels(query: string, limit = 8): StarSearchResult[] {
+    const q = normalizeGalaxySearchText(query);
+    if (q.length < 2) return [];
+
+    return NEARBY_STAR_LABELS
+      .map(star => {
+        const score = genericObjectSearchScore(q, [
+          star.name,
+          star.spectralType ?? "",
+          star.starType ?? "",
+          "nearby star",
+        ]);
+        if (score === null) return null;
+        return { star, score };
+      })
+      .filter((item): item is { star: NearbyStarLabel; score: number } => item !== null)
+      .sort((a, b) => {
+        const scoreDelta = b.score - a.score;
+        return scoreDelta || a.star.distPc - b.star.distPc || a.star.name.localeCompare(b.star.name);
+      })
+      .slice(0, limit)
+      .map(({ star }) => nearbyStarSearchResult(star));
+  }
+
+  function nebulaTypeLabel(type: number): string {
+    switch (type) {
+      case 0: return "emission nebula";
+      case 1: return "planetary nebula";
+      case 2: return "supernova remnant";
+      case 3: return "reflection nebula";
+      case 4: return "mixed nebula";
+      default: return "nebula";
+    }
+  }
+
+  function nebulaSearchResult(neb: { name: string; type: number; x: number; y: number; z: number; radiusAU: number }): StarSearchResult {
+    const objectType = nebulaTypeLabel(neb.type);
+    const color = NEB_COLOR[neb.type] ?? [0.88, 0.35, 0.55];
+    return {
+      id: mapObjectSearchId("nebula", neb.name),
+      label: neb.name,
+      subtitle: objectType,
+      x: neb.x,
+      y: neb.y,
+      z: neb.z,
+      focusDistance: nebulaFocusDistance(neb),
+      color,
+      objectType,
+    };
+  }
+
+  function searchNebulas(query: string, limit = 8): StarSearchResult[] {
+    const q = normalizeGalaxySearchText(query);
+    if (q.length < 2) return [];
+
+    return nebulaDets
+      .map(neb => {
+        const objectType = nebulaTypeLabel(neb.type);
+        const score = genericObjectSearchScore(q, [
+          neb.name,
+          objectType,
+          "nebula",
+        ]);
+        if (score === null) return null;
+        return { neb, score };
+      })
+      .filter((item): item is { neb: NebulaDet; score: number } => item !== null)
+      .sort((a, b) => b.score - a.score || a.neb.name.localeCompare(b.neb.name))
+      .slice(0, limit)
+      .map(({ neb }) => nebulaSearchResult(neb));
+  }
+
+  function dedupeSearchResults(hits: readonly StarSearchResult[]): StarSearchResult[] {
+    const seen = new Set<string>();
+    const deduped: StarSearchResult[] = [];
+    for (const hit of hits) {
+      const objectType = hit.objectType ?? "";
+      const labelOnlyKey = normalizeGalaxySearchText(hit.label);
+      const labelKey = `${labelOnlyKey}|${objectType}`;
+      const keys = [hit.id, labelOnlyKey, labelKey];
+      if (keys.some(key => seen.has(key))) continue;
+      keys.forEach(key => seen.add(key));
+      deduped.push(hit);
+    }
+    return deduped;
   }
 
   function resizeCanvas() {
@@ -1360,7 +1535,10 @@ async function main(): Promise<void> {
         "galactic center".includes(q) ||
         "milky way center".includes(q)
       ) ? [SGR_A_SEARCH_RESULT] : [];
+      const bodyHits = searchVisibleBodies(query, 8);
       const starHits = searchCatalogStars(exoplanetHosts, query, 5);
+      const nearbyStarHits = searchNearbyStarLabels(query, 8);
+      const nebulaHits = searchNebulas(query, 8);
       const modelHits = searchMilkyWayModels(query, 5);
       const constellationHits = searchConstellations(constellationLabels, query, 5);
       const galaxyHits = mergeGalaxySearchHits(
@@ -1368,10 +1546,13 @@ async function main(): Promise<void> {
         searchGalaxies(galaxyNames, galaxyBuffer, query, 5).map(catalogGalaxyResult),
       );
       const exoHits  = searchExoplanets(query, getStarWorldPos, simYears, 5);
-      return [
+      return dedupeSearchResults([
         ...blackHoleHits,
+        ...bodyHits,
         ...galaxyHits,
         ...constellationHits,
+        ...nearbyStarHits,
+        ...nebulaHits,
         ...modelHits,
         ...starHits,
         // Map exoplanet results to StarSearchResult shape
@@ -1382,8 +1563,9 @@ async function main(): Promise<void> {
           x: r.x, y: r.y, z: r.z,
           focusDistance: r.focusDistance,
           color:         exoplanetColor(r.planet.radiusEarth),
+          objectType:    "exoplanet",
         })),
-      ];
+      ]);
     },
     getCatalogStatus: () => catalogStatus,
     constellationObjects: constellationsToSearchResults(constellationFigures),
@@ -1395,15 +1577,36 @@ async function main(): Promise<void> {
       renderer.setActiveMilkyWayModel(id.startsWith("mwmodel:") ? id : null);
       if (id === "blackhole:sgr-a") {
         setExoplanetBodies(null);
+        renderer.uploadSelectedStar(null);
+      } else if (id.startsWith("body:")) {
+        const body = bodies.find(item => mapObjectSearchId("body", item.name) === id);
+        if (body?.type !== BodyType.Exoplanet) setExoplanetBodies(null);
+        renderer.uploadSelectedStar(null);
+        if (body) nav.travelToClose(body.name);
       } else if (id.startsWith("galaxy:")) {
         setExoplanetBodies(null);
+        renderer.uploadSelectedStar(null);
       } else if (id.startsWith("constellation:")) {
         setExoplanetBodies(null);
+        renderer.uploadSelectedStar(null);
         selectConstellation(id);
       } else if (id.startsWith("mwmodel:")) {
         setExoplanetBodies(null);
+        renderer.uploadSelectedStar(null);
         const model = milkyWayModelById(id);
         if (model) void renderer.ensureMilkyWayModelLoaded(model);
+      } else if (id.startsWith("nearby:")) {
+        const star = NEARBY_STAR_LABELS.find(item => nearbyStarId(item) === id);
+        if (star) {
+          setExoplanetBodies(star.name, [star.x, star.y, star.z]);
+          renderer.uploadSelectedStar([star.x, star.y, star.z]);
+        } else {
+          setExoplanetBodies(null);
+          renderer.uploadSelectedStar(null);
+        }
+      } else if (id.startsWith("nebula:")) {
+        setExoplanetBodies(null);
+        renderer.uploadSelectedStar(null);
       } else if (id.startsWith("exo:")) {
         const [, hostName = null, ...planetNameParts] = id.split(":");
         const planetName = planetNameParts.join(":");
@@ -1415,6 +1618,7 @@ async function main(): Promise<void> {
         // Clicked a host star → load its exoplanets too
         const star = exoplanetHosts.find(s => s.id === id);
         setExoplanetBodies(star?.name ?? null, star ? [star.x, star.y, star.z] : undefined);
+        renderer.uploadSelectedStar(star ? [star.x, star.y, star.z] : null);
       }
       renderer.uploadBodies(bodies);
     },
@@ -1562,23 +1766,9 @@ async function main(): Promise<void> {
   }
 
   function focusNearbyStar(star: NearbyStarLabel): void {
-    const distanceLy = star.distPc * LIGHT_YEARS_PER_PARSEC;
     renderer.setActiveMilkyWayModel(null);
     setExoplanetBodies(star.name, [star.x, star.y, star.z]);
-    nav.selectCatalogStar({
-      id: nearbyStarId(star),
-      label: star.name,
-      subtitle: `${star.distPc.toFixed(star.distPc < 10 ? 2 : 1)} pc · ${distanceLy.toFixed(distanceLy < 20 ? 1 : 0)} ly`,
-      x: star.x,
-      y: star.y,
-      z: star.z,
-      focusDistance: starFocusDistance(star.radiusAU),
-      color: star.color,
-      radiusAU: star.radiusAU,
-      radiusSolar: star.radiusSolar,
-      spectralType: star.spectralType,
-      starType: star.starType,
-    });
+    nav.selectCatalogStar(nearbyStarSearchResult(star));
     renderer.uploadBodies(bodies);
     renderer.uploadSelectedStar([star.x, star.y, star.z]);
   }
@@ -1596,6 +1786,7 @@ async function main(): Promise<void> {
       z: SGR_A_STAR_POS[2],
       focusDistance: camera.distanceForViewRadius(MILKY_WAY_RADIUS_AU * 1.18, 0.70),
       color: [0.82, 0.88, 1.00],
+      objectType: "galaxy",
     });
     renderer.uploadBodies(bodies);
   }
@@ -1613,6 +1804,7 @@ async function main(): Promise<void> {
       z: galaxy.z,
       focusDistance: galaxySelectionFocusDistance(galaxy.id),
       color: [0.82, 0.88, 1.00],
+      objectType: "galaxy",
     });
     renderer.uploadBodies(bodies);
   }
@@ -1716,7 +1908,8 @@ async function main(): Promise<void> {
       !hit.id.startsWith("constellation:") &&
       !hit.id.startsWith("mwmodel:") &&
       !hit.id.startsWith("nebula:") &&
-      !hit.id.startsWith("blackhole:");
+      !hit.id.startsWith("blackhole:") &&
+      !hit.id.startsWith("body:");
   }
 
   function selectMapCatalogObject(
@@ -1766,21 +1959,7 @@ async function main(): Promise<void> {
       if (!projected) continue;
       const dist = screenDistance(cx, cy, projected);
       if (dist > 14) continue;
-      const distanceLy = star.distPc * LIGHT_YEARS_PER_PARSEC;
-      const hit: StarSearchResult = {
-        id: nearbyStarId(star),
-        label: star.name,
-        subtitle: `${star.distPc.toFixed(star.distPc < 10 ? 2 : 1)} pc · ${distanceLy.toFixed(distanceLy < 20 ? 1 : 0)} ly`,
-        x: star.x,
-        y: star.y,
-        z: star.z,
-        focusDistance: starFocusDistance(star.radiusAU),
-        color: star.color,
-        radiusAU: star.radiusAU,
-        radiusSolar: star.radiusSolar,
-        spectralType: star.spectralType,
-        starType: star.starType,
-      };
+      const hit = nearbyStarSearchResult(star);
       addCandidate({
         score: dist - 3,
         cameraDistance: cameraDistanceTo(star.x, star.y, star.z),
@@ -1866,6 +2045,7 @@ async function main(): Promise<void> {
           x, y, z,
           focusDistance: label ? galaxySelectionFocusDistance(label.id) : GENERIC_GALAXY_CLOSE_FOCUS_AU,
           color: [0.82, 0.88, 1.00],
+          objectType: "galaxy",
         };
         const candidate: MapObjectHit = {
           score: dist + 4,
@@ -1885,17 +2065,7 @@ async function main(): Promise<void> {
       if (!projected) continue;
       const dist = screenDistance(cx, cy, projected);
       if (dist > 18) continue;
-      const color = NEB_COLOR[neb.type] ?? [0.88, 0.35, 0.55];
-      const hit: StarSearchResult = {
-        id: mapObjectSearchId("nebula", neb.name),
-        label: neb.name,
-        subtitle: "nebula",
-        x: neb.x,
-        y: neb.y,
-        z: neb.z,
-        focusDistance: nebulaFocusDistance(neb),
-        color,
-      };
+      const hit = nebulaSearchResult(neb);
       const candidate: MapObjectHit = {
         score: dist + 5,
         cameraDistance: cameraDistanceTo(neb.x, neb.y, neb.z),
@@ -2057,22 +2227,13 @@ async function main(): Promise<void> {
           z: gal.z,
           focusDistance: label ? galaxySelectionFocusDistance(label.id) : GENERIC_GALAXY_CLOSE_FOCUS_AU,
           color: [0.82, 0.88, 1.00],
+          objectType: "galaxy",
         });
       },
       nearbyNebulas,
       (neb) => {
         renderer.setActiveMilkyWayModel(null);
-        const color = NEB_COLOR[neb.type] ?? [0.88, 0.35, 0.55];
-        nav.selectCatalogStar({
-          id: mapObjectSearchId("nebula", neb.name),
-          label: neb.name,
-          subtitle: "nebula",
-          x: neb.x,
-          y: neb.y,
-          z: neb.z,
-          focusDistance: nebulaFocusDistance(neb),
-          color,
-        });
+        nav.selectCatalogStar(nebulaSearchResult(neb));
       },
     );
   }

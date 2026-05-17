@@ -54,6 +54,7 @@ export interface StarSearchResult {
   z: number;
   focusDistance: number;
   color: [number, number, number];
+  objectType?: string | undefined;
   radiusAU?: number | undefined;
   radiusSolar?: number | undefined;
   spectralType?: string | null | undefined;

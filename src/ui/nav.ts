@@ -213,6 +213,7 @@ export class NavPanel {
   }
 
   private catalogObjectType(hit: StarSearchResult): string {
+    if (hit.objectType) return hit.objectType;
     if (hit.id.startsWith("blackhole:")) return "black hole";
     if (hit.id.startsWith("galaxy:")) return "galaxy";
     if (hit.id.startsWith("constellation:")) return "constellation";
@@ -658,8 +659,8 @@ export class NavPanel {
       } else {
         empty.innerHTML =
           `No match for "<b>${query}</b>".<br>` +
-          `Catalog: constellations, known galaxies, 3D models, exoplanet host stars, planets, and Sgr A*.<br>` +
-          `Try: <em>Orion, Andromeda, LMC, Sgr A*, Crab, TRAPPIST-1, Proxima</em>`;
+          `Catalog: visible bodies, named nearby stars, nebulas, constellations, known galaxies, 3D models, exoplanet hosts, planets, and Sgr A*.<br>` +
+          `Try: <em>Io, Orion, Andromeda, LMC, Sgr A*, Crab, TRAPPIST-1, Proxima</em>`;
       }
       this.catalogResults.appendChild(empty);
       return;
