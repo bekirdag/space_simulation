@@ -117,13 +117,13 @@ fn vs_main(
   @location(3) _vertexColor: vec4<f32>,
 ) -> VertexOut {
   var out: VertexOut;
-  let active = model.params.x;
+  let modelEnabled = model.params.x;
   let center = model.centerRadius.xyz;
   let radius = max(model.centerRadius.w, SOLAR_RADIUS_AU * 0.01);
   let clipCenter = project_world(center);
   let projectedNdcRadius = radius * camera.upAndFocal.w / max(clipCenter.w, 0.000001);
   let pixelRadius = projectedNdcRadius * 2.5 / max(camera.rightAndMNR.w, 0.000001);
-  let lod = smoothstep(14.0, 30.0, pixelRadius) * active;
+  let lod = smoothstep(14.0, 30.0, pixelRadius) * modelEnabled;
 
   let world = center + position * radius;
   out.clipPos = project_world(world);

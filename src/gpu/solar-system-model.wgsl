@@ -62,7 +62,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let tex = textureSample(modelTexture, modelSampler, in.uv);
     base *= tex;
   } else {
-    base.rgb *= model.fallbackOpacity.rgb;
+    base = vec4<f32>(base.rgb * model.fallbackOpacity.rgb, base.a);
   }
   if material.params.z > 0.5 {
     base *= in.vertexColor;
