@@ -12,6 +12,10 @@
 // This matches the HYG x/y/z render buffer and exoplanet-host catalog stars.
 
 import {
+  classifyStarModelType,
+  type StarModelTypeId,
+} from "./star-types";
+import {
   colorFromSpectralType,
   starColorFromBv,
   stellarRadiusSolarFromPhotometry,
@@ -31,6 +35,7 @@ export interface NearbyStarLabel {
   magnitude?: number;
   radiusSolar?: number;
   radiusAU?: number;
+  starType?: StarModelTypeId;
 }
 
 export const NEARBY_STAR_AU_PER_PARSEC = 80; // must match build-visible-stars.mjs
@@ -173,6 +178,11 @@ function s(
   if (photometry?.magnitude !== undefined) label.magnitude = photometry.magnitude;
   label.radiusSolar = radiusSolar;
   label.radiusAU = stellarRenderRadiusAU(radiusSolar);
+  label.starType = classifyStarModelType({
+    spectralType: photometry?.spectralType,
+    radiusSolar,
+    color: label.color,
+  });
   return label;
 }
 

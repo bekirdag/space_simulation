@@ -25,6 +25,7 @@ import { SECONDS_PER_YEAR, MAX_SUBSTEP_YR, BodyType } from "./physics/constants"
 import { type Mat4 } from "./math/mat4";
 import {
   DEFAULT_VISIBLE_STAR_COUNT,
+  SOLAR_RADIUS_AU,
   STAR_FLOATS,
   AU_PER_PARSEC,
   catalogStarsToRenderBuffer,
@@ -38,6 +39,7 @@ import {
   type StarBuffer,
   type StarSearchResult,
 } from "./catalog/stars";
+import { classifyStarModelType } from "./catalog/star-types";
 import {
   canonicalHostKey,
   exoplanetColor,
@@ -1536,11 +1538,27 @@ async function main(): Promise<void> {
   function starFocusDistance(radiusAU?: number): number {
     const aspect = Math.max(0.2, window.innerWidth / Math.max(1, window.innerHeight));
     return focusDistanceForStarRadiusAU(
-      radiusAU ?? 0.00465047,
+      radiusAU ?? SOLAR_RADIUS_AU,
       aspect,
       SELECTED_NEARBY_STAR_SCREEN_WIDTH_FRACTION,
       CAMERA_FOV_Y,
     );
+  }
+
+  function selectedStarModelFromHit(hit: StarSearchResult | null) {
+    if (!shouldHighlightCatalogStar(hit)) return null;
+    return {
+      position: [hit.x, hit.y, hit.z] as [number, number, number],
+      radiusAU: hit.radiusAU ?? SOLAR_RADIUS_AU,
+      color: hit.color,
+      starType: hit.starType ?? classifyStarModelType({
+        spectralType: hit.spectralType,
+        temperatureK: hit.temperatureK,
+        radiusSolar: hit.radiusSolar,
+        color: hit.color,
+      }),
+      alpha: 1,
+    };
   }
 
   function focusNearbyStar(star: NearbyStarLabel): void {
@@ -1556,6 +1574,10 @@ async function main(): Promise<void> {
       z: star.z,
       focusDistance: starFocusDistance(star.radiusAU),
       color: star.color,
+      radiusAU: star.radiusAU,
+      radiusSolar: star.radiusSolar,
+      spectralType: star.spectralType,
+      starType: star.starType,
     });
     renderer.uploadBodies(bodies);
     renderer.uploadSelectedStar([star.x, star.y, star.z]);
@@ -1672,6 +1694,11 @@ async function main(): Promise<void> {
       z: star.z,
       focusDistance: starFocusDistance(star.size),
       color: star.color,
+      radiusAU: star.size,
+      radiusSolar: star.radiusSolar,
+      spectralType: star.spectralType,
+      temperatureK: star.temperatureK,
+      starType: star.starType,
     };
   }
 
@@ -1749,6 +1776,10 @@ async function main(): Promise<void> {
         z: star.z,
         focusDistance: starFocusDistance(star.radiusAU),
         color: star.color,
+        radiusAU: star.radiusAU,
+        radiusSolar: star.radiusSolar,
+        spectralType: star.spectralType,
+        starType: star.starType,
       };
       addCandidate({
         score: dist - 3,
@@ -1798,6 +1829,12 @@ async function main(): Promise<void> {
           visibleStarBuffer[o + 6]!,
         ],
       };
+      hit.radiusAU = visibleStarBuffer[o + 3]!;
+      hit.radiusSolar = hit.radiusAU / SOLAR_RADIUS_AU;
+      hit.starType = classifyStarModelType({
+        radiusSolar: hit.radiusSolar,
+        color: hit.color,
+      });
       const candidate: MapObjectHit = {
         score: dist + 6,
         cameraDistance: cameraDistanceTo(x, y, z),
@@ -2003,17 +2040,8 @@ async function main(): Promise<void> {
       nearbyStars,
       (star) => {
         renderer.setActiveMilkyWayModel(null);
-        const distAu    = Math.sqrt(star.x**2 + star.y**2 + star.z**2);
-        const focusDist = Math.min(5, Math.max(0.5, distAu * 5e-4));
-        const distLabel = star.distancePc != null
-          ? `${star.distancePc < 100 ? star.distancePc.toFixed(1) : Math.round(star.distancePc)} pc`
-          : "distance unknown";
-        nav.selectCatalogStar({
-          id: star.id, label: star.name,
-          subtitle: `${star.planetCount} planet${star.planetCount===1?'':'s'} · ${distLabel}`,
-          x: star.x, y: star.y, z: star.z,
-          focusDistance: focusDist, color: star.color,
-        });
+        nav.selectCatalogStar(catalogHitFromStar(star));
+        setExoplanetBodies(star.name, [star.x, star.y, star.z]);
         renderer.uploadSelectedStar([star.x, star.y, star.z]);
       },
       nearbyGalaxies,
@@ -2353,6 +2381,7 @@ async function main(): Promise<void> {
         ? [sel.x, sel.y, sel.z]
         : null,
     );
+    renderer.uploadSelectedStarModel(selectedStarModelFromHit(sel));
     const focusedMembers = nav.focusedSystemMembers();
     const bodyVisibility = buildBodyRenderVisibility(bodies, camUniforms.viewProj, focusedMembers, camUniforms);
     renderer.uploadBodies(bodies, bodyVisibility);

@@ -1,5 +1,6 @@
 import renderWGSL   from "./render.wgsl?raw";
 import starWGSL     from "./star.wgsl?raw";
+import starModelWGSL from "./star-model.wgsl?raw";
 import milkywayWGSL from "./milkyway.wgsl?raw";
 import galaxyWGSL   from "./galaxy.wgsl?raw";
 import galaxyTexturedWGSL from "./galaxy-textured.wgsl?raw";
@@ -17,6 +18,7 @@ import trailWGSL    from "./trail.wgsl?raw";
 import { type GPUContext } from "./device";
 import { type Body, BODY_FLOATS } from "../physics/body";
 import { STAR_FLOATS } from "../catalog/stars";
+import { type StarModelTypeId, starModelTypeIndex } from "../catalog/star-types";
 import { MW_FLOATS } from "../catalog/milkyway";
 import { GALAXY_FLOATS } from "../catalog/galaxies";
 import { GALAXY_MODEL_FLOATS, type GalaxyTextureModel } from "../catalog/galaxy-models";
@@ -48,6 +50,7 @@ const CAMERA_FAR = 50_000_000;
 const BLACK_HOLE_BYTES = 48;
 const MILKY_WAY_MODEL_UNIFORM_BYTES = 64;
 const MILKY_WAY_MODEL_MATERIAL_BYTES = 48;
+const STAR_MODEL_UNIFORM_BYTES = 48;
 const MODEL_DEPTH_FORMAT: GPUTextureFormat = "depth24plus";
 const SCENE_COLOR_FORMAT: GPUTextureFormat = "rgba16float";
 const BLOOM_SCALE = 4;
@@ -99,6 +102,14 @@ interface MilkyWayModelPartEntry {
   materialBuffer: GPUBuffer;
   bindGroup: GPUBindGroup;
   vertexCount: number;
+}
+
+export interface SelectedStarModel {
+  position: [number, number, number];
+  radiusAU: number;
+  color: [number, number, number];
+  starType?: StarModelTypeId;
+  alpha?: number;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -168,6 +179,7 @@ function validateMilkyWayModelResponse(
 export class Renderer {
   private bodyPipeline!:    GPURenderPipeline;
   private starPipeline!:    GPURenderPipeline;
+  private starModelPipeline!: GPURenderPipeline;
   private mwPipeline!:      GPURenderPipeline;
   private galaxyPipeline!:  GPURenderPipeline;
   private galaxyTexturedPipeline!: GPURenderPipeline;
@@ -260,6 +272,13 @@ export class Renderer {
   private viewportWidth = 1;
   private viewportHeight = 1;
   private selectedStarBuffer!: GPUBuffer;
+  private selectedStarModelBuffer!: GPUBuffer;
+  private selectedStarModelBGL!: GPUBindGroupLayout;
+  private selectedStarModelBindGroup!: GPUBindGroup;
+  private selectedStarModelVertexBuffer!: GPUBuffer;
+  private selectedStarModelVertexCount = 0;
+  private selectedStarModelUniform = new Float32Array(STAR_MODEL_UNIFORM_BYTES / 4);
+  private selectedStarModelActive = false;
   private starLodBuffer!:   GPUBuffer;  // x=legacy fade, y=camera radius, z=brightness effects
   private mwLodBuffer!:     GPUBuffer;  // x=fade, y=legacy apparent boost, z=brightness effects
   private galaxyLodBuffer!: GPUBuffer;  // x=legacy apparent boost, y=brightness effects
@@ -345,6 +364,7 @@ export class Renderer {
     if (s.actualBodyBrightness !== undefined) {
       this._actualBrightness = s.actualBodyBrightness;
       this.syncBrightnessUniforms();
+      this.writeSelectedStarModelUniform();
     }
     if (s.objectBrightness !== undefined) {
       this._objectBrightness = clamp(s.objectBrightness, 0.25, 3);
@@ -534,6 +554,21 @@ export class Renderer {
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
     device.queue.writeBuffer(this.selectedStarBuffer, 0, new Float32Array([0, 0, 0, 0]));
+    this.selectedStarModelBuffer = device.createBuffer({
+      label: "selected-star-model",
+      size: STAR_MODEL_UNIFORM_BYTES,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    device.queue.writeBuffer(this.selectedStarModelBuffer, 0, this.selectedStarModelUniform);
+    const selectedStarMesh = createUvSphereMesh(48, 96);
+    const selectedStarPart = selectedStarMesh.parts[0]!;
+    this.selectedStarModelVertexCount = selectedStarPart.vertexCount;
+    this.selectedStarModelVertexBuffer = device.createBuffer({
+      label: "selected-star-model-sphere",
+      size: selectedStarPart.vertices.byteLength,
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+    });
+    device.queue.writeBuffer(this.selectedStarModelVertexBuffer, 0, selectedStarPart.vertices as GPUAllowSharedBufferSource);
 
     // ── LOD / brightness uniforms — 16-byte each ──────────────────────────
     this.starLodBuffer = device.createBuffer({
@@ -609,6 +644,54 @@ export class Renderer {
         }],
       },
       primitive: { topology: "triangle-list" },
+      depthStencil: SCENE_DEPTH_DISABLED,
+    });
+
+    // ── Selected star close-LOD 3D surface model ───────────────────────────
+    this.selectedStarModelBGL = device.createBindGroupLayout({
+      label: "selected-star-model-bgl",
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
+        { binding: 1, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
+      ],
+    });
+    this.selectedStarModelBindGroup = device.createBindGroup({
+      label: "selected-star-model-bg",
+      layout: this.selectedStarModelBGL,
+      entries: [
+        { binding: 0, resource: { buffer: this.cameraBuffer } },
+        { binding: 1, resource: { buffer: this.selectedStarModelBuffer } },
+      ],
+    });
+    const starModelShader = device.createShaderModule({ code: starModelWGSL });
+    this.starModelPipeline = device.createRenderPipeline({
+      label: "selected-star-model-pipeline",
+      layout: device.createPipelineLayout({ bindGroupLayouts: [this.selectedStarModelBGL] }),
+      vertex: {
+        module: starModelShader,
+        entryPoint: "vs_main",
+        buffers: [{
+          arrayStride: MILKY_WAY_MODEL_VERTEX_FLOATS * 4,
+          attributes: [
+            { shaderLocation: 0, offset: 0,     format: "float32x3" },
+            { shaderLocation: 1, offset: 3 * 4, format: "float32x3" },
+            { shaderLocation: 2, offset: 6 * 4, format: "float32x2" },
+            { shaderLocation: 3, offset: 8 * 4, format: "float32x4" },
+          ],
+        }],
+      },
+      fragment: {
+        module: starModelShader,
+        entryPoint: "fs_main",
+        targets: [{
+          format: sceneFormat,
+          blend: {
+            color: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" },
+            alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" },
+          },
+        }],
+      },
+      primitive: { topology: "triangle-list", cullMode: "back" },
       depthStencil: SCENE_DEPTH_DISABLED,
     });
 
@@ -1109,6 +1192,33 @@ export class Renderer {
       ? new Float32Array([pos[0], pos[1], pos[2], 1.0])
       : new Float32Array([0, 0, 0, 0]);
     this.ctx.device.queue.writeBuffer(this.selectedStarBuffer, 0, data);
+    if (!pos) this.uploadSelectedStarModel(null);
+  }
+
+  uploadSelectedStarModel(model: SelectedStarModel | null): void {
+    if (!model) {
+      this.selectedStarModelActive = false;
+      this.selectedStarModelUniform.fill(0);
+      this.writeSelectedStarModelUniform();
+      return;
+    }
+
+    const radiusAU = Math.max(0.00465047 * 0.01, Number.isFinite(model.radiusAU) ? model.radiusAU : 0.00465047);
+    const alpha = clamp(Number.isFinite(model.alpha) ? Number(model.alpha) : 1, 0.05, 1);
+    this.selectedStarModelActive = true;
+    this.selectedStarModelUniform[0] = model.position[0];
+    this.selectedStarModelUniform[1] = model.position[1];
+    this.selectedStarModelUniform[2] = model.position[2];
+    this.selectedStarModelUniform[3] = radiusAU;
+    this.selectedStarModelUniform[4] = clamp(model.color[0], 0, 1);
+    this.selectedStarModelUniform[5] = clamp(model.color[1], 0, 1);
+    this.selectedStarModelUniform[6] = clamp(model.color[2], 0, 1);
+    this.selectedStarModelUniform[7] = starModelTypeIndex(model.starType ?? "sun-like-star");
+    this.selectedStarModelUniform[8] = 1;
+    this.selectedStarModelUniform[9] = alpha;
+    this.selectedStarModelUniform[10] = this._actualBrightness ? 1 : 0;
+    this.selectedStarModelUniform[11] = 0;
+    this.writeSelectedStarModelUniform();
   }
 
   /** Upload 100k Milky Way background stars (once on catalog load). */
@@ -1623,6 +1733,12 @@ export class Renderer {
         this.milkyWayModelFailedAt.delete(id);
       }
     }
+  }
+
+  private writeSelectedStarModelUniform(): void {
+    if (!this.selectedStarModelBuffer) return;
+    this.selectedStarModelUniform[10] = this._actualBrightness ? 1 : 0;
+    this.ctx.device.queue.writeBuffer(this.selectedStarModelBuffer, 0, this.selectedStarModelUniform);
   }
 
   private writeDustUniform(): void {
@@ -2253,6 +2369,13 @@ export class Renderer {
       this.starOctants, this._starLimit, this.starCount,
       () => pass.draw(6, Math.min(this.starCount, this._starLimit), 0, 0),
     );
+
+    if (this.selectedStarModelActive && this.selectedStarModelVertexCount > 0) {
+      pass.setPipeline(this.starModelPipeline);
+      pass.setBindGroup(0, this.selectedStarModelBindGroup);
+      pass.setVertexBuffer(0, this.selectedStarModelVertexBuffer);
+      pass.draw(this.selectedStarModelVertexCount);
+    }
 
     // ── Constellation lines between snapped visible-star positions ─────────
     if (this._showConstellations && this.constellationCount > 0) {

@@ -1,3 +1,5 @@
+import { classifyStarModelType, type StarModelTypeId } from "./star-types";
+
 export const STAR_FLOATS = 8;
 export const DEFAULT_VISIBLE_STAR_COUNT = 100_000;
 export const AU_PER_PARSEC = 80;
@@ -26,6 +28,9 @@ export interface CatalogStar {
   /** Physical render radius in AU. */
   size: number;
   radiusSolar: number;
+  spectralType?: string | null;
+  temperatureK?: number | null;
+  starType: StarModelTypeId;
   alpha: number;
   aliases?: string[];
 }
@@ -49,6 +54,11 @@ export interface StarSearchResult {
   z: number;
   focusDistance: number;
   color: [number, number, number];
+  radiusAU?: number | undefined;
+  radiusSolar?: number | undefined;
+  spectralType?: string | null | undefined;
+  temperatureK?: number | null | undefined;
+  starType?: StarModelTypeId | undefined;
 }
 
 interface ExoplanetHostRecord {
@@ -361,6 +371,7 @@ function hostToCatalogStar(record: ExoplanetHostRecord, index: number): CatalogS
   const [x, y, z] = catalogPosition(record.ra, record.dec, distancePc);
   const apparentDisplay = starDisplayFromMagnitude(magnitude, 0.22);
   const color = hostColor(record, magnitude);
+  const temperatureK = Number.isFinite(record.temperatureK) ? Number(record.temperatureK) : null;
   const radiusSolar = Number.isFinite(record.radiusSolar) ? Number(record.radiusSolar) : null;
   const luminositySolar = Number.isFinite(record.luminosityLogSolar)
     ? Math.pow(10, Number(record.luminosityLogSolar))
@@ -388,6 +399,14 @@ function hostToCatalogStar(record: ExoplanetHostRecord, index: number): CatalogS
     color,
     size: stellarRenderRadiusAU(resolvedRadiusSolar),
     radiusSolar: resolvedRadiusSolar,
+    spectralType: record.spectralType ?? null,
+    temperatureK,
+    starType: classifyStarModelType({
+      spectralType: record.spectralType,
+      temperatureK,
+      radiusSolar: resolvedRadiusSolar,
+      color,
+    }),
     alpha: clamp(alpha, 0.04, 0.98),
   };
   const aliases = HOST_ALIASES_BY_KEY[hostAliasKey(record.name)];
@@ -532,6 +551,11 @@ export function searchCatalogStars(stars: CatalogStar[], query: string, limit = 
         z: star.z,
         focusDistance: focusDistanceForStarRadiusAU(star.size),
         color: star.color,
+        radiusAU: star.size,
+        radiusSolar: star.radiusSolar,
+        spectralType: star.spectralType,
+        temperatureK: star.temperatureK,
+        starType: star.starType,
       };
     });
 }
