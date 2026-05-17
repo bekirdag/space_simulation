@@ -25,6 +25,7 @@ import { type Mat4 } from "./math/mat4";
 import {
   DEFAULT_VISIBLE_STAR_COUNT,
   STAR_FLOATS,
+  AU_PER_PARSEC,
   catalogStarsToRenderBuffer,
   combineStarBuffers,
   loadExoplanetHostStars,
@@ -129,6 +130,8 @@ const LIGHT_YEARS_PER_PARSEC = 3.26156;
 const SELECTED_NEARBY_STAR_RENDER_RADIUS_AU = 0.005; // keep in sync with src/gpu/star.wgsl
 const SELECTED_NEARBY_STAR_SCREEN_WIDTH_FRACTION = 0.50;
 const CAMERA_FOV_Y = Math.PI / 4; // keep in sync with src/scene/camera.ts
+const MAP_WHEEL_ZOOM_STEPS = 10;
+const MAP_DOUBLE_CLICK_TRAVEL_SECONDS = 2;
 // Active substep size (yr) — changed via Settings panel.
 // Larger steps = faster simulation but reduced moon accuracy.
 let simSubstepYr = MAX_SUBSTEP_YR; // default: 15 min (precise)
@@ -183,6 +186,10 @@ interface NasaObjectInfo {
   stale?: boolean;
   warning?: string;
   error?: string;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
 }
 
 function nearbyStarLabelsToRenderBuffer(stars: readonly NearbyStarLabel[]): StarBuffer {
@@ -1345,6 +1352,244 @@ async function main(): Promise<void> {
     renderer.uploadBodies(bodies);
   }
 
+  // Last computed viewProj matrix - used by pointer hit tests outside the render loop.
+  let lastViewProj: Float32Array | null = null;
+
+  type MapObjectClickMode = "single" | "double";
+
+  interface ProjectedMapPoint {
+    x: number;
+    y: number;
+    w: number;
+  }
+
+  interface MapObjectHit {
+    score: number;
+    select: (mode: MapObjectClickMode) => void;
+  }
+
+  function projectMapPoint(x: number, y: number, z: number): ProjectedMapPoint | null {
+    if (!lastViewProj) return null;
+    const vp = lastViewProj;
+    const cx = vp[0]!*x + vp[4]!*y + vp[8]! *z + vp[12]!;
+    const cy = vp[1]!*x + vp[5]!*y + vp[9]! *z + vp[13]!;
+    const cz = vp[2]!*x + vp[6]!*y + vp[10]!*z + vp[14]!;
+    const cw = vp[3]!*x + vp[7]!*y + vp[11]!*z + vp[15]!;
+    if (cw <= 0) return null;
+    const nx = cx / cw;
+    const ny = cy / cw;
+    const nz = cz / cw;
+    if (nz < 0 || nz > 1.02 || Math.abs(nx) > 1.08 || Math.abs(ny) > 1.08) return null;
+    return {
+      x: (nx + 1) * 0.5 * window.innerWidth,
+      y: (1 - ny) * 0.5 * window.innerHeight,
+      w: cw,
+    };
+  }
+
+  function screenDistance(cx: number, cy: number, point: ProjectedMapPoint): number {
+    return Math.hypot(cx - point.x, cy - point.y);
+  }
+
+  function bodyHitThreshold(body: Body, projected: ProjectedMapPoint): number {
+    const focalY = 1 / Math.tan(CAMERA_FOV_Y / 2);
+    const radiusPx = body.radius * focalY / Math.max(projected.w, 1e-9) * window.innerHeight * 0.5;
+    return clamp(radiusPx * 1.35 + 8, 12, 52);
+  }
+
+  function catalogHitFromStar(star: CatalogStar): StarSearchResult {
+    const distanceLabel = star.distancePc === null
+      ? "distance unknown"
+      : `${star.distancePc.toFixed(star.distancePc < 20 ? 1 : 0)} pc`;
+    const planetLabel = `${star.planetCount} confirmed planet${star.planetCount === 1 ? "" : "s"}`;
+    const magnitudeLabel = star.magnitude === null ? "" : ` · mag ${star.magnitude.toFixed(1)}`;
+    const distanceAu = Math.hypot(star.x, star.y, star.z);
+    return {
+      id: star.id,
+      label: star.name,
+      subtitle: `${planetLabel} · ${distanceLabel}${magnitudeLabel}`,
+      x: star.x,
+      y: star.y,
+      z: star.z,
+      focusDistance: clamp(distanceAu * 0.0005, 0.5, 5),
+      color: star.color,
+    };
+  }
+
+  function selectMapCatalogObject(
+    hit: StarSearchResult,
+    mode: MapObjectClickMode,
+    sideEffect: (() => void) | null = null,
+  ): void {
+    renderer.setActiveMilkyWayModel(hit.id.startsWith("mwmodel:") ? hit.id : null);
+    sideEffect?.();
+    if (mode === "double") {
+      nav.selectCatalogStar(hit, MAP_DOUBLE_CLICK_TRAVEL_SECONDS);
+    } else {
+      nav.selectCatalogStarForWheelZoom(hit, MAP_WHEEL_ZOOM_STEPS);
+    }
+    renderer.uploadBodies(bodies);
+    renderer.uploadSelectedStar(
+      !hit.id.startsWith("galaxy:") &&
+        !hit.id.startsWith("mwmodel:") &&
+        !hit.id.startsWith("nebula:") &&
+        !hit.id.startsWith("blackhole:")
+        ? [hit.x, hit.y, hit.z]
+        : null,
+    );
+  }
+
+  function findMapObjectAtScreen(cx: number, cy: number): MapObjectHit | null {
+    const candidates: MapObjectHit[] = [];
+    const addCandidate = (candidate: MapObjectHit | null): void => {
+      if (candidate) candidates.push(candidate);
+    };
+
+    for (const body of bodies) {
+      const projected = projectMapPoint(body.x, body.y, body.z);
+      if (!projected) continue;
+      const dist = screenDistance(cx, cy, projected);
+      const threshold = bodyHitThreshold(body, projected);
+      if (dist > threshold) continue;
+      addCandidate({
+        score: dist - 10,
+        select: (mode) => {
+          if (mode === "double") nav.travelToClose(body.name);
+          else nav.focusBodyForWheelZoom(body.name, MAP_WHEEL_ZOOM_STEPS);
+        },
+      });
+    }
+
+    for (const star of NEARBY_STAR_LABELS) {
+      const projected = projectMapPoint(star.x, star.y, star.z);
+      if (!projected) continue;
+      const dist = screenDistance(cx, cy, projected);
+      if (dist > 14) continue;
+      const distanceLy = star.distPc * LIGHT_YEARS_PER_PARSEC;
+      const hit: StarSearchResult = {
+        id: nearbyStarId(star),
+        label: star.name,
+        subtitle: `${star.distPc.toFixed(star.distPc < 10 ? 2 : 1)} pc · ${distanceLy.toFixed(distanceLy < 20 ? 1 : 0)} ly`,
+        x: star.x,
+        y: star.y,
+        z: star.z,
+        focusDistance: nearbyStarFocusDistance(),
+        color: [0.70, 0.84, 1.00],
+      };
+      addCandidate({
+        score: dist - 3,
+        select: (mode) => selectMapCatalogObject(hit, mode, () => {
+          setExoplanetBodies(star.name, [star.x, star.y, star.z]);
+        }),
+      });
+    }
+
+    for (const star of exoplanetHosts) {
+      const projected = projectMapPoint(star.x, star.y, star.z);
+      if (!projected) continue;
+      const dist = screenDistance(cx, cy, projected);
+      if (dist > 13) continue;
+      const hit = catalogHitFromStar(star);
+      addCandidate({
+        score: dist,
+        select: (mode) => selectMapCatalogObject(hit, mode, () => {
+          setExoplanetBodies(star.name, [star.x, star.y, star.z]);
+        }),
+      });
+    }
+
+    let bestVisibleStar: MapObjectHit | null = null;
+    for (let o = 0, i = 0; o < visibleStarBuffer.length; o += STAR_FLOATS, i++) {
+      const x = visibleStarBuffer[o]!;
+      const y = visibleStarBuffer[o + 1]!;
+      const z = visibleStarBuffer[o + 2]!;
+      const projected = projectMapPoint(x, y, z);
+      if (!projected) continue;
+      const dist = screenDistance(cx, cy, projected);
+      const threshold = clamp(visibleStarBuffer[o + 3]! * 5 + visibleStarBuffer[o + 7]! * 4 + 4, 6, 12);
+      if (dist > threshold) continue;
+      const distancePc = Math.hypot(x, y, z) / AU_PER_PARSEC;
+      const distanceLy = distancePc * LIGHT_YEARS_PER_PARSEC;
+      const hit: StarSearchResult = {
+        id: `visible-star:${i}`,
+        label: "Mapped star",
+        subtitle: `${distancePc.toFixed(distancePc < 20 ? 1 : 0)} pc · ${distanceLy.toFixed(distanceLy < 50 ? 1 : 0)} ly`,
+        x, y, z,
+        focusDistance: nearbyStarFocusDistance(),
+        color: [
+          visibleStarBuffer[o + 4]!,
+          visibleStarBuffer[o + 5]!,
+          visibleStarBuffer[o + 6]!,
+        ],
+      };
+      const candidate: MapObjectHit = {
+        score: dist + 6,
+        select: (mode) => selectMapCatalogObject(hit, mode, () => setExoplanetBodies(null)),
+      };
+      if (!bestVisibleStar || candidate.score < bestVisibleStar.score) bestVisibleStar = candidate;
+    }
+    addCandidate(bestVisibleStar);
+
+    if (showGalaxies) {
+      let bestGalaxy: MapObjectHit | null = null;
+      for (let o = 0, i = 0; o < galaxyBuffer.length; o += GALAXY_FLOATS, i++) {
+        const x = galaxyBuffer[o]!;
+        const y = galaxyBuffer[o + 1]!;
+        const z = galaxyBuffer[o + 2]!;
+        const projected = projectMapPoint(x, y, z);
+        if (!projected) continue;
+        const dist = screenDistance(cx, cy, projected);
+        const threshold = clamp(galaxyBuffer[o + 3]! * 7 + galaxyBuffer[o + 7]! * 5 + 7, 10, 28);
+        if (dist > threshold) continue;
+        const named = galaxyNames.find(g => g.index === i);
+        const label = LOCAL_GROUP_GALAXY_LABELS.find(item => item.name === named?.name);
+        const hit: StarSearchResult = {
+          id: label ? `galaxy:${label.id}` : galaxySearchId(named?.name ?? `galaxy-${i}`),
+          label: named?.name ?? "Galaxy",
+          subtitle: galaxyFocusSubtitle(named?.dist ?? 0),
+          x, y, z,
+          focusDistance: label ? galaxySelectionFocusDistance(label.id) : GENERIC_GALAXY_CLOSE_FOCUS_AU,
+          color: [0.82, 0.88, 1.00],
+        };
+        const candidate: MapObjectHit = {
+          score: dist + 4,
+          select: (mode) => selectMapCatalogObject(hit, mode, () => setExoplanetBodies(null)),
+        };
+        if (!bestGalaxy || candidate.score < bestGalaxy.score) bestGalaxy = candidate;
+      }
+      addCandidate(bestGalaxy);
+    }
+
+    let bestNebula: MapObjectHit | null = null;
+    for (const neb of nebulaDets) {
+      const projected = projectMapPoint(neb.x, neb.y, neb.z);
+      if (!projected) continue;
+      const dist = screenDistance(cx, cy, projected);
+      if (dist > 18) continue;
+      const r = Math.hypot(neb.x, neb.y, neb.z);
+      const color = NEB_COLOR[neb.type] ?? [0.88, 0.35, 0.55];
+      const hit: StarSearchResult = {
+        id: mapObjectSearchId("nebula", neb.name),
+        label: neb.name,
+        subtitle: "nebula",
+        x: neb.x,
+        y: neb.y,
+        z: neb.z,
+        focusDistance: Math.max(200, r * 0.005),
+        color,
+      };
+      const candidate: MapObjectHit = {
+        score: dist + 5,
+        select: (mode) => selectMapCatalogObject(hit, mode, () => setExoplanetBodies(null)),
+      };
+      if (!bestNebula || candidate.score < bestNebula.score) bestNebula = candidate;
+    }
+    addCandidate(bestNebula);
+
+    candidates.sort((a, b) => a.score - b.score);
+    return candidates[0] ?? null;
+  }
+
   // ── Canvas click → select body ────────────────────────────────────────────
   const contextMenu = new ContextMenu();
 
@@ -1353,6 +1598,8 @@ async function main(): Promise<void> {
   let pointerDownAt    = { x: 0, y: 0 };
   let rightDownAt      = { x: 0, y: 0 };
   let lastClickMs      = 0;
+  let lastClickAt      = { x: 0, y: 0 };
+  let lastClickedMapHit: MapObjectHit | null = null;
   // Flag set during mousemove while right button is held; cleared on next
   // right-mousedown. Used to suppress the context menu after a drag.
   let rightDragHappened = false;
@@ -1381,14 +1628,31 @@ async function main(): Promise<void> {
     contextMenu.hide();
 
     const now = Date.now();
-    const isDbl = now - lastClickMs < 300;
+    const clickGap = Math.hypot(e.clientX - lastClickAt.x, e.clientY - lastClickAt.y);
+    const isDbl = now - lastClickMs < 300 && clickGap < 12 && lastClickedMapHit !== null;
+
+    const labelBody = isDbl ? null : labels.findBodyAtScreen(e.clientX, e.clientY);
+    const hit = isDbl && lastClickedMapHit
+      ? lastClickedMapHit
+      : labelBody
+      ? {
+          score: 0,
+          select: (mode: MapObjectClickMode) => {
+            if (mode === "double") nav.travelToClose(labelBody.name);
+            else nav.focusBodyForWheelZoom(labelBody.name, MAP_WHEEL_ZOOM_STEPS);
+          },
+        } satisfies MapObjectHit
+      : findMapObjectAtScreen(e.clientX, e.clientY);
     lastClickMs = now;
+    lastClickAt = { x: e.clientX, y: e.clientY };
+    if (!hit) {
+      lastClickedMapHit = null;
+      nav.clearFocusedBody();
+      return;
+    }
 
-    const body = labels.findBodyAtScreen(e.clientX, e.clientY);
-    if (!body) { nav.clearFocusedBody(); return; }
-
-    if (isDbl) nav.travelToClose(body.name);
-    else       nav.travelToSystem(body.name);
+    hit.select(isDbl ? "double" : "single");
+    lastClickedMapHit = hit;
   });
 
   // ── Right-click: context menu ─────────────────────────────────────────────
@@ -1661,10 +1925,6 @@ async function main(): Promise<void> {
   });
 
   // ── Render loop ───────────────────────────────────────────────────────────
-  // Last computed viewProj matrix — used by the contextmenu handler to project
-  // catalog stars on right-click without needing to run inside the render loop.
-  let lastViewProj: Float32Array | null = null;
-
   let lastTime = performance.now();
 
   function frame(now: number): void {

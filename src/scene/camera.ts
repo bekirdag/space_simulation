@@ -20,8 +20,17 @@ interface CameraTravelAnimation {
   durationMs: number;
 }
 
+interface WheelZoomGoal {
+  distance: number;
+  remainingSteps: number;
+}
+
 function clampDistance(distance: number): number {
   return Math.max(MIN_DISTANCE, Math.min(MAX_DISTANCE, distance));
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
 }
 
 function aspectLimitedNdcRadius(fill: number): number {
@@ -55,6 +64,7 @@ export class Camera {
   // Computed each frame by update()
   private _uniforms!: CameraUniforms;
   private travelAnimation: CameraTravelAnimation | null = null;
+  private wheelZoomGoal: WheelZoomGoal | null = null;
 
   attach(canvas: HTMLCanvasElement): void {
     let orbiting = false;
@@ -113,9 +123,22 @@ export class Camera {
     canvas.addEventListener("wheel", (e) => {
       e.preventDefault();
       this.cancelTravelAnimation();
-      const factor = e.deltaY < 0 ? 0.9 : 1.1;
+      const zoomingIn = e.deltaY < 0;
       const oldDist = this.distance;
+      const activeGoal = zoomingIn && this.wheelZoomGoal && oldDist > this.wheelZoomGoal.distance * 1.001
+        ? this.wheelZoomGoal
+        : null;
+      let factor = zoomingIn ? 0.9 : 1.1;
+      if (activeGoal) {
+        const steps = Math.max(1, activeGoal.remainingSteps);
+        factor = clamp(Math.pow(activeGoal.distance / oldDist, 1 / steps), 0.02, 0.995);
+        activeGoal.remainingSteps = steps - 1;
+      }
       this.distance  = clampDistance(oldDist * factor);
+      if (activeGoal && (activeGoal.remainingSteps <= 0 || this.distance <= activeGoal.distance * 1.001)) {
+        this.distance = activeGoal.distance;
+        this.wheelZoomGoal = null;
+      }
 
       // Zoom toward cursor when free-exploring (no body lock).
       // Shifts target so the world point under the cursor stays fixed —
@@ -143,6 +166,56 @@ export class Camera {
     this.travelAnimation = null;
   }
 
+  setWheelZoomGoal(distance: number, steps = 10): void {
+    const targetDistance = clampDistance(distance);
+    if (!Number.isFinite(targetDistance) || targetDistance >= this.distance) {
+      this.wheelZoomGoal = null;
+      return;
+    }
+    this.wheelZoomGoal = {
+      distance: targetDistance,
+      remainingSteps: Math.max(1, Math.round(steps)),
+    };
+  }
+
+  focusFromCurrentView(x: number, y: number, z: number, closeDistance: number, wheelSteps = 10): void {
+    this.cancelTravelAnimation();
+
+    const target: Vec3 = [x, y, z];
+    const eye = this._uniforms?.eye ?? this.currentEye();
+    const dx = eye[0] - x;
+    const dy = eye[1] - y;
+    const dz = eye[2] - z;
+    const rawDistance = Math.hypot(dx, dy, dz);
+
+    this.target = target;
+    if (Number.isFinite(rawDistance) && rawDistance > MIN_DISTANCE) {
+      this.distance = clampDistance(rawDistance);
+      this.azimuth = Math.atan2(dy, dx);
+      this.elevation = clamp(
+        Math.asin(clamp(dz / rawDistance, -1, 1)),
+        -Math.PI / 2 + ORBIT_POLE_MARGIN,
+        Math.PI / 2 - ORBIT_POLE_MARGIN,
+      );
+    }
+
+    this.lockTarget = true;
+    this.setWheelZoomGoal(closeDistance, wheelSteps);
+  }
+
+  private currentEye(): Vec3 {
+    const cosPhi   = Math.cos(this.elevation);
+    const sinPhi   = Math.sin(this.elevation);
+    const cosTheta = Math.cos(this.azimuth);
+    const sinTheta = Math.sin(this.azimuth);
+
+    return [
+      this.target[0] + this.distance * cosPhi * cosTheta,
+      this.target[1] + this.distance * cosPhi * sinTheta,
+      this.target[2] + this.distance * sinPhi,
+    ];
+  }
+
   private updateTravelAnimation(nowMs: number): void {
     const anim = this.travelAnimation;
     if (!anim) return;
@@ -166,6 +239,7 @@ export class Camera {
   travelTo(x: number, y: number, z: number, distance: number, durationSeconds = 0): void {
     const toTarget: Vec3 = [x, y, z];
     const toDistance = clampDistance(distance);
+    this.wheelZoomGoal = null;
     if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
       this.travelAnimation = null;
       this.target = toTarget;
@@ -204,11 +278,7 @@ export class Camera {
     const cosTheta = Math.cos(this.azimuth);
     const sinTheta = Math.sin(this.azimuth);
 
-    const eye: Vec3 = [
-      this.target[0] + this.distance * cosPhi * cosTheta,
-      this.target[1] + this.distance * cosPhi * sinTheta,
-      this.target[2] + this.distance * sinPhi,
-    ];
+    const eye = this.currentEye();
 
     const right: Vec3 = [-sinTheta, cosTheta, 0];
     const up: Vec3 = [-sinPhi * cosTheta, -sinPhi * sinTheta, cosPhi];

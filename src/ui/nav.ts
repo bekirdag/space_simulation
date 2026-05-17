@@ -44,12 +44,19 @@ export class NavPanel {
   get selectedCatalogStar(): StarSearchResult | null { return this._selectedCatalogStar; }
 
   /** Select a catalog/map object externally (e.g. from search or the map). */
-  selectCatalogStar(hit: StarSearchResult): void {
+  selectCatalogStar(hit: StarSearchResult, durationSeconds = 0): void {
     this.clearFocusedBody();
     this._selectedCatalogStar = hit;
     this.catalogSearch?.onFocusTitleChange?.(hit.label, hit.subtitle, this.catalogObjectType(hit));
-    this.camera.travelTo(hit.x, hit.y, hit.z, hit.focusDistance);
+    this.camera.travelTo(hit.x, hit.y, hit.z, hit.focusDistance, durationSeconds);
     this.camera.lockTarget = true;
+  }
+
+  selectCatalogStarForWheelZoom(hit: StarSearchResult, wheelSteps = 10): void {
+    this.clearFocusedBody();
+    this._selectedCatalogStar = hit;
+    this.catalogSearch?.onFocusTitleChange?.(hit.label, hit.subtitle, this.catalogObjectType(hit));
+    this.camera.focusFromCurrentView(hit.x, hit.y, hit.z, hit.focusDistance, wheelSteps);
   }
 
   constructor(
@@ -217,6 +224,14 @@ export class NavPanel {
   /** Travel close enough for the selected body itself to fit the screen. */
   travelToClose(name: string): void {
     this.travelTo(name, "close");
+  }
+
+  /** Keep the current camera eye but make this body the next wheel-zoom target. */
+  focusBodyForWheelZoom(name: string, wheelSteps = 10): void {
+    const body = this.bodyByName(name);
+    if (!body) return;
+    this.setFocusedBody(name);
+    this.camera.focusFromCurrentView(body.x, body.y, body.z, this.closeDistanceFor(body), wheelSteps);
   }
 
   private filter(): void {
