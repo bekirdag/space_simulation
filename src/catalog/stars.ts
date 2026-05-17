@@ -6,11 +6,12 @@ export const AU_PER_PARSEC = 80;
 export const SOLAR_RADIUS_AU = 0.00465047;
 
 const EXOPLANET_HOST_DATA_URL = "/data/exoplanet-hosts.json";
-const VISIBLE_STAR_DATA_URL = "/data/visible-stars-100k.bin?v=physical-radii-v2";
+const VISIBLE_STAR_DATA_URL = "/data/visible-stars-100k.bin?v=deduped-anchors-v1";
 const SUN_ABSOLUTE_V_MAG = 4.83;
 const SUN_TEMPERATURE_K = 5778;
 const MIN_STELLAR_RADIUS_SOLAR = 0.01;
 const MAX_STELLAR_RADIUS_SOLAR = 1800;
+export const STAR_DEDUPE_POSITION_TOLERANCE_AU = 0.05;
 
 export type StarBuffer = Float32Array<ArrayBufferLike>;
 
@@ -60,6 +61,26 @@ export interface StarSearchResult {
   spectralType?: string | null | undefined;
   temperatureK?: number | null | undefined;
   starType?: StarModelTypeId | undefined;
+}
+
+export interface StarBufferDedupeStats {
+  label: string;
+  input: number;
+  kept: number;
+  dropped: number;
+}
+
+export interface StarBufferDedupeResult {
+  data: StarBuffer;
+  input: number;
+  kept: number;
+  dropped: number;
+  stats: StarBufferDedupeStats[];
+}
+
+export interface StarBufferSource {
+  label: string;
+  buffer: StarBuffer;
 }
 
 interface ExoplanetHostRecord {
@@ -112,6 +133,83 @@ function mulberry32(seed: number): () => number {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
+}
+
+function starCell(value: number, cellSize: number): number {
+  return Math.floor(value / cellSize);
+}
+
+function starCellKey(ix: number, iy: number, iz: number): string {
+  return `${ix},${iy},${iz}`;
+}
+
+function addStarPosition(
+  index: Map<string, number[]>,
+  positions: number[],
+  x: number,
+  y: number,
+  z: number,
+  cellSize: number,
+): void {
+  const cellKey = starCellKey(starCell(x, cellSize), starCell(y, cellSize), starCell(z, cellSize));
+  const offset = positions.length;
+  positions.push(x, y, z);
+  const bucket = index.get(cellKey);
+  if (bucket) {
+    bucket.push(offset);
+  } else {
+    index.set(cellKey, [offset]);
+  }
+}
+
+function hasNearbyStarPosition(
+  index: Map<string, number[]>,
+  positions: number[],
+  x: number,
+  y: number,
+  z: number,
+  toleranceAU: number,
+): boolean {
+  const cellSize = Math.max(toleranceAU, 1e-6);
+  const ix = starCell(x, cellSize);
+  const iy = starCell(y, cellSize);
+  const iz = starCell(z, cellSize);
+  const toleranceSq = toleranceAU * toleranceAU;
+
+  for (let dx = -1; dx <= 1; dx++) {
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dz = -1; dz <= 1; dz++) {
+        const bucket = index.get(starCellKey(ix + dx, iy + dy, iz + dz));
+        if (!bucket) continue;
+        for (const offset of bucket) {
+          const ox = positions[offset]!;
+          const oy = positions[offset + 1]!;
+          const oz = positions[offset + 2]!;
+          const distSq = (x - ox) ** 2 + (y - oy) ** 2 + (z - oz) ** 2;
+          if (distSq <= toleranceSq) return true;
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
+function seedStarPositionIndex(
+  index: Map<string, number[]>,
+  positions: number[],
+  buffers: readonly StarBuffer[],
+  toleranceAU: number,
+): void {
+  const cellSize = Math.max(toleranceAU, 1e-6);
+  for (const buffer of buffers) {
+    if (buffer.length % STAR_FLOATS !== 0) {
+      throw new Error("Star buffer length must be a multiple of STAR_FLOATS.");
+    }
+    for (let o = 0; o < buffer.length; o += STAR_FLOATS) {
+      addStarPosition(index, positions, buffer[o]!, buffer[o + 1]!, buffer[o + 2]!, cellSize);
+    }
+  }
 }
 
 function apparentFluxFromMagnitude(magnitude: number): number {
@@ -457,7 +555,7 @@ export async function loadVisibleStarField(): Promise<VisibleStarLoad> {
     }
     return {
       data: new Float32Array(buffer),
-      source: "HYG 4.2 local binary snapshot with physical stellar radii",
+      source: "HYG 4.2 local binary snapshot with nearby-anchor de-duplication and physical stellar radii",
     };
   } catch (error) {
     console.warn("Using generated visible star field:", error);
@@ -485,6 +583,101 @@ export function catalogStarsToRenderBuffer(stars: CatalogStar[]): StarBuffer {
   }
 
   return data;
+}
+
+export function filterStarBufferByPosition(
+  buffer: StarBuffer,
+  exclusionBuffers: readonly StarBuffer[] = [],
+  toleranceAU = STAR_DEDUPE_POSITION_TOLERANCE_AU,
+): StarBufferDedupeResult {
+  if (buffer.length % STAR_FLOATS !== 0) {
+    throw new Error("Star buffer length must be a multiple of STAR_FLOATS.");
+  }
+
+  const index = new Map<string, number[]>();
+  const positions: number[] = [];
+  seedStarPositionIndex(index, positions, exclusionBuffers, toleranceAU);
+
+  const cellSize = Math.max(toleranceAU, 1e-6);
+  const input = buffer.length / STAR_FLOATS;
+  const output = new Float32Array(buffer.length);
+  let writeOffset = 0;
+  let kept = 0;
+
+  for (let o = 0; o < buffer.length; o += STAR_FLOATS) {
+    const x = buffer[o]!;
+    const y = buffer[o + 1]!;
+    const z = buffer[o + 2]!;
+    if (hasNearbyStarPosition(index, positions, x, y, z, toleranceAU)) continue;
+
+    output.set(buffer.subarray(o, o + STAR_FLOATS), writeOffset);
+    writeOffset += STAR_FLOATS;
+    kept++;
+    addStarPosition(index, positions, x, y, z, cellSize);
+  }
+
+  const dropped = input - kept;
+  return {
+    data: output.slice(0, writeOffset),
+    input,
+    kept,
+    dropped,
+    stats: [{ label: "filtered", input, kept, dropped }],
+  };
+}
+
+export function combineStarBuffersUnique(
+  sources: readonly StarBufferSource[],
+  toleranceAU = STAR_DEDUPE_POSITION_TOLERANCE_AU,
+): StarBufferDedupeResult {
+  const index = new Map<string, number[]>();
+  const positions: number[] = [];
+  const cellSize = Math.max(toleranceAU, 1e-6);
+  const totalFloats = sources.reduce((sum, source) => sum + source.buffer.length, 0);
+  const combined = new Float32Array(totalFloats);
+  const stats: StarBufferDedupeStats[] = [];
+  let writeOffset = 0;
+  let input = 0;
+  let kept = 0;
+
+  for (const source of sources) {
+    const { buffer, label } = source;
+    if (buffer.length % STAR_FLOATS !== 0) {
+      throw new Error("Star buffer length must be a multiple of STAR_FLOATS.");
+    }
+
+    const sourceInput = buffer.length / STAR_FLOATS;
+    let sourceKept = 0;
+    input += sourceInput;
+
+    for (let o = 0; o < buffer.length; o += STAR_FLOATS) {
+      const x = buffer[o]!;
+      const y = buffer[o + 1]!;
+      const z = buffer[o + 2]!;
+      if (hasNearbyStarPosition(index, positions, x, y, z, toleranceAU)) continue;
+
+      combined.set(buffer.subarray(o, o + STAR_FLOATS), writeOffset);
+      writeOffset += STAR_FLOATS;
+      kept++;
+      sourceKept++;
+      addStarPosition(index, positions, x, y, z, cellSize);
+    }
+
+    stats.push({
+      label,
+      input: sourceInput,
+      kept: sourceKept,
+      dropped: sourceInput - sourceKept,
+    });
+  }
+
+  return {
+    data: combined.slice(0, writeOffset),
+    input,
+    kept,
+    dropped: input - kept,
+    stats,
+  };
 }
 
 export function combineStarBuffers(...buffers: StarBuffer[]): StarBuffer {
@@ -552,6 +745,7 @@ export function searchCatalogStars(stars: CatalogStar[], query: string, limit = 
         z: star.z,
         focusDistance: focusDistanceForStarRadiusAU(star.size),
         color: star.color,
+        objectType: "star",
         radiusAU: star.size,
         radiusSolar: star.radiusSolar,
         spectralType: star.spectralType,

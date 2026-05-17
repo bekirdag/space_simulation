@@ -27,9 +27,11 @@ import {
   DEFAULT_VISIBLE_STAR_COUNT,
   SOLAR_RADIUS_AU,
   STAR_FLOATS,
+  STAR_DEDUPE_POSITION_TOLERANCE_AU,
   AU_PER_PARSEC,
   catalogStarsToRenderBuffer,
-  combineStarBuffers,
+  combineStarBuffersUnique,
+  filterStarBufferByPosition,
   focusDistanceForStarRadiusAU,
   loadExoplanetHostStars,
   loadVisibleStarField,
@@ -989,6 +991,7 @@ async function main(): Promise<void> {
 
   function dedupeSearchResults(hits: readonly StarSearchResult[]): StarSearchResult[] {
     const seen = new Set<string>();
+    const starHits: StarSearchResult[] = [];
     const deduped: StarSearchResult[] = [];
     for (const hit of hits) {
       const objectType = hit.objectType ?? "";
@@ -996,6 +999,14 @@ async function main(): Promise<void> {
       const labelKey = `${labelOnlyKey}|${objectType}`;
       const keys = [hit.id, labelOnlyKey, labelKey];
       if (keys.some(key => seen.has(key))) continue;
+      const isStarHit = objectType === "star" || hit.id.startsWith("nearby:") || hit.id.startsWith("exo-");
+      if (isStarHit) {
+        const overlapsExistingStar = starHits.some(existing => (
+          Math.hypot(hit.x - existing.x, hit.y - existing.y, hit.z - existing.z) <= STAR_DEDUPE_POSITION_TOLERANCE_AU
+        ));
+        if (overlapsExistingStar) continue;
+        starHits.push(hit);
+      }
       keys.forEach(key => seen.add(key));
       deduped.push(hit);
     }
@@ -1186,17 +1197,42 @@ async function main(): Promise<void> {
   showLoading("Installing CosmosMap assets...", STARTUP_ASSET_TOTAL, "assets");
   // Start with empty buffers — real data loads from binary within milliseconds.
   // Avoid the 100k-star placeholder allocation that can fail on low-memory devices.
+  let rawVisibleStarBuffer: StarBuffer = new Float32Array(0);
   let visibleStarBuffer: StarBuffer = new Float32Array(0);
   let exoplanetHostBuffer: StarBuffer = new Float32Array(0);
   const nearbyStarLabelBuffer = nearbyStarLabelsToRenderBuffer(NEARBY_STAR_LABELS);
   let exoplanetHosts: CatalogStar[] = [];
   let catalogStatus = "Loading exoplanet host catalog...";
+  let lastStarDedupeLog = "";
 
   // Single shared function that builds the combined buffer ONCE per update and
   // uploads + sorts in one pass.  Avoids creating multiple large allocations.
   function refreshStarCatalog(): void {
     try {
-      const combined = combineStarBuffers(nearbyStarLabelBuffer, visibleStarBuffer, exoplanetHostBuffer);
+      const filteredVisible = filterStarBufferByPosition(
+        rawVisibleStarBuffer,
+        [nearbyStarLabelBuffer, exoplanetHostBuffer],
+      );
+      visibleStarBuffer = filteredVisible.data;
+      const combinedResult = combineStarBuffersUnique([
+        { label: "nearby known stars", buffer: nearbyStarLabelBuffer },
+        { label: "exoplanet host stars", buffer: exoplanetHostBuffer },
+        { label: "visible mapped stars", buffer: visibleStarBuffer },
+      ]);
+      const combined = combinedResult.data;
+      const logKey = combinedResult.stats.map(
+        stat => `${stat.label}:${stat.input}:${stat.dropped}`,
+      ).join("|");
+      if (combinedResult.dropped > 0 && logKey !== lastStarDedupeLog) {
+        lastStarDedupeLog = logKey;
+        const details = combinedResult.stats
+          .filter(stat => stat.dropped > 0)
+          .map(stat => `${stat.dropped.toLocaleString()} ${stat.label}`)
+          .join(", ");
+        console.info(
+          `Removed ${combinedResult.dropped.toLocaleString()} duplicate star render entries (${details}).`,
+        );
+      }
       renderer.setStarOctants(sortIntoOctants(combined));
       renderer.uploadStars(combined);
     } catch (e) {
@@ -1212,7 +1248,7 @@ async function main(): Promise<void> {
 
   startupAssetPromises.push(trackStartupAsset("visible star catalog", async () => {
     const { data, source } = await loadVisibleStarField();
-    visibleStarBuffer = data;
+    rawVisibleStarBuffer = data;
     refreshStarCatalog();
     console.info(`Loaded ${data.length / STAR_FLOATS} visible stars from ${source}.`);
   }));
@@ -1886,6 +1922,7 @@ async function main(): Promise<void> {
       z: star.z,
       focusDistance: starFocusDistance(star.size),
       color: star.color,
+      objectType: "star",
       radiusAU: star.size,
       radiusSolar: star.radiusSolar,
       spectralType: star.spectralType,
