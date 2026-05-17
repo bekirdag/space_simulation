@@ -1064,13 +1064,6 @@ async function main(): Promise<void> {
   infoCloseBtn.addEventListener("click", closeInfo);
   settingsModal.addEventListener("click", e => { if (e.target === settingsModal) closeSettings(); });
   infoModal.addEventListener("click", e => { if (e.target === infoModal) closeInfo(); });
-  document.addEventListener("keydown", e => {
-    if (e.key !== "Escape") return;
-    closeSettings();
-    closeInfo();
-    closeObjectInfo();
-  });
-
   let showGalaxies = true;
   let showConstellations = false;
 
@@ -1662,6 +1655,30 @@ async function main(): Promise<void> {
       if (objectType !== "constellation") clearSelectedConstellation();
       setFocusTitle(title, subtitle, objectType);
     },
+  });
+
+  document.addEventListener("keydown", event => {
+    if (event.key !== "Escape" || event.repeat) return;
+
+    const hadOpenModal =
+      settingsModal.classList.contains("open") ||
+      infoModal.classList.contains("open") ||
+      objectInfoModal.classList.contains("open");
+    closeSettings();
+    closeInfo();
+    closeObjectInfo();
+    if (hadOpenModal) {
+      event.preventDefault();
+      return;
+    }
+
+    const unlockedTarget = nav.unlockTarget();
+    clearSelectedConstellation();
+    if (!unlockedTarget) return;
+
+    renderer.uploadSelectedStar(null);
+    renderer.uploadBodies(bodies);
+    event.preventDefault();
   });
 
   const VIEW_CONTROL_POLE_MARGIN = 0.02;

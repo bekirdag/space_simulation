@@ -302,6 +302,17 @@ export class NavPanel {
     this.renderCatalogLists();
   }
 
+  unlockTarget(): boolean {
+    const hadTarget =
+      this._focusedBodyName !== null ||
+      this._selectedCatalogStar !== null ||
+      this.camera.lockTarget;
+    if (!hadTarget) return false;
+
+    this.clearFocusedBody();
+    return true;
+  }
+
   private releaseTrackingForFlight(): void {
     this.resetEnterKeyNavigation();
     this._focusedBodyName = null;
