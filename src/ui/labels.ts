@@ -23,6 +23,8 @@ const ALWAYS_VISIBLE_BODY_NAMES = new Set([
 const LABEL_EDGE_MARGIN = 24;
 const LABEL_NAV_MARGIN = 238;
 const LABEL_BOTTOM_MARGIN = 86;
+const LABEL_OUTSKIRT_GAP_PX = 24;
+const LABEL_MIN_OUTSKIRT_OFFSET_PX = 18;
 const SOLAR_SYSTEM_LABEL_COLLAPSE_DISTANCE_AU = 250;
 // Near a direct 180-degree behind-camera alignment, every screen edge is arbitrary.
 const BEHIND_CAMERA_PIN_DEADZONE = 0.16;
@@ -103,6 +105,106 @@ function pinToViewport(nx: number, ny: number, cssW: number, cssH: number): Proj
 }
 
 interface ProjectedPoint { x: number; y: number; pinned: boolean }
+
+function viewportLabelBounds(
+  cssW: number,
+  cssH: number,
+  labelWidth = 0,
+  labelHeight = 0,
+): { minX: number; maxX: number; minY: number; maxY: number } {
+  const rightLimit = cssW > 720 ? cssW - LABEL_NAV_MARGIN : cssW - LABEL_EDGE_MARGIN;
+  const bottomLimit = Math.max(LABEL_EDGE_MARGIN, cssH - LABEL_BOTTOM_MARGIN);
+  return {
+    minX: LABEL_EDGE_MARGIN,
+    maxX: Math.max(LABEL_EDGE_MARGIN, rightLimit - Math.max(0, labelWidth)),
+    minY: LABEL_EDGE_MARGIN,
+    maxY: Math.max(LABEL_EDGE_MARGIN, bottomLimit - Math.max(0, labelHeight)),
+  };
+}
+
+function cameraDepthToPoint(
+  x: number,
+  y: number,
+  z: number,
+  camera: BodyLabelCameraFrame,
+): number {
+  const right = camera.camRight;
+  const up = camera.camUp;
+  const back: Vec3 = [
+    right[1] * up[2] - right[2] * up[1],
+    right[2] * up[0] - right[0] * up[2],
+    right[0] * up[1] - right[1] * up[0],
+  ];
+  const rx = x - camera.eye[0];
+  const ry = y - camera.eye[1];
+  const rz = z - camera.eye[2];
+  return -(rx * back[0] + ry * back[1] + rz * back[2]);
+}
+
+function apparentRadiusPx(
+  radiusAU: number | null | undefined,
+  x: number,
+  y: number,
+  z: number,
+  cameraFrame: BodyLabelCameraFrame | null,
+  cssW: number,
+  cssH: number,
+): number {
+  if (!cameraFrame || !Number.isFinite(radiusAU) || (radiusAU ?? 0) <= 0) return 0;
+  const depth = cameraDepthToPoint(x, y, z, cameraFrame);
+  if (!Number.isFinite(depth) || depth <= 1e-9) return 0;
+  const radiusPx = (radiusAU! * cameraFrame.focalY / depth) * cssH * 0.5;
+  return clamp(radiusPx, 0, Math.max(cssW, cssH));
+}
+
+function radiusFromFocusDistance(
+  focusDistance: number | null | undefined,
+  cameraFrame: BodyLabelCameraFrame | null,
+  cssW: number,
+  cssH: number,
+): number {
+  if (!cameraFrame || !Number.isFinite(focusDistance) || (focusDistance ?? 0) <= 0) return 0;
+  const aspect = Math.max(0.2, cssW / Math.max(1, cssH));
+  const fillNdc = clamp(0.88 * aspect, 0.25, 0.88);
+  return Math.max(0, (focusDistance! * fillNdc) / Math.max(cameraFrame.focalY, 1e-6));
+}
+
+function offsetLabelToObjectOutskirts(
+  pos: ProjectedPoint,
+  radiusPx: number,
+  cssW: number,
+  cssH: number,
+  labelWidth = 0,
+  labelHeight = 0,
+): { x: number; y: number } {
+  if (pos.pinned) return { x: pos.x, y: pos.y };
+
+  const centerX = cssW * 0.5;
+  const centerY = cssH * 0.5;
+  let dirX = pos.x - centerX;
+  let dirY = pos.y - centerY;
+  const len = Math.hypot(dirX, dirY);
+  if (len < 1e-3) {
+    dirX = 0.78;
+    dirY = -0.62;
+  } else {
+    dirX /= len;
+    dirY /= len;
+  }
+
+  const dynamicMax = clamp(Math.min(cssW, cssH) * 0.48, 220, 620);
+  const offset = clamp(
+    radiusPx + LABEL_OUTSKIRT_GAP_PX,
+    LABEL_MIN_OUTSKIRT_OFFSET_PX,
+    dynamicMax,
+  );
+  const bounds = viewportLabelBounds(cssW, cssH, labelWidth, labelHeight);
+
+  return {
+    x: clamp(pos.x + dirX * offset, bounds.minX, bounds.maxX),
+    y: clamp(pos.y + dirY * offset, bounds.minY, bounds.maxY),
+  };
+}
 
 export interface BodyLabelCameraFrame {
   eye: Vec3;
@@ -205,6 +307,9 @@ export interface CatalogStarInfo {
   label:    string;
   subtitle: string;
   x: number; y: number; z: number;
+  focusDistance?: number | undefined;
+  radiusAU?: number | undefined;
+  labelRadiusAU?: number | undefined;
 }
 
 export interface LockTargetInfo {
@@ -464,9 +569,19 @@ export class LabelManager {
       sp.style.display = 'block';
       sp.classList.toggle('pinned', pos.pinned);
       sp.classList.toggle('system', isFocusedSystemMember);
+      const labelPoint = pos.pinned
+        ? { x: pos.x, y: pos.y }
+        : offsetLabelToObjectOutskirts(
+            pos,
+            apparentRadiusPx(b.radius, b.x, b.y, b.z, cameraFrame, cssW, cssH),
+            cssW,
+            cssH,
+            sp.offsetWidth,
+            sp.offsetHeight,
+          );
       // Round to integer pixels — fractional positions cause sub-pixel text blur
-      sp.style.left = `${Math.round(pos.pinned ? pos.x : pos.x + 10)}px`;
-      sp.style.top  = `${Math.round(pos.pinned ? pos.y : pos.y - 6)}px`;
+      sp.style.left = `${Math.round(labelPoint.x)}px`;
+      sp.style.top  = `${Math.round(labelPoint.y)}px`;
 
       const dx = this.mouseX - pos.x;
       const dy = this.mouseY - pos.y;
@@ -495,12 +610,25 @@ export class LabelManager {
       this.starLabelEl.style.display = 'none';
       return;
     }
-    this.starLabelEl.style.display = 'block';
-    this.starLabelEl.style.left = `${pos.x + 14}px`;
-    this.starLabelEl.style.top  = `${pos.y - 8}px`;
     this.starLabelNameEl.textContent = star.label;
     this.starLabelSubEl.textContent = star.subtitle;
     this.starLabelSubEl.style.display = star.subtitle ? 'block' : 'none';
+    this.starLabelEl.style.display = 'block';
+    const radiusAU =
+      star.labelRadiusAU ??
+      star.radiusAU ??
+      radiusFromFocusDistance(star.focusDistance, cameraFrame, cssW, cssH);
+    const radiusPx = apparentRadiusPx(radiusAU, star.x, star.y, star.z, cameraFrame, cssW, cssH);
+    const labelPoint = offsetLabelToObjectOutskirts(
+      pos,
+      radiusPx,
+      cssW,
+      cssH,
+      this.starLabelEl.offsetWidth,
+      this.starLabelEl.offsetHeight,
+    );
+    this.starLabelEl.style.left = `${Math.round(labelPoint.x)}px`;
+    this.starLabelEl.style.top  = `${Math.round(labelPoint.y)}px`;
   }
 
   updateLockTargetReticle(
