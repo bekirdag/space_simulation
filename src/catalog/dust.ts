@@ -17,6 +17,8 @@ export const DUST_SUN_GALACTIC_RADIUS_KPC = 8.5;
 export const DUST_GALAXY_RADIUS_KPC = 16.5;
 export const DUST_GALAXY_HALF_HEIGHT_KPC = 1.6;
 export const DUST_GALAXY_HALF_HEIGHT_AU = DUST_GALAXY_HALF_HEIGHT_KPC * DUST_MILKY_WAY_KPC_TO_AU;
+export const DUST_CLOUD_MAX_MODEL_HEIGHT_KPC = 0.02;
+export const DUST_CLOUD_MAX_MODEL_HEIGHT_AU = DUST_CLOUD_MAX_MODEL_HEIGHT_KPC * DUST_MILKY_WAY_KPC_TO_AU;
 export const DUST_CLOUD_SOURCE =
   `${DUST_CLOUD_COUNT.toLocaleString()} MF2015 reddening-sampled procedural dust clouds`;
 
@@ -24,6 +26,7 @@ const DUST_MAP_DATA_URL = "/data/dust-map-mf2015.bin";
 const DUST_MAP_META_URL = "/data/dust-map-mf2015.meta.json";
 const DUST_MAP_MIN_ALPHA = 0.006;
 const DUST_MAP_ALPHA_RANGE = 0.080;
+const DUST_CLOUD_MIN_RADIUS_AU = 12;
 
 const TAU = Math.PI * 2;
 const GAL_TO_ECL = [
@@ -244,8 +247,9 @@ export function buildDustCloudBuffer(dustMap?: Float32Array, count = DUST_CLOUD_
     const squash = 0.48 + rand() * 0.82;
     const aspectX = rand() < 0.5 ? stretch : squash;
     const aspectY = rand() < 0.5 ? squash : stretch;
-    const maxRadiusAU = (DUST_GALAXY_HALF_HEIGHT_AU * 0.72) / Math.max(aspectX, aspectY);
-    const radiusAU = clamp(seed.sizeAU * (0.52 + Math.pow(rand(), 1.7) * 0.95 + seed.density * 0.26), 460, maxRadiusAU);
+    const maxRadiusAU = DUST_CLOUD_MAX_MODEL_HEIGHT_AU / (2 * Math.max(0.001, aspectY));
+    const minRadiusAU = Math.min(DUST_CLOUD_MIN_RADIUS_AU, maxRadiusAU);
+    const radiusAU = clamp(seed.sizeAU * (0.52 + Math.pow(rand(), 1.7) * 0.95 + seed.density * 0.26), minRadiusAU, maxRadiusAU);
     const color = dustColor(rand, seed.density);
     const alpha = 0.20 + rand() * 0.60;
     const style = Math.floor(rand() * 5);
