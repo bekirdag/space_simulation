@@ -221,7 +221,8 @@ export class Camera {
 
   /**
    * When true (body is focused/tracked), scroll zoom only changes orbit radius.
-   * When false (free exploration), scroll zooms toward the screen point under the cursor.
+   * When false (free exploration), right/middle drag free-looks from the current
+   * eye and scroll zooms toward the screen point under the cursor.
    * Set by NavPanel.setFocusedBody / clearFocusedBody.
    */
   lockTarget = false;
@@ -269,12 +270,14 @@ export class Camera {
       lastX = e.clientX; lastY = e.clientY;
 
       if (orbiting) {
+        const fixedEye = !this.lockTarget ? (this._uniforms?.eye ?? this.currentEye()) : null;
         const sens = 0.006;
         this.azimuth   -= dx * sens;
         this.elevation  = Math.max(
           -Math.PI / 2 + ORBIT_POLE_MARGIN,
           Math.min(Math.PI / 2 - ORBIT_POLE_MARGIN, this.elevation + dy * sens),
         );
+        if (fixedEye) this.setTargetFromEyeAndOrbit(fixedEye);
       }
 
       if (panning && this._uniforms) {
@@ -492,16 +495,34 @@ export class Camera {
     }
   }
 
-  private currentEye(): Vec3 {
+  private orbitOffset(): Vec3 {
     const cosPhi   = Math.cos(this.elevation);
     const sinPhi   = Math.sin(this.elevation);
     const cosTheta = Math.cos(this.azimuth);
     const sinTheta = Math.sin(this.azimuth);
 
     return [
-      this.target[0] + this.distance * cosPhi * cosTheta,
-      this.target[1] + this.distance * cosPhi * sinTheta,
-      this.target[2] + this.distance * sinPhi,
+      this.distance * cosPhi * cosTheta,
+      this.distance * cosPhi * sinTheta,
+      this.distance * sinPhi,
+    ];
+  }
+
+  private setTargetFromEyeAndOrbit(eye: Vec3): void {
+    const offset = this.orbitOffset();
+    this.target = [
+      eye[0] - offset[0],
+      eye[1] - offset[1],
+      eye[2] - offset[2],
+    ];
+  }
+
+  private currentEye(): Vec3 {
+    const offset = this.orbitOffset();
+    return [
+      this.target[0] + offset[0],
+      this.target[1] + offset[1],
+      this.target[2] + offset[2],
     ];
   }
 

@@ -1552,6 +1552,8 @@ async function main(): Promise<void> {
     trails.record(bodies);
   }
 
+  let autoSnapSuppressedBodyName: string | null = null;
+
   const nav = new NavPanel(camera, () => bodies, loadPreset, {
     // Combine host-star search with individual exoplanet search
     searchCatalog: (query) => {
@@ -1672,10 +1674,12 @@ async function main(): Promise<void> {
       return;
     }
 
+    const focusedBodyNameBeforeUnlock = nav.focusedBodyName;
     const unlockedTarget = nav.unlockTarget();
     clearSelectedConstellation();
     if (!unlockedTarget) return;
 
+    autoSnapSuppressedBodyName = focusedBodyNameBeforeUnlock;
     renderer.uploadSelectedStar(null);
     renderer.uploadBodies(bodies);
     event.preventDefault();
@@ -2175,10 +2179,12 @@ async function main(): Promise<void> {
     lastClickMs = now;
     lastClickAt = { x: e.clientX, y: e.clientY };
     if (!hit) {
+      autoSnapSuppressedBodyName = nav.focusedBodyName;
       nav.clearFocusedBody();
       return;
     }
 
+    autoSnapSuppressedBodyName = null;
     hit.select(isDbl ? "double" : "single");
   });
 
@@ -2517,6 +2523,10 @@ async function main(): Promise<void> {
         const snapTargetD = systemDist * 2;           // target within 2× system view
         const snapCameraD = systemDist * 10;          // camera closer than 10× system view
         const distToBody  = Math.hypot(b.x - camera.target[0], b.y - camera.target[1], b.z - camera.target[2]);
+        if (autoSnapSuppressedBodyName === b.name) {
+          if (distToBody < snapTargetD) continue;
+          autoSnapSuppressedBodyName = null;
+        }
         if (distToBody < snapTargetD && camera.distance < snapCameraD) {
           nav.travelToSystem(b.name); // snaps to correct orbit showing all moons
           break;
