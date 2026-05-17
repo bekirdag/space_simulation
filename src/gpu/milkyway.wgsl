@@ -23,6 +23,9 @@ struct Star {
 @group(0) @binding(1) var<storage, read> stars:   array<Star>;
 @group(0) @binding(2) var<uniform>       lodFade: vec4<f32>; // x=fade 0..1, y=legacy apparent boost, z=brightness effects
 
+const CLOSE_STAR_SPHERE_LOD_START_PX: f32 = 6.0;
+const CLOSE_STAR_SPHERE_LOD_FULL_PX:  f32 = 18.0;
+
 struct VertexOut {
   @builtin(position) clip_pos: vec4<f32>,
   @location(0)       uv:       vec2<f32>,
@@ -30,6 +33,7 @@ struct VertexOut {
   @location(2)       alpha:    f32,
   @location(3)       brightness: f32,
   @location(4)       effects: f32,
+  @location(5)       pixel_radius: f32,
 };
 
 var<private> quad: array<vec2<f32>, 6> = array<vec2<f32>, 6>(
@@ -71,6 +75,7 @@ fn vs_main(
   out.color = star.color_alpha.xyz;
   let actual = lodFade.y > 0.5;
   out.effects = clamp(lodFade.z, 0.0, 1.0);
+  out.pixel_radius = 0.0;
   let cameraDistanceAU = length(center - camera.eyeAndFlags.xyz);
   out.brightness = select(1.0, apparent_mw_brightness(cameraDistanceAU, out.color, star.pos_size.w, star.color_alpha.w), actual);
   out.alpha = star.color_alpha.w * lodFade.x * select(1.0, clamp(0.35 + out.brightness, 0.25, 2.1), actual);
@@ -87,6 +92,7 @@ fn vs_main(
   let ndcY = clip_c.y / clip_c.w;
   let sizeMult = star.pos_size.w * select(1.0, clamp(0.55 + out.brightness, 0.45, 2.8), actual);
   let pxRadius = camera.rightAndMNR.w * max(sizeMult * 1.8, 0.6);
+  out.pixel_radius = pxRadius * 2.5 / max(camera.rightAndMNR.w, 0.000001);
   let cullMargin = max(pxRadius * 1.5, 0.06);
   if ndcX - cullMargin > 1.0 || ndcX + cullMargin < -1.0 ||
      ndcY - cullMargin > 1.0 || ndcY + cullMargin < -1.0 {
@@ -109,6 +115,9 @@ fn vs_main(
 fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   let d = length(in.uv);
   if d > 1.0 { discard; }
+  let edgeAa = clamp(max(fwidth(d), 0.85 / max(in.pixel_radius, 1.0)), 0.0015, 0.085);
+  let silhouette = 1.0 - smoothstep(1.0 - edgeAa, 1.0, d);
+  if silhouette <= 0.001 { discard; }
 
   // Same Lorentzian PSF as the nearby star shader
   let d2    = d * d;
@@ -123,8 +132,36 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   col = mix(spectral, coreWhite, bleach);
 
   let psf = mix(core, core * 1.12 + wings * 0.58, in.effects);
-  let alpha = clamp(psf * in.alpha * mix(1.0, 0.72 + lift * 0.42, in.effects), 0.0, 1.0);
+  var alpha = clamp(psf * in.alpha * mix(1.0, 0.72 + lift * 0.42, in.effects) * silhouette, 0.0, 1.0);
   let intensity = mix(1.0, clamp(pow(max(in.brightness, 0.05), 1.55) * 10.5, 0.40, 95.0), in.effects);
+  var hdr = col * psf * in.alpha * intensity * silhouette;
+
+  // Close/background Milky Way stars should not expose the quad impostor.
+  // Keep the cheap PSF for tiny distant points, then blend into an implicit
+  // spherical photosphere once the projected radius is large enough to inspect.
+  let sphereLod = smoothstep(CLOSE_STAR_SPHERE_LOD_START_PX, CLOSE_STAR_SPHERE_LOD_FULL_PX, in.pixel_radius);
+  if sphereLod > 0.001 {
+    let z = sqrt(max(0.0, 1.0 - d2));
+    let normal = normalize(vec3<f32>(in.uv.x, in.uv.y, z));
+    let lightDir = normalize(vec3<f32>(-0.38, 0.32, 0.87));
+    let diffuse = max(dot(normal, lightDir), 0.0);
+    let limb = pow(max(z, 0.0), 0.45);
+    let hotSpot = pow(max(diffuse, 0.0), 18.0);
+    let sphereCol = mix(
+      spectral * (0.50 + diffuse * 0.34 + limb * 0.32),
+      vec3<f32>(1.0, 0.985, 0.94),
+      hotSpot * 0.30
+    );
+    let sphereAlpha = clamp(silhouette * in.alpha * (0.46 + limb * 0.54), 0.0, 1.0);
+    let corona = exp(-d2 * 4.8) * 0.24;
+    let sphereHdr = (
+      sphereCol * in.alpha * intensity * (0.36 + limb * 0.72 + hotSpot * 0.42) +
+      (spectral + vec3<f32>(corona * 0.20)) * intensity * corona * in.alpha
+    ) * silhouette;
+    hdr = mix(hdr, sphereHdr, sphereLod);
+    alpha = mix(alpha, max(alpha, sphereAlpha), sphereLod);
+  }
+
   let objectBrightness = max(camera.eyeAndFlags.w, 0.0);
-  return vec4<f32>(col * psf * in.alpha * intensity * objectBrightness, alpha);
+  return vec4<f32>(hdr * objectBrightness, alpha);
 }

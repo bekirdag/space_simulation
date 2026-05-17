@@ -25,6 +25,9 @@ struct Star {
 @group(0) @binding(2) var<uniform>       selectedStar: vec4<f32>; // xyz=pos, w=active
 @group(0) @binding(3) var<uniform>       lodFade:      vec4<f32>; // x=1, y=camera AU from Sun, z=brightness effects
 
+const CLOSE_STAR_SPHERE_LOD_START_PX: f32 = 6.0;
+const CLOSE_STAR_SPHERE_LOD_FULL_PX:  f32 = 18.0;
+
 struct VertexOut {
   @builtin(position) clip_pos: vec4<f32>,
   @location(0)       uv:       vec2<f32>,
@@ -187,7 +190,10 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   // ── Close LOD: implicit spherical photosphere ─────────────────────────────
   // Large star billboards expose the underlying quad/PSF approximation. Blend
   // them into a shaded sphere with an anti-aliased silhouette when close.
-  let sphereLod = max(in.selected, smoothstep(24.0, 86.0, in.pixel_radius) * in.effects);
+  let sphereLod = max(
+    in.selected,
+    smoothstep(CLOSE_STAR_SPHERE_LOD_START_PX, CLOSE_STAR_SPHERE_LOD_FULL_PX, in.pixel_radius)
+  );
   if sphereLod > 0.001 {
     let z = sqrt(max(0.0, 1.0 - d2));
     let normal = normalize(vec3<f32>(in.uv.x, in.uv.y, z));
