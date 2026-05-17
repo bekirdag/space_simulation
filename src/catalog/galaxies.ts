@@ -174,7 +174,7 @@ export const LOCAL_GROUP_GALAXY_LABELS: LocalGroupGalaxyLabel[] = LOCAL_GROUP_SO
 
 async function loadGalaxyMeta(): Promise<GalaxyMeta | null> {
   try {
-    const resp = await fetch("/data/galaxies-100k.meta.json");
+    const resp = await fetch("/data/galaxies-100k.meta.json", { cache: "force-cache" });
     if (!resp.ok) return null;
     return await resp.json() as GalaxyMeta;
   } catch {
@@ -257,8 +257,8 @@ function addLocalGroupAnchors(data: GalaxyBuffer, names: NamedGalaxy[]): GalaxyL
 
 export async function loadGalaxyCatalog(): Promise<GalaxyLoad> {
   const [binResp, nameResp, meta] = await Promise.all([
-    fetch("/data/galaxies-100k.bin"),
-    fetch("/data/galaxy-names.json"),
+    fetch("/data/galaxies-100k.bin", { cache: "force-cache" }),
+    fetch("/data/galaxy-names.json", { cache: "force-cache" }),
     loadGalaxyMeta(),
   ]);
 

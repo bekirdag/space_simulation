@@ -264,7 +264,7 @@ export function createVisibleStarField(count = DEFAULT_VISIBLE_STAR_COUNT): Star
 
 export async function loadVisibleStarField(): Promise<VisibleStarLoad> {
   try {
-    const response = await fetch(VISIBLE_STAR_DATA_URL);
+    const response = await fetch(VISIBLE_STAR_DATA_URL, { cache: "force-cache" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const buffer = await response.arrayBuffer();
     if (buffer.byteLength % (STAR_FLOATS * 4) !== 0) {
@@ -317,7 +317,7 @@ export function combineStarBuffers(...buffers: StarBuffer[]): StarBuffer {
 
 export async function loadExoplanetHostStars(): Promise<StarCatalogLoad> {
   try {
-    const response = await fetch(EXOPLANET_HOST_DATA_URL);
+    const response = await fetch(EXOPLANET_HOST_DATA_URL, { cache: "force-cache" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const records = await response.json() as ExoplanetHostRecord[];
     const stars = records

@@ -256,7 +256,7 @@ rebuildIndexes(activeExoplanetCatalog);
 
 export async function loadExoplanetCatalog(): Promise<ExoplanetCatalogLoad> {
   try {
-    const response = await fetch(EXOPLANET_DATA_URL);
+    const response = await fetch(EXOPLANET_DATA_URL, { cache: "force-cache" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const records = await response.json() as ExoplanetCatalogRecord[];
     const planets = prepareExoplanetCatalog(records);

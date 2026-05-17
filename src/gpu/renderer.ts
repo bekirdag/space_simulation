@@ -1059,7 +1059,7 @@ export class Renderer {
     for (let i = 0; i < usable.length; i++) {
       const model = usable[i]!;
       try {
-        const resp = await fetch(model.textureUrl);
+        const resp = await fetch(model.textureUrl, { cache: "force-cache" });
         if (!resp.ok) {
           console.warn(`Galaxy texture fetch failed for ${model.name}: ${resp.status}`);
           continue;
@@ -1121,7 +1121,7 @@ export class Renderer {
 
   async loadEtaCarinaTexture(url: string): Promise<void> {
     try {
-      const resp   = await fetch(url);
+      const resp   = await fetch(url, { cache: "force-cache" });
       if (!resp.ok) { console.warn(`Eta Carinae texture fetch failed: ${resp.status}`); return; }
       const blob   = await resp.blob();
       const bitmap = await createImageBitmap(blob, { colorSpaceConversion: "none" });

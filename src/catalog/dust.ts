@@ -85,7 +85,7 @@ export interface DustMapBuffer {
 }
 
 export async function loadDustMap(): Promise<DustMapBuffer> {
-  const res = await fetch(DUST_MAP_DATA_URL);
+  const res = await fetch(DUST_MAP_DATA_URL, { cache: "force-cache" });
   if (!res.ok) throw new Error(`Failed to fetch ${DUST_MAP_DATA_URL}: ${res.status}`);
   const buf = await res.arrayBuffer();
   if (buf.byteLength % (DUST_MAP_FLOATS * 4) !== 0) {
@@ -94,7 +94,7 @@ export async function loadDustMap(): Promise<DustMapBuffer> {
 
   let source = "NASA/GSFC LAMBDA Meisner-Finkbeiner 2015 E(B-V) dust map";
   try {
-    const metaRes = await fetch(DUST_MAP_META_URL);
+    const metaRes = await fetch(DUST_MAP_META_URL, { cache: "force-cache" });
     if (metaRes.ok) {
       const meta = await metaRes.json() as { sourceName?: string; cellCount?: number };
       source = meta.sourceName ?? source;

@@ -14,6 +14,7 @@ const FETCH_TIMEOUT_MS = 45_000;
 const NASA_3D_RAW_BASE = "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/master";
 const GLB_CONTENT_TYPE = "model/gltf-binary";
 const STL_CONTENT_TYPE = "application/vnd.ms-pki.stl";
+const MODEL_ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable";
 
 function nasa3d(pathname) {
   return `${NASA_3D_RAW_BASE}/${pathname.split("/").map(encodeURIComponent).join("/")}`;
@@ -361,7 +362,7 @@ export async function handleModelAssetRequest(req, res) {
       "Access-Control-Allow-Origin": "*",
       "Content-Type": asset.contentType,
       "Content-Length": String(size),
-      "Cache-Control": "public, max-age=86400",
+      "Cache-Control": MODEL_ASSET_CACHE_CONTROL,
       "Cross-Origin-Resource-Policy": "cross-origin",
       "Cross-Origin-Opener-Policy": "same-origin",
       "Cross-Origin-Embedder-Policy": "require-corp",

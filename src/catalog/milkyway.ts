@@ -14,7 +14,7 @@ export interface MilkywayBuffer {
 
 export async function loadMilkywayStars(): Promise<MilkywayBuffer> {
   const url = `/data/milkyway-stars.bin`;
-  const res = await fetch(url);
+  const res = await fetch(url, { cache: "force-cache" });
   if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.status}`);
   const buf = await res.arrayBuffer();
   return { data: new Float32Array(buf), source: "milkyway-stars.bin" };
