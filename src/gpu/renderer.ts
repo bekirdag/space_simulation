@@ -484,6 +484,16 @@ function responseOrigin(response: Response): string {
   }
 }
 
+class ModelAssetResponseError extends Error {
+  readonly retryable: boolean;
+
+  constructor(message: string, retryable = false) {
+    super(message);
+    this.name = "ModelAssetResponseError";
+    this.retryable = retryable;
+  }
+}
+
 function validateMilkyWayModelResponse(
   model: { format: ParsedModelFormat },
   response: Response,
@@ -491,16 +501,41 @@ function validateMilkyWayModelResponse(
 ): void {
   const contentType = (response.headers.get("content-type") ?? "").toLowerCase();
   if (contentType.includes("text/html") || isHtmlResponse(buffer)) {
-    throw new Error(`model route returned HTML from ${responseOrigin(response)}`);
+    throw new ModelAssetResponseError(`model route returned HTML from ${responseOrigin(response)}`, true);
   }
   if (model.format === "glb" && !hasGlbMagic(buffer)) {
-    throw new Error(`model route returned non-GLB data (${contentType || "unknown content type"})`);
+    throw new ModelAssetResponseError(`model route returned non-GLB data (${contentType || "unknown content type"})`, true);
   }
   if (model.format === "usdz" && !hasUsdzMagic(buffer)) {
-    throw new Error(`model route returned non-USDZ data (${contentType || "unknown content type"})`);
+    throw new ModelAssetResponseError(`model route returned non-USDZ data (${contentType || "unknown content type"})`, true);
   }
   if (model.format === "stl" && buffer.byteLength < 84) {
-    throw new Error(`model route returned invalid STL data (${contentType || "unknown content type"})`);
+    throw new ModelAssetResponseError(`model route returned invalid STL data (${contentType || "unknown content type"})`, true);
+  }
+}
+
+function cacheBustedModelAssetUrl(assetUrl: string): string {
+  const separator = assetUrl.includes("?") ? "&" : "?";
+  return `${assetUrl}${separator}modelRetry=${Date.now().toString(36)}`;
+}
+
+async function fetchValidatedModelAsset(
+  assetUrl: string,
+  model: { format: ParsedModelFormat },
+): Promise<ArrayBuffer> {
+  const fetchOnce = async (url: string, cache: RequestCache): Promise<ArrayBuffer> => {
+    const resp = await backendFetch(url, { cache });
+    if (!resp.ok) throw new Error(`asset ${resp.status}`);
+    const buffer = await resp.arrayBuffer();
+    validateMilkyWayModelResponse(model, resp, buffer);
+    return buffer;
+  };
+
+  try {
+    return await fetchOnce(assetUrl, "force-cache");
+  } catch (error) {
+    if (!(error instanceof ModelAssetResponseError) || !error.retryable) throw error;
+    return await fetchOnce(cacheBustedModelAssetUrl(assetUrl), "reload");
   }
 }
 
@@ -1727,10 +1762,7 @@ export class Renderer {
       const mesh = model.format === "procedural-sphere"
         ? createUvSphereMesh()
         : await (async (format: ParsedModelFormat) => {
-          const resp = await backendFetch(model.assetUrl, { cache: "force-cache" });
-          if (!resp.ok) throw new Error(`asset ${resp.status}`);
-          const buffer = await resp.arrayBuffer();
-          validateMilkyWayModelResponse({ format }, resp, buffer);
+          const buffer = await fetchValidatedModelAsset(model.assetUrl, { format });
           return parseMilkyWayModel(buffer, format);
         })(model.format);
       if (mesh.vertexCount <= 0) throw new Error("empty mesh");
@@ -1841,10 +1873,7 @@ export class Renderer {
     if (this.milkyWayModelFailedAt.has(model.id)) return;
     this.milkyWayModelLoading.add(model.id);
     try {
-      const resp = await backendFetch(model.assetUrl, { cache: "force-cache" });
-      if (!resp.ok) throw new Error(`asset ${resp.status}`);
-      const buffer = await resp.arrayBuffer();
-      validateMilkyWayModelResponse(model, resp, buffer);
+      const buffer = await fetchValidatedModelAsset(model.assetUrl, model);
       const mesh = await parseMilkyWayModel(buffer, model.format);
       if (mesh.vertexCount <= 0) throw new Error("empty mesh");
 
