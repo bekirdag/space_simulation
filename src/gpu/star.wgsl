@@ -100,11 +100,15 @@ fn camera_distance_flux(center: vec3<f32>) -> f32 {
 fn subtle_spectral_color(color: vec3<f32>) -> vec3<f32> {
   // Keep the catalog temperature tint visible but restrained. Full-saturation
   // stellar colors look artificial once HDR bloom is added.
-  return clamp(mix(vec3<f32>(1.0), color, 0.82), vec3<f32>(0.0), vec3<f32>(1.0));
+  return clamp(mix(vec3<f32>(1.0), color, 0.94), vec3<f32>(0.0), vec3<f32>(1.0));
 }
 
 fn cool_star_weight(color: vec3<f32>) -> f32 {
   return clamp((color.r - max(color.g, color.b) + 0.08) / 0.58, 0.0, 1.0);
+}
+
+fn bright_spectral_color(color: vec3<f32>, coolWeight: f32) -> vec3<f32> {
+  return color * mix(1.06, 1.24, coolWeight);
 }
 
 @vertex
@@ -208,16 +212,16 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   let core  = exp(-d2 * 22.0);                            // tight Gaussian nucleus
   let wings = max(0.0, 1.0 / (1.0 + d2 * 10.0) - 0.09); // Lorentzian halo
 
-  // ── Core bleaching ────────────────────────────────────────────────────────
-  // Bright stars saturate to near-white in their centres (CCDs overexpose,
-  // the eye bleaches at peak brightness). Faint stars retain their hue fully.
+  // ── Color-preserving bright core ───────────────────────────────────────────
+  // Brightness should increase the star's own spectral color, not bleach every
+  // star toward white. The final tone mapper preserves luminance/chroma ratios.
   let baseSpectral = mix(in.color, subtle_spectral_color(in.color), in.effects);
   let coolWeight = cool_star_weight(baseSpectral);
   let spectral = mix(baseSpectral, pow(baseSpectral, vec3<f32>(2.25)), coolWeight * in.effects * 0.72);
-  let coreWhite = mix(spectral, vec3<f32>(1.0, 0.985, 0.94), mix(0.34, 0.08, coolWeight));
+  let coreTint = bright_spectral_color(spectral, coolWeight);
   var col = spectral;
   let bleach = clamp(core * in.alpha * mix(1.10, 0.06, coolWeight) * in.effects, 0.0, 1.0);
-  col = mix(spectral, coreWhite, bleach);
+  col = mix(spectral, coreTint, bleach);
 
   let psf = mix(core, core * 1.20 + wings * 0.62, in.effects);
   var alpha = clamp(psf * in.alpha * mix(1.0, 1.35, in.effects) * silhouette, 0.0, 1.0);
@@ -237,8 +241,8 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let diffuse = max(dot(normal, lightDir), 0.0);
     let limb = pow(max(z, 0.0), 0.45);
     let hotSpot = pow(max(diffuse, 0.0), 18.0);
-    let sphereWhiteMix = mix(0.26, 0.015, coolWeight);
-    let sphereCol = mix(spectral * (0.50 + diffuse * 0.36 + limb * 0.32), vec3<f32>(1.0, 0.985, 0.94), hotSpot * sphereWhiteMix);
+    let sphereHotMix = mix(0.26, 0.015, coolWeight);
+    let sphereCol = mix(spectral * (0.50 + diffuse * 0.36 + limb * 0.32), bright_spectral_color(spectral, coolWeight), hotSpot * sphereHotMix);
     let sphereAlpha = clamp(silhouette * mix(in.alpha * (0.45 + limb * 0.55), 1.0, in.selected), 0.0, 1.0);
     let corona = exp(-d2 * 4.8) * mix(0.28, 0.52, in.selected);
     let sphereHdr = (

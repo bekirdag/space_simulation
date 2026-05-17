@@ -216,13 +216,11 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   );
 
   // ── Nucleus colour ────────────────────────────────────────────────────────
-  // Galaxy nuclei are dominated by old K/M stars → warmer than the outer disk.
-  // Ellipticals are warm throughout; spiral disks are bluer; irregular galaxies
-  // are blue everywhere. We tint the centre toward warm yellow-white regardless
-  // of type, which is physically correct (bulge stars are generally old and red).
+  // Increase core luminance using the galaxy's own catalog colour. Do not push
+  // every bright nucleus toward yellow-white; that loses the source chroma.
   var col = in.color;
-  let nucWarm = nucleus * 0.50;  // how much to shift toward warm nucleus colour
-  col = mix(col, vec3<f32>(1.0, 0.88, 0.68), nucWarm * 0.55);
+  let nucLift = nucleus * 0.50;
+  col = col * (1.0 + nucLift * 0.42);
 
   // Return NON-premultiplied: (col, a) not (col*a, a).
   // The blend srcFactor=src_alpha then gives: col*a + dst (correct).

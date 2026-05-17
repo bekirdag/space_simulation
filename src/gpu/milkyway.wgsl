@@ -57,11 +57,15 @@ fn apparent_mw_brightness(cameraDistanceAU: f32, color: vec3<f32>, size: f32, al
 fn subtle_spectral_color(color: vec3<f32>) -> vec3<f32> {
   // Preserve temperature class without pushing the Milky Way field into
   // over-saturated red/blue pixels after HDR tone mapping.
-  return clamp(mix(vec3<f32>(1.0), color, 0.82), vec3<f32>(0.0), vec3<f32>(1.0));
+  return clamp(mix(vec3<f32>(1.0), color, 0.94), vec3<f32>(0.0), vec3<f32>(1.0));
 }
 
 fn cool_star_weight(color: vec3<f32>) -> f32 {
   return clamp((color.r - max(color.g, color.b) + 0.08) / 0.58, 0.0, 1.0);
+}
+
+fn bright_spectral_color(color: vec3<f32>, coolWeight: f32) -> vec3<f32> {
+  return color * mix(1.06, 1.24, coolWeight);
 }
 
 @vertex
@@ -136,8 +140,8 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   var col = spectral;
   let lift   = mix(1.0, clamp(pow(max(in.brightness, 0.08), 0.28), 0.55, 1.8), in.effects);
   let bleach = clamp(core * in.alpha * (0.95 + lift * 0.42) * mix(1.0, 0.38, coolWeight) * in.effects, 0.0, 1.0);
-  let coreWhite = mix(spectral, vec3<f32>(1.0, 0.985, 0.94), mix(0.30, 0.08, coolWeight));
-  col = mix(spectral, coreWhite, bleach);
+  let coreTint = bright_spectral_color(spectral, coolWeight);
+  col = mix(spectral, coreTint, bleach);
 
   let psf = mix(core, core * 1.12 + wings * 0.58, in.effects);
   var alpha = clamp(psf * in.alpha * mix(1.0, 0.72 + lift * 0.42, in.effects) * silhouette, 0.0, 1.0);
@@ -157,7 +161,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let hotSpot = pow(max(diffuse, 0.0), 18.0);
     let sphereCol = mix(
       spectral * (0.50 + diffuse * 0.34 + limb * 0.32),
-      vec3<f32>(1.0, 0.985, 0.94),
+      bright_spectral_color(spectral, coolWeight),
       hotSpot * mix(0.30, 0.08, coolWeight)
     );
     let sphereAlpha = clamp(silhouette * in.alpha * (0.46 + limb * 0.54), 0.0, 1.0);

@@ -70,10 +70,27 @@ fn sample_bloom(uv: vec2<f32>) -> vec3<f32> {
   return textureSampleLevel(bloomTex, bloomSampler, uv, 0.0).rgb * BLOOM_STRENGTH;
 }
 
-fn aces_tonemap(color: vec3<f32>) -> vec3<f32> {
+fn aces_curve_scalar(value: f32) -> f32 {
+  let x = max(value * HDR_EXPOSURE, 0.0);
+  return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
+}
+
+fn aces_curve_vec(color: vec3<f32>) -> vec3<f32> {
   let x = max(color * HDR_EXPOSURE, vec3<f32>(0.0));
-  let mapped = (x * (2.51 * x + vec3<f32>(0.03))) /
-    (x * (2.43 * x + vec3<f32>(0.59)) + vec3<f32>(0.14));
+  return clamp(
+    (x * (2.51 * x + vec3<f32>(0.03))) / (x * (2.43 * x + vec3<f32>(0.59)) + vec3<f32>(0.14)),
+    vec3<f32>(0.0),
+    vec3<f32>(1.0)
+  );
+}
+
+fn aces_tonemap(color: vec3<f32>) -> vec3<f32> {
+  let hdr = max(color, vec3<f32>(0.0));
+  let luma = max(dot(hdr, vec3<f32>(0.2126, 0.7152, 0.0722)), 0.000001);
+  let mappedLuma = aces_curve_scalar(luma);
+  let chromaMapped = hdr * (mappedLuma / luma);
+  let channelMapped = aces_curve_vec(hdr);
+  let mapped = mix(channelMapped, chromaMapped, 0.82);
   return clamp(pow(clamp(mapped, vec3<f32>(0.0), vec3<f32>(1.0)), vec3<f32>(1.0 / 2.2)), vec3<f32>(0.0), vec3<f32>(1.0));
 }
 

@@ -179,7 +179,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   let coolSpotStrength = select(0.05, 0.16, typeIndex == 5 || typeIndex == 6 || typeIndex == 4);
   let photosphere = base * (0.82 + limb * 0.36 + convection) * (1.0 - spot * coolSpotStrength);
 
-  let rimColor = mix(base, vec3<f32>(1.0, 0.98, 0.92), select(0.16, 0.035, typeIndex == 4 || typeIndex == 5 || typeIndex == 6));
+  let rimColor = mix(base, base * 1.22, select(0.16, 0.035, typeIndex == 4 || typeIndex == 5 || typeIndex == 6));
   let rim = pow(1.0 - facing, 2.2);
   let corona = rim * mix(0.18, 0.55, effects);
   let typeEmission = select(1.0, 1.65, typeIndex == 0 || typeIndex == 1 || typeIndex == 7);
