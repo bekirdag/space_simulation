@@ -29,8 +29,8 @@ struct DustCloud {
 
 const CAMERA_MIN_PIXEL_RADIUS: f32 = 2.5;
 const MICRO_CLOUD_PIXEL_RADIUS: f32 = 0.45;
-const MODEL_LOD_BEGIN_PIXEL_RADIUS: f32 = 14.0;
-const MODEL_LOD_FULL_PIXEL_RADIUS: f32 = 34.0;
+const MODEL_LOD_BEGIN_PIXEL_RADIUS: f32 = 4.0;
+const MODEL_LOD_FULL_PIXEL_RADIUS: f32 = 14.0;
 
 @group(0) @binding(0) var<uniform>       camera:   Camera;
 @group(0) @binding(1) var<storage, read> clouds:   array<DustCloud>;

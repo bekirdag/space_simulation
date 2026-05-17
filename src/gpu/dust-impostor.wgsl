@@ -25,8 +25,8 @@ struct DustCloud {
 
 const CAMERA_MIN_PIXEL_RADIUS: f32 = 2.5;
 const MICRO_CLOUD_PIXEL_RADIUS: f32 = 0.45;
-const MODEL_LOD_BEGIN_PIXEL_RADIUS: f32 = 14.0;
-const MODEL_LOD_FULL_PIXEL_RADIUS: f32 = 34.0;
+const MODEL_LOD_BEGIN_PIXEL_RADIUS: f32 = 4.0;
+const MODEL_LOD_FULL_PIXEL_RADIUS: f32 = 14.0;
 
 @group(0) @binding(0) var<uniform>       camera:   Camera;
 @group(0) @binding(1) var<storage, read> clouds:   array<DustCloud>;
@@ -116,11 +116,31 @@ fn vs_main(
   return out;
 }
 
-fn seededWave(p: vec2<f32>, seed: f32) -> f32 {
-  let a = sin(dot(p, vec2<f32>(2.91, -1.73)) + seed * 0.017);
-  let b = sin(dot(p, vec2<f32>(-1.37, 3.23)) + seed * 0.031);
-  let c = sin((p.x + p.y) * 2.07 + seed * 0.011);
-  return clamp(0.5 + (a * 0.20 + b * 0.18 + c * 0.12), 0.0, 1.0);
+fn hash2(p: vec2<f32>) -> f32 {
+  let k = vec2<f32>(0.31831, 0.36788);
+  let q = p * k + k.yx;
+  return -1.0 + 2.0 * fract(16.0 * k.x * fract(q.x * q.y * (q.x + q.y)));
+}
+
+fn noise2(p: vec2<f32>) -> f32 {
+  let i = floor(p);
+  let f = fract(p);
+  let u = f * f * (3.0 - 2.0 * f);
+  return mix(
+    mix(hash2(i), hash2(i + vec2<f32>(1.0, 0.0)), u.x),
+    mix(hash2(i + vec2<f32>(0.0, 1.0)), hash2(i + vec2<f32>(1.0, 1.0)), u.x),
+    u.y,
+  );
+}
+
+fn noise01(p: vec2<f32>) -> f32 {
+  return (noise2(p) + 1.0) * 0.5;
+}
+
+fn rot2(p: vec2<f32>, angle: f32) -> vec2<f32> {
+  let c = cos(angle);
+  let s = sin(angle);
+  return vec2<f32>(p.x * c - p.y * s, p.x * s + p.y * c);
 }
 
 @fragment
@@ -130,35 +150,42 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     discard;
   }
 
-  let edge = 1.0 - smoothstep(0.66, 0.99, d);
+  let edge = 1.0 - smoothstep(0.70, 0.99, d);
   if (edge <= 0.02) {
     discard;
   }
 
   let seed = in.seed * 0.0137;
-  let p = in.uv * 2.35 + vec2<f32>(seed, seed * 1.271);
-  let grain = seededWave(p, in.seed);
-  var shape = edge * (0.56 + grain * 0.32);
+  let spunUv = rot2(in.uv, seed * 1.93);
+  let p = spunUv * 2.05 + vec2<f32>(seed, seed * 1.271);
+  let base = noise01(p);
+  let detail = noise01(p * 2.55 + vec2<f32>(seed * 0.37, seed * 0.19));
+  let holes = noise01(p * 4.20 + vec2<f32>(5.7, seed * 0.43));
+  let raggedEdge = edge * (0.62 + base * 0.26) * (1.0 - smoothstep(0.58, 0.88, holes) * 0.58);
+  var shape = smoothstep(0.40, 0.82, base * 0.66 + detail * 0.30) * raggedEdge;
 
   if (in.style < 1.5) {
-    let lane = 1.0 - smoothstep(0.05, 0.38, abs(in.uv.y + sin(p.x * 1.7 + seed) * 0.18));
-    shape *= 0.80 + lane * 0.32;
+    let laneNoise = (noise01(p * 1.45 + vec2<f32>(1.9, 4.1)) - 0.5) * 0.44;
+    let lane = 1.0 - smoothstep(0.08, 0.40, abs(spunUv.y + laneNoise));
+    shape = max(shape * 0.82, lane * raggedEdge * 0.78);
   } else if (in.style < 2.5) {
-    let pocket = smoothstep(0.34, 0.84, grain);
-    shape *= 0.68 + pocket * 0.42;
+    let pocket = 1.0 - smoothstep(0.22, 0.82, detail);
+    shape = smoothstep(0.26, 0.72, base * 0.58 + pocket * 0.48) * raggedEdge;
   } else if (in.style < 3.5) {
-    shape *= 0.74 + abs(sin((p.x - p.y) * 1.9 + seed)) * 0.34;
+    let filament = abs(noise01(vec2<f32>(spunUv.x * 2.9, spunUv.y * 0.9) + vec2<f32>(seed, seed * 0.61)) - 0.48);
+    shape *= 0.68 + smoothstep(0.02, 0.36, filament) * 0.34;
   } else {
-    let shell = clamp(1.0 - abs(d - 0.50) * 1.9, 0.0, 1.0);
-    shape *= 0.70 + shell * 0.30;
+    let shell = clamp(1.0 - abs(d - 0.50) * 1.85, 0.0, 1.0);
+    shape = max(shape * 0.74, shell * base * raggedEdge * 0.48);
   }
 
   let densityBoost = 0.58 + clamp(in.density, 0.0, 1.0) * 0.36;
-  let alpha = clamp(shape * in.alpha * densityBoost, 0.0, 0.44);
+  let alpha = clamp(shape * in.alpha * densityBoost, 0.0, 0.30);
   if (alpha < 0.003) {
     discard;
   }
 
-  let darkCore = mix(in.color, vec3<f32>(0.0038, 0.0031, 0.0031), shape * 0.16);
+  let tone = 0.82 + base * 0.13 + clamp(in.density, 0.0, 1.0) * 0.06;
+  let darkCore = mix(in.color * tone, vec3<f32>(0.0038, 0.0031, 0.0031), shape * 0.18);
   return vec4<f32>(darkCore, alpha);
 }
