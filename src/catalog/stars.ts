@@ -6,7 +6,7 @@ export const AU_PER_PARSEC = 80;
 export const SOLAR_RADIUS_AU = 0.00465047;
 
 const EXOPLANET_HOST_DATA_URL = "/data/exoplanet-hosts.json";
-const VISIBLE_STAR_DATA_URL = "/data/visible-stars-100k.bin?v=deduped-anchors-v1";
+const VISIBLE_STAR_DATA_URL = "/data/visible-stars-100k.bin?v=nearest-physical-radius-v2";
 const SUN_ABSOLUTE_V_MAG = 4.83;
 const SUN_TEMPERATURE_K = 5778;
 const MIN_STELLAR_RADIUS_SOLAR = 0.01;

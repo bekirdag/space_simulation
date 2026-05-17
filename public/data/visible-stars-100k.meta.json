@@ -5,10 +5,11 @@
   "selectedStars": 100000,
   "inputStars": 109347,
   "excludedNearbyAnchorRows": 53,
-  "duplicatePositionRows": 11,
+  "duplicatePositionRows": 39,
   "dedupeTolerancePc": 0.000625,
   "strideFloat32": 8,
   "coordinateScale": "80 visual AU per parsec",
+  "selectionEncoding": "Nearest HYG stars after named-anchor and position de-duplication; apparent V magnitude used only as a tie-breaker",
   "brightnessEncoding": "Johnson V apparent magnitude flux, relative to mag 6, compressed for display",
   "radiusEncoding": "Solar radii inferred from HYG luminosity/absolute magnitude and B-V temperature, stored as AU"
 }

@@ -157,7 +157,8 @@ fn vs_main(
     smoothstep(SUN_STELLAR_MARKER_FADE_START_AU, SUN_STELLAR_MARKER_FADE_FULL_AU, cameraAU),
     isSunAnchor,
   );
-  out.alpha     *= select(globalFade, max(globalFade, 0.9), isSelected);
+  let persistentAnchor = isSelected || isSunAnchor;
+  out.alpha     *= select(globalFade, max(globalFade, 0.9), persistentAnchor);
   out.alpha     *= sunAnchorFade;
   out.alpha     *= mix(1.0, distanceAlpha, out.effects);
 
@@ -180,11 +181,14 @@ fn vs_main(
   let radiusAU = max(star.pos_size.w, SOLAR_RADIUS_AU * 0.01);
   let radiusSolar = clamp(radiusAU / SOLAR_RADIUS_AU, 0.01, 1800.0);
   let physicalNdcRadius = radiusAU * focalY / max(clip_c.w, 0.000001);
-  let radiusMarkerLift = clamp(pow(radiusSolar, 0.28), 0.42, 5.2);
+  // Keep unresolved stars close to a point-marker size. Physical radius takes
+  // over through `physicalNdcRadius` only when the stellar disk is actually
+  // resolvable, so giants do not make the Sun look wrongly tiny at catalog scale.
+  let radiusMarkerLift = clamp(pow(radiusSolar, 0.06), 0.85, 1.35);
   let alphaMarkerLift = clamp(pow(max(out.alpha, 0.04), 0.35), 0.55, 1.35);
   let distanceSizeLift = mix(1.0, clamp(pow(distanceFlux, 0.045), 0.85, 1.8), out.effects);
   let pointNdcRadius = camera.rightAndMNR.w * max(
-    (0.52 * radiusMarkerLift + 0.22 * alphaMarkerLift) * distanceSizeLift,
+    (0.58 + 0.12 * alphaMarkerLift) * radiusMarkerLift * distanceSizeLift,
     0.38,
   );
   let billboardNdcRadius = max(physicalNdcRadius, pointNdcRadius);

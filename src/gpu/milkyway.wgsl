@@ -105,14 +105,17 @@ fn vs_main(
   let focalY = camera.upAndFocal.w;
   let radiusSolar = clamp(radiusAU / SOLAR_RADIUS_AU, 0.08, 600.0);
   let physicalNdcRadius = radiusAU * focalY / max(clip_c.w, 0.000001);
-  let radiusMarkerLift = clamp(pow(radiusSolar, 0.22), 0.42, 3.2);
+  // Background stars are mostly unresolved point sources. Use physical radius
+  // for angular disk size, but keep the fallback marker from exaggerating
+  // giant/supergiant radii while they are still sub-pixel objects.
+  let radiusMarkerLift = clamp(pow(radiusSolar, 0.06), 0.85, 1.35);
   let brightnessMarkerLift = select(
     1.0,
     clamp(pow(max(out.brightness, 0.08), 0.12), 0.75, 1.75),
     actual,
   );
   let pointNdcRadius = camera.rightAndMNR.w * max(
-    (0.42 * radiusMarkerLift + 0.18 * out.alpha) * brightnessMarkerLift,
+    (0.46 + 0.12 * out.alpha) * radiusMarkerLift * brightnessMarkerLift,
     0.35,
   );
   let pxRadius = max(physicalNdcRadius, pointNdcRadius);

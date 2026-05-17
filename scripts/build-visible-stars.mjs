@@ -257,13 +257,10 @@ const stars = rows.map(row => {
   const lum = numberOrNull(row[col.lum]);
   if (x === null || y === null || z === null || dist === null || mag === null) return null;
   if (dist <= 0 || dist >= 1000) return null;
-  return {
-    x, y, z, dist, mag, ci, absmag, lum,
-    score: mag + Math.log10(dist + 1) * 1.15,
-  };
+  return { x, y, z, dist, mag, ci, absmag, lum };
 }).filter(Boolean);
 
-stars.sort((a, b) => a.score - b.score);
+stars.sort((a, b) => (a.dist - b.dist) || (a.mag - b.mag));
 const selected = [];
 const positionIndex = new Map();
 const positions = [];
@@ -311,6 +308,7 @@ await writeFile(OUT_META, `${JSON.stringify({
   dedupeTolerancePc: STAR_DEDUPE_POSITION_TOLERANCE_PC,
   strideFloat32: STAR_FLOATS,
   coordinateScale: `${AU_PER_PARSEC} visual AU per parsec`,
+  selectionEncoding: "Nearest HYG stars after named-anchor and position de-duplication; apparent V magnitude used only as a tie-breaker",
   brightnessEncoding: "Johnson V apparent magnitude flux, relative to mag 6, compressed for display",
   radiusEncoding: "Solar radii inferred from HYG luminosity/absolute magnitude and B-V temperature, stored as AU",
 }, null, 2)}\n`, "utf8");
