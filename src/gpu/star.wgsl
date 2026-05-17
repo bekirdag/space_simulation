@@ -90,6 +90,14 @@ fn camera_distance(center: vec3<f32>) -> f32 {
   return length(camera_relative(center));
 }
 
+fn clip_billboard_offset(uv: vec2<f32>, radiusNdcY: f32, clipW: f32) -> vec4<f32> {
+  let aspect = max(camera.screenAndTarget.x, 0.000001);
+  // NDC x covers the viewport width while NDC y covers the viewport height.
+  // Use an aspect-corrected x radius so a circular UV mask stays circular in
+  // screen pixels on wide displays.
+  return vec4<f32>(uv.x * radiusNdcY / aspect * clipW, uv.y * radiusNdcY * clipW, 0.0, 0.0);
+}
+
 fn camera_distance_flux(center: vec3<f32>) -> f32 {
   let referenceDistanceAU = max(length(center), 1.0);
   let cameraDistanceAU = max(camera_distance(center), referenceDistanceAU * 0.0005);
@@ -183,7 +191,7 @@ fn vs_main(
     // Never shrink below 3× the base minimum so the star stays visible at range.
     let selectedNdcRadius = max(physNdcR, camera.rightAndMNR.w * 3.0);
     out.pixel_radius = selectedNdcRadius * 2.5 / max(camera.rightAndMNR.w, 0.000001);
-    out.clip_pos = clip_c + vec4(uv.x * selectedNdcRadius * clip_c.w, uv.y * selectedNdcRadius * clip_c.w, 0.0, 0.0);
+    out.clip_pos = clip_c + clip_billboard_offset(uv, selectedNdcRadius, clip_c.w);
     return out;
   }
 
@@ -192,16 +200,15 @@ fn vs_main(
   // when their catalog positions are far from the origin.
   let pxRadius    = billboardNdcRadius;
   out.pixel_radius = pxRadius * 2.5 / max(camera.rightAndMNR.w, 0.000001);
-  out.clip_pos = clip_c + vec4(uv.x * pxRadius * clip_c.w, uv.y * pxRadius * clip_c.w, 0.0, 0.0);
+  out.clip_pos = clip_c + clip_billboard_offset(uv, pxRadius, clip_c.w);
   return out;
 }
 
 @fragment
 fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   let d = length(in.uv);
-  if d > 1.0 { discard; }
-  let edgeAa = clamp(max(fwidth(d), 0.85 / max(in.pixel_radius, 1.0)), 0.0015, 0.085);
-  let silhouette = 1.0 - smoothstep(1.0 - edgeAa, 1.0, d);
+  let edgeAa = clamp(max(fwidth(d), 0.85 / max(in.pixel_radius, 1.0)), 0.0015, 0.42);
+  let silhouette = 1.0 - smoothstep(1.0 - edgeAa, 1.0 + edgeAa, d);
   if silhouette <= 0.001 { discard; }
 
   // ── Physically realistic stellar PSF ─────────────────────────────────────

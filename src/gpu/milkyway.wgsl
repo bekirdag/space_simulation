@@ -124,9 +124,8 @@ fn vs_main(
 @fragment
 fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   let d = length(in.uv);
-  if d > 1.0 { discard; }
-  let edgeAa = clamp(max(fwidth(d), 0.85 / max(in.pixel_radius, 1.0)), 0.0015, 0.085);
-  let silhouette = 1.0 - smoothstep(1.0 - edgeAa, 1.0, d);
+  let edgeAa = clamp(max(fwidth(d), 0.85 / max(in.pixel_radius, 1.0)), 0.0015, 0.42);
+  let silhouette = 1.0 - smoothstep(1.0 - edgeAa, 1.0 + edgeAa, d);
   if silhouette <= 0.001 { discard; }
 
   // Same Lorentzian PSF as the nearby star shader
