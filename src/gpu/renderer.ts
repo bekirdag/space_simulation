@@ -50,6 +50,9 @@ const SCENE_DEPTH_DISABLED: GPUDepthStencilState = {
 const TEXTURED_GALAXY_MODEL_CAPACITY = 32;
 const DUST_CLOUD_UNIFORM_BYTES = 16;
 const DUST_DEFAULT_TRANSPARENCY = 0.55;
+const TRAIL_SCREEN_UNIFORM_BYTES = 16;
+const TRAIL_THICKNESS_INSTANCES = 5;
+const TRAIL_THICKNESS_PX = 2;
 const MILKY_WAY_MODEL_RETRY_MS = 120_000;
 const MILKY_WAY_MODEL_BACKEND_RETRY_MS = 120_000;
 
@@ -147,6 +150,7 @@ export class Renderer {
   private blackHoleBuffer!:   GPUBuffer;
   private constellationBuffer!: GPUBuffer;
   private trailVertexBuffer!: GPUBuffer;
+  private trailScreenBuffer!: GPUBuffer;
 
   private bodyBindGroup!:   GPUBindGroup;
   private starBindGroup!:   GPUBindGroup;
@@ -426,6 +430,11 @@ export class Renderer {
       label: "trail-vertices",
       size:  TRAIL_VTXBUF_BYTES,
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+    });
+    this.trailScreenBuffer = device.createBuffer({
+      label: "trail-screen-uniform",
+      size: TRAIL_SCREEN_UNIFORM_BYTES,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
     // ── Body pipeline ──────────────────────────────────────────────────────
@@ -951,11 +960,15 @@ export class Renderer {
       label: "trail-bgl",
       entries: [
         { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: "uniform" } },
+        { binding: 1, visibility: GPUShaderStage.VERTEX, buffer: { type: "uniform" } },
       ],
     });
     this.trailBindGroup = device.createBindGroup({
       label: "trail-bg", layout: trailBGL,
-      entries: [{ binding: 0, resource: { buffer: this.cameraBuffer } }],
+      entries: [
+        { binding: 0, resource: { buffer: this.cameraBuffer } },
+        { binding: 1, resource: { buffer: this.trailScreenBuffer } },
+      ],
     });
     const trailShader = device.createShaderModule({ code: trailWGSL });
     this.trailPipeline = device.createRenderPipeline({
@@ -975,15 +988,14 @@ export class Renderer {
       fragment: {
         module: trailShader, entryPoint: "fs_main",
         targets: [{
-          format: sceneFormat,
+          format,
           blend: {
-            color: { srcFactor: "src-alpha", dstFactor: "one", operation: "add" },
-            alpha: { srcFactor: "one",       dstFactor: "one", operation: "add" },
+            color: { srcFactor: "src-alpha", dstFactor: "one-minus-src-alpha", operation: "add" },
+            alpha: { srcFactor: "one",       dstFactor: "one-minus-src-alpha", operation: "add" },
           },
         }],
       },
       primitive: { topology: "line-strip" },
-      depthStencil: SCENE_DEPTH_DISABLED,
     });
   }
 
@@ -1777,6 +1789,12 @@ export class Renderer {
     data[27] = this._objectBrightness;
     this._blackHoleUniform[8] = clamp(uniforms.flightEffect, 0, 1);
     this.ctx.device.queue.writeBuffer(this.cameraBuffer, 0, data);
+    this.ctx.device.queue.writeBuffer(this.trailScreenBuffer, 0, new Float32Array([
+      2 / this.viewportWidth,
+      2 / this.viewportHeight,
+      TRAIL_THICKNESS_PX,
+      0,
+    ]));
     this.writeDustUniform();
   }
 
@@ -1785,6 +1803,38 @@ export class Renderer {
     const swapView = this.canvasCtx.getCurrentTexture().createView();
 
     const encoder = device.createCommandEncoder({ label: "frame" });
+    const uploadTrails = (): void => {
+      if (!this._showTrails) return;
+      for (const bodyId of trails.bodyIds) {
+        if (!trails.isDirty(bodyId)) continue;
+
+        if (!this.trailSlot.has(bodyId)) {
+          if (this.trailSlotCount >= TRAIL_MAX_BODIES) continue;
+          this.trailSlot.set(bodyId, this.trailSlotCount++);
+        }
+
+        const verts = trails.buildVertices(bodyId);
+        trails.clearDirty(bodyId);
+        if (!verts || verts.length < 2 * TRAIL_VTXFLOATS) continue;
+
+        const slot = this.trailSlot.get(bodyId)!;
+        const byteOffset = slot * TRAIL_SLOT_BYTES;
+        device.queue.writeBuffer(this.trailVertexBuffer, byteOffset, verts as GPUAllowSharedBufferSource);
+        this.trailDrawCount.set(bodyId, verts.length / TRAIL_VTXFLOATS);
+      }
+    };
+    const drawTrails = (pass: GPURenderPassEncoder): void => {
+      if (!this._showTrails) return;
+      pass.setPipeline(this.trailPipeline);
+      pass.setBindGroup(0, this.trailBindGroup);
+      for (const bodyId of trails.bodyIds) {
+        const slot = this.trailSlot.get(bodyId);
+        const count = this.trailDrawCount.get(bodyId) ?? 0;
+        if (slot === undefined || count < 2) continue;
+        pass.setVertexBuffer(0, this.trailVertexBuffer, slot * TRAIL_SLOT_BYTES, count * TRAIL_VTXFLOATS * 4);
+        pass.draw(count, TRAIL_THICKNESS_INSTANCES);
+      }
+    };
     const drawScene = (view: GPUTextureView): void => {
       const depthView = this.ensureDepthTexture();
       const pass = encoder.beginRenderPass({
@@ -1926,44 +1976,6 @@ export class Renderer {
       pass.draw(this.constellationCount);
     }
 
-    // ── Trails ────────────────────────────────────────────────────────────
-    // Each body owns a fixed slot in the GPU buffer (assigned once, never moved).
-    // Only dirty bodies — those where a new point was recorded this frame — trigger
-    // a writeBuffer call.  Unchanged trails are drawn from the existing GPU data
-    // at zero upload cost: on a paused or slow-timewarp frame this is essentially free.
-    if (this._showTrails) {
-      // Upload only dirty trails
-      for (const bodyId of trails.bodyIds) {
-        if (!trails.isDirty(bodyId)) continue;
-
-        // Assign slot on first encounter
-        if (!this.trailSlot.has(bodyId)) {
-          if (this.trailSlotCount >= TRAIL_MAX_BODIES) continue;
-          this.trailSlot.set(bodyId, this.trailSlotCount++);
-        }
-
-        const verts = trails.buildVertices(bodyId);
-        trails.clearDirty(bodyId);
-        if (!verts || verts.length < 2 * TRAIL_VTXFLOATS) continue;
-
-        const slot       = this.trailSlot.get(bodyId)!;
-        const byteOffset = slot * TRAIL_SLOT_BYTES;
-        device.queue.writeBuffer(this.trailVertexBuffer, byteOffset, verts as GPUAllowSharedBufferSource);
-        this.trailDrawCount.set(bodyId, verts.length / TRAIL_VTXFLOATS);
-      }
-
-      // Draw all known trails using their cached GPU data
-      pass.setPipeline(this.trailPipeline);
-      pass.setBindGroup(0, this.trailBindGroup);
-      for (const bodyId of trails.bodyIds) {
-        const slot  = this.trailSlot.get(bodyId);
-        const count = this.trailDrawCount.get(bodyId) ?? 0;
-        if (slot === undefined || count < 2) continue;
-        pass.setVertexBuffer(0, this.trailVertexBuffer, slot * TRAIL_SLOT_BYTES, count * TRAIL_VTXFLOATS * 4);
-        pass.draw(count);
-      }
-    }
-
     // ── Bodies ────────────────────────────────────────────────────────────
     pass.setPipeline(this.bodyPipeline);
     pass.setBindGroup(0, this.bodyBindGroup);
@@ -1974,6 +1986,7 @@ export class Renderer {
 
     this.ensureSceneTexture();
     this.ensureBloomTextures();
+    uploadTrails();
     drawScene(this.sceneTextureView!);
     if (this._actualBrightness) {
       this.runBloomPasses(encoder);
@@ -2004,6 +2017,7 @@ export class Renderer {
     pass.setPipeline(this.blackHolePipeline);
     pass.setBindGroup(0, this.blackHoleBindGroup!);
     pass.draw(6, 1, 0, 0);
+    drawTrails(pass);
     pass.end();
 
     device.queue.submit([encoder.finish()]);
