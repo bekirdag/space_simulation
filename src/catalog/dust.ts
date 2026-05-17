@@ -19,8 +19,6 @@ export const DUST_SUN_GALACTIC_RADIUS_KPC = 8.5;
 export const DUST_GALAXY_RADIUS_KPC = 16.5;
 export const DUST_GALAXY_HALF_HEIGHT_KPC = 1.6;
 export const DUST_GALAXY_HALF_HEIGHT_AU = DUST_GALAXY_HALF_HEIGHT_KPC * DUST_MILKY_WAY_KPC_TO_AU;
-export const DUST_CLOUD_MAX_MODEL_HEIGHT_KPC = 0.02;
-export const DUST_CLOUD_MAX_MODEL_HEIGHT_AU = DUST_CLOUD_MAX_MODEL_HEIGHT_KPC * DUST_MILKY_WAY_KPC_TO_AU;
 export const DUST_CLOUD_SOURCE =
   `${DUST_CLOUD_COUNT.toLocaleString()} MF2015 reddening-weighted Milky Way disk dust clouds`;
 
@@ -28,9 +26,8 @@ const DUST_MAP_DATA_URL = "/data/dust-map-mf2015.bin";
 const DUST_MAP_META_URL = "/data/dust-map-mf2015.meta.json";
 const DUST_MAP_MIN_ALPHA = 0.006;
 const DUST_MAP_ALPHA_RANGE = 0.080;
-const DUST_CLOUD_MIN_RADIUS_AU = 12;
-const DUST_CLOUD_MIN_MAJOR_AU = 0.18 * DUST_MILKY_WAY_KPC_TO_AU;
-const DUST_CLOUD_MAX_MAJOR_AU = 1.9 * DUST_MILKY_WAY_KPC_TO_AU;
+const DUST_CLOUD_MIN_RADIUS_AU = 180;
+const DUST_CLOUD_MAX_RADIUS_AU = 950;
 const DUST_DISK_SAMPLE_HALF_HEIGHT_KPC = 0.52;
 const DUST_VERTICAL_SCALE_KPC = 0.12;
 const DUST_DIRECTION_LON_BINS = 360;
@@ -335,15 +332,13 @@ export function buildDustCloudBuffer(dustMap?: Float32Array, count = DUST_CLOUD_
     const seed = directionGrid
       ? dustSeedFromDirectionGrid(directionGrid, rand)
       : fallbackDustPosition(rand);
-    const majorDiameterAU = clamp(
-      seed.sizeAU * (0.72 + Math.pow(rand(), 1.45) * 1.55 + seed.density * 0.40),
-      DUST_CLOUD_MIN_MAJOR_AU,
-      DUST_CLOUD_MAX_MAJOR_AU,
+    const radiusAU = clamp(
+      seed.sizeAU * (0.045 + Math.pow(rand(), 1.35) * 0.12 + seed.density * 0.05),
+      DUST_CLOUD_MIN_RADIUS_AU,
+      DUST_CLOUD_MAX_RADIUS_AU,
     );
-    const aspectX = 1.35 + rand() * 3.85;
-    const radiusAU = clamp(majorDiameterAU / (2 * aspectX), DUST_CLOUD_MIN_RADIUS_AU, DUST_CLOUD_MAX_MAJOR_AU);
-    const targetHeightAU = DUST_CLOUD_MAX_MODEL_HEIGHT_AU * (0.44 + rand() * 0.56);
-    const aspectY = clamp(targetHeightAU / (2 * radiusAU), 0.010, 0.38);
+    const aspectX = 1;
+    const aspectY = 1;
     const color = dustColor(rand, seed.density);
     const alpha = 0.20 + rand() * 0.60;
     const style = Math.floor(rand() * 5);

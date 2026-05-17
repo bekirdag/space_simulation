@@ -5,7 +5,7 @@
 //   vec4 pos_size:    xyz = ecliptic AU position, w = base radius AU
 //   vec4 color_alpha: rgb = dust color, w = per-cloud opacity
 //   vec4 params:      x = shape style, y = seed, z = density/contrast, w = rotation
-//   vec4 transform:   x = x stretch, y = y stretch, z = density, w = reserved
+//   vec4 transform:   x/y = uniform scale axes, z = density, w = reserved
 
 struct Camera {
   viewProj:    mat4x4<f32>,
