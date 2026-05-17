@@ -204,9 +204,9 @@ function nearbyStarLabelsToRenderBuffer(stars: readonly NearbyStarLabel[]): Star
     data[o + 1] = star.y;
     data[o + 2] = star.z;
     data[o + 3] = 1.05 * tierFade;
-    data[o + 4] = 0.70;
-    data[o + 5] = 0.84;
-    data[o + 6] = 1.00;
+    data[o + 4] = star.color[0];
+    data[o + 5] = star.color[1];
+    data[o + 6] = star.color[2];
     data[o + 7] = 0.82 * tierFade;
   }
 
@@ -1315,7 +1315,7 @@ async function main(): Promise<void> {
       y: star.y,
       z: star.z,
       focusDistance: nearbyStarFocusDistance(),
-      color: [0.70, 0.84, 1.00],
+      color: star.color,
     });
     renderer.uploadBodies(bodies);
     renderer.uploadSelectedStar([star.x, star.y, star.z]);
@@ -1492,7 +1492,7 @@ async function main(): Promise<void> {
         y: star.y,
         z: star.z,
         focusDistance: nearbyStarFocusDistance(),
-        color: [0.70, 0.84, 1.00],
+        color: star.color,
       };
       addCandidate({
         score: dist - 3,

@@ -115,7 +115,7 @@ function hostAliasKey(value: string): string {
  * Convert B-V Johnson color index → linear sRGB [0,1].
  * Anchored to subtle O/B, A/F, G, K, and M visual classes.
  */
-function starColor(bv: number): [number, number, number] {
+export function starColorFromBv(bv: number): [number, number, number] {
   const keys: [number, [number,number,number]][] = [
     [-0.33, [0.65, 0.75, 1.00]], // O/B: hot blue-white
     [ 0.00, [0.90, 0.95, 1.00]], // A: blue-white
@@ -136,7 +136,7 @@ function starColor(bv: number): [number, number, number] {
   return keys[keys.length - 1]![1];
 }
 
-function colorFromTemperature(temperatureK: number): [number, number, number] {
+export function colorFromTemperature(temperatureK: number): [number, number, number] {
   const keys: [number, [number,number,number]][] = [
     [30_000, [0.65, 0.75, 1.00]], // O/B
     [10_000, [0.90, 0.95, 1.00]], // A
@@ -157,7 +157,7 @@ function colorFromTemperature(temperatureK: number): [number, number, number] {
   return keys[keys.length - 1]![1];
 }
 
-function colorFromSpectralType(spectralType: string): [number, number, number] | null {
+export function colorFromSpectralType(spectralType: string): [number, number, number] | null {
   const letter = spectralType.trim().toUpperCase().match(/[OBAFGKM]/)?.[0];
   switch (letter) {
     case "O":
@@ -185,7 +185,7 @@ function hostColor(record: ExoplanetHostRecord, magnitude: number | null): [numb
   const bvProxy = magnitude === null
     ? 0.65
     : clamp((magnitude - 3.0) / 9.0 * 1.4 + 0.20, -0.10, 1.55);
-  return starColor(bvProxy);
+  return starColorFromBv(bvProxy);
 }
 
 function catalogPosition(raDeg: number, decDeg: number, distancePc: number | null): [number, number, number] {
@@ -246,7 +246,7 @@ export function createVisibleStarField(count = DEFAULT_VISIBLE_STAR_COUNT): Star
     const cosDec = Math.cos(dec);
     const flux = Math.pow(rng(), 8.0);
     const brightness = clamp(Math.pow(Math.max(flux, 1e-8), 0.18), 0.035, 1);
-    const color = starColor(rng() * 2.4 - 0.2);
+    const color = starColorFromBv(rng() * 2.4 - 0.2);
     const o = i * STAR_FLOATS;
 
     data[o + 0] = r * cosDec * Math.cos(ra);

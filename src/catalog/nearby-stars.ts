@@ -11,6 +11,8 @@
 // Positions are in compressed equatorial J2000 render AU (AU_PER_PARSEC = 80).
 // This matches the HYG x/y/z render buffer and exoplanet-host catalog stars.
 
+import { colorFromSpectralType, starColorFromBv } from "./stars";
+
 export interface NearbyStarLabel {
   name:   string;
   x:      number;
@@ -18,6 +20,10 @@ export interface NearbyStarLabel {
   z:      number;
   distPc: number;
   tier:   number;
+  color:  [number, number, number];
+  bv?: number;
+  spectralType?: string;
+  magnitude?: number;
 }
 
 export const NEARBY_STAR_AU_PER_PARSEC = 80; // must match build-visible-stars.mjs
@@ -30,6 +36,94 @@ function p(ra: number, dec: number, d: number): [number, number, number] {
   const ye = d * Math.cos(dc) * Math.sin(r);
   const ze = d * Math.sin(dc);
   return [xe * APc, ye * APc, ze * APc];
+}
+
+interface NearbyStarPhotometry {
+  bv?: number;
+  spectralType?: string;
+  magnitude?: number;
+}
+
+// HYG 4.2 photometry for named nearby-star anchors. These anchors are drawn
+// separately from the 100k mapped-star binary, so they need their own B-V or
+// spectral color metadata instead of a generic blue-white fallback.
+const NEARBY_STAR_PHOTOMETRY: Record<string, NearbyStarPhotometry> = {
+  "Proxima Centauri": { bv: 1.807, spectralType: "M5Ve", magnitude: 11.01 },
+  "Alpha Centauri": { bv: 0.71, spectralType: "G2V", magnitude: -0.01 },
+  "Barnard's Star": { bv: 1.57, spectralType: "sdM4", magnitude: 9.54 },
+  "Wolf 359": { bv: 2.0, spectralType: "M6", magnitude: 13.45 },
+  "Lalande 21185": { bv: 1.502, spectralType: "M2V", magnitude: 7.49 },
+  Sirius: { bv: 0.009, spectralType: "A0m...", magnitude: -1.44 },
+  "Ross 154": { bv: 1.51, spectralType: "M3.5Ve", magnitude: 10.37 },
+  "Ross 248": { bv: 1.9, spectralType: "dM6  e", magnitude: 12.29 },
+  "Epsilon Eridani": { bv: 0.88, spectralType: "K2V", magnitude: 3.73 },
+  "Lacaille 9352": { bv: 1.483, spectralType: "M2/M3V", magnitude: 7.35 },
+  "Ross 128": { bv: 1.746, spectralType: "M4.5V", magnitude: 11.12 },
+  "61 Cygni": { bv: 1.18, spectralType: "K5V+K7V", magnitude: 5.21 },
+  Procyon: { bv: 0.432, spectralType: "F5IV-V", magnitude: 0.4 },
+  "Struve 2398": { bv: 1.504, spectralType: "K5", magnitude: 8.94 },
+  "Groombridge 34": { bv: 1.56, spectralType: "M1V", magnitude: 8.09 },
+  "Epsilon Indi": { bv: 1.06, spectralType: "K5V", magnitude: 4.69 },
+  "Tau Ceti": { bv: 0.72, spectralType: "G8.5V", magnitude: 3.5 },
+  "Luyten's Star": { bv: 1.573, spectralType: "M5", magnitude: 9.84 },
+  "Kapteyn's Star": { bv: 1.543, spectralType: "M0V", magnitude: 8.86 },
+  "Lacaille 8760": { bv: 1.397, spectralType: "M1/M2V", magnitude: 6.69 },
+  "Kruger 60": { bv: 1.613, spectralType: "M2V", magnitude: 9.59 },
+  "Ross 614": { bv: 1.69, spectralType: "M4.5Ve", magnitude: 11.12 },
+  "van Maanen's Star": { bv: 0.554, spectralType: "DG", magnitude: 12.37 },
+  "40 Eridani": { bv: 0.82, spectralType: "K1V", magnitude: 4.43 },
+  Altair: { bv: 0.221, spectralType: "A7IV-V", magnitude: 0.76 },
+  "70 Ophiuchi": { bv: 0.86, spectralType: "K0V+K5V", magnitude: 4.03 },
+  "Eta Cassiopeiae": { bv: 0.587, spectralType: "G0V SB", magnitude: 3.46 },
+  "82 Eridani": { bv: 0.711, spectralType: "G8V", magnitude: 4.26 },
+  "Delta Pavonis": { bv: 0.75, spectralType: "G8IV", magnitude: 3.56 },
+  "Beta Hydri": { bv: 0.62, spectralType: "G2IV", magnitude: 2.8 },
+  Fomalhaut: { bv: 0.145, spectralType: "A3V", magnitude: 1.17 },
+  Vega: { bv: -0.001, spectralType: "A0Vvar", magnitude: 0.03 },
+  Pollux: { bv: 0.991, spectralType: "K0IIIvar", magnitude: 1.16 },
+  Arcturus: { bv: 1.239, spectralType: "K2IIIp", magnitude: -0.05 },
+  Capella: { bv: 0.795, spectralType: "G8III+G0III", magnitude: 0.08 },
+  "Alpha Lupi": { bv: -0.2, spectralType: "B1.5III", magnitude: 2.3 },
+  Castor: { bv: 0.034, spectralType: "A2Vm", magnitude: 1.58 },
+  "Gemma (Alphecca)": { bv: 0.032, spectralType: "A0V", magnitude: 2.22 },
+  Mizar: { bv: 0.057, spectralType: "A2V", magnitude: 2.23 },
+  Aldebaran: { bv: 1.538, spectralType: "K5III", magnitude: 0.87 },
+  Algol: { bv: -0.003, spectralType: "B8V", magnitude: 2.09 },
+  Gacrux: { bv: 1.6, spectralType: "M4III", magnitude: 1.59 },
+  Regulus: { bv: -0.087, spectralType: "B7V", magnitude: 1.36 },
+  Shaula: { bv: -0.231, spectralType: "B1.5IV+...", magnitude: 1.62 },
+  Izar: { bv: 0.966, spectralType: "A0", magnitude: 2.35 },
+  Denebola: { bv: 0.09, spectralType: "A3Vvar", magnitude: 2.14 },
+  Wezen: { bv: 0.671, spectralType: "F8Ia", magnitude: 1.83 },
+  Mirfak: { bv: 0.481, spectralType: "F5Ib", magnitude: 1.79 },
+  Achernar: { bv: -0.158, spectralType: "B3Vp", magnitude: 0.45 },
+  Spica: { bv: -0.235, spectralType: "B1V", magnitude: 0.98 },
+  Acrux: { bv: -0.243, spectralType: "B0.5IV", magnitude: 0.77 },
+  Hadar: { bv: -0.231, spectralType: "B1III", magnitude: 0.61 },
+  Antares: { bv: 1.865, spectralType: "M1Ib + B2.5V", magnitude: 1.06 },
+  Canopus: { bv: 0.164, spectralType: "F0Ib", magnitude: -0.62 },
+  Bellatrix: { bv: -0.224, spectralType: "B2III", magnitude: 1.64 },
+  Alnilam: { bv: -0.184, spectralType: "B0Ia", magnitude: 1.69 },
+  Betelgeuse: { bv: 1.5, spectralType: "M2Ib", magnitude: 0.45 },
+  Alnitak: { bv: -0.199, spectralType: "O9.5Ib SB", magnitude: 1.74 },
+  Mintaka: { bv: -0.175, spectralType: "O9.5II", magnitude: 2.25 },
+  Rigel: { bv: -0.03, spectralType: "B8Ia", magnitude: 0.18 },
+  Deneb: { bv: 0.092, spectralType: "A2Ia", magnitude: 1.25 },
+  Naos: { bv: -0.269, spectralType: "O5IAf", magnitude: 2.21 },
+  "VY Canis Majoris": { bv: 2.0, spectralType: "M3-M4II", magnitude: 7.95 },
+  Mira: { bv: 0.966, spectralType: "M5e-M9e", magnitude: 6.47 },
+  Saiph: { bv: -0.168, spectralType: "B0.5Iavar", magnitude: 2.07 },
+  Adhara: { bv: -0.211, spectralType: "B2II", magnitude: 1.5 },
+};
+
+function visualColorForStar(name: string): [number, number, number] {
+  const photometry = NEARBY_STAR_PHOTOMETRY[name];
+  if (photometry?.bv !== undefined) return starColorFromBv(photometry.bv);
+  if (photometry?.spectralType) {
+    const spectralColor = colorFromSpectralType(photometry.spectralType);
+    if (spectralColor) return spectralColor;
+  }
+  return starColorFromBv(0.65);
 }
 
 // ── Galactic centre — Sgr A* ─────────────────────────────────────────────────
@@ -50,7 +144,20 @@ function s(
   name: string, ra: number, dec: number, d: number, tier: number,
 ): NearbyStarLabel {
   const [x, y, z] = p(ra, dec, d);
-  return { name, x, y, z, distPc: d, tier };
+  const photometry = NEARBY_STAR_PHOTOMETRY[name];
+  const label: NearbyStarLabel = {
+    name,
+    x,
+    y,
+    z,
+    distPc: d,
+    tier,
+    color: visualColorForStar(name),
+  };
+  if (photometry?.bv !== undefined) label.bv = photometry.bv;
+  if (photometry?.spectralType !== undefined) label.spectralType = photometry.spectralType;
+  if (photometry?.magnitude !== undefined) label.magnitude = photometry.magnitude;
+  return label;
 }
 
 export const NEARBY_STAR_LABELS: NearbyStarLabel[] = [

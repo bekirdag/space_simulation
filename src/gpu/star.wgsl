@@ -65,6 +65,10 @@ fn subtle_spectral_color(color: vec3<f32>) -> vec3<f32> {
   return clamp(mix(vec3<f32>(1.0), color, 0.82), vec3<f32>(0.0), vec3<f32>(1.0));
 }
 
+fn cool_star_weight(color: vec3<f32>) -> f32 {
+  return clamp((color.r - max(color.g, color.b) + 0.08) / 0.58, 0.0, 1.0);
+}
+
 @vertex
 fn vs_main(
   @builtin(vertex_index)   vi:  u32,
@@ -105,7 +109,8 @@ fn vs_main(
     return out;
   }
   out.selected = select(0.0, 1.0, isSelected);
-  out.intensity = select(out.intensity, max(out.intensity, mix(1.0, 520.0, out.effects)), isSelected);
+  let selectedBoost = mix(520.0, 18.0, cool_star_weight(out.color));
+  out.intensity = select(out.intensity, max(out.intensity, mix(1.0, selectedBoost, out.effects)), isSelected);
 
   // ── Frustum culling ────────────────────────────────────────────────────────
   // Cull only when the whole billboard is outside the frame plus a small margin.
@@ -178,10 +183,12 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   // ── Core bleaching ────────────────────────────────────────────────────────
   // Bright stars saturate to near-white in their centres (CCDs overexpose,
   // the eye bleaches at peak brightness). Faint stars retain their hue fully.
-  let spectral = mix(in.color, subtle_spectral_color(in.color), in.effects);
-  let coreWhite = mix(spectral, vec3<f32>(1.0, 0.985, 0.94), 0.34);
+  let baseSpectral = mix(in.color, subtle_spectral_color(in.color), in.effects);
+  let coolWeight = cool_star_weight(baseSpectral);
+  let spectral = mix(baseSpectral, pow(baseSpectral, vec3<f32>(2.25)), coolWeight * in.effects * 0.72);
+  let coreWhite = mix(spectral, vec3<f32>(1.0, 0.985, 0.94), mix(0.34, 0.08, coolWeight));
   var col = spectral;
-  let bleach = clamp(core * in.alpha * 1.25 * in.effects, 0.0, 1.0);
+  let bleach = clamp(core * in.alpha * mix(1.25, 0.36, coolWeight) * in.effects, 0.0, 1.0);
   col = mix(spectral, coreWhite, bleach);
 
   let psf = mix(core, core * 1.20 + wings * 0.62, in.effects);
@@ -202,12 +209,13 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let diffuse = max(dot(normal, lightDir), 0.0);
     let limb = pow(max(z, 0.0), 0.45);
     let hotSpot = pow(max(diffuse, 0.0), 18.0);
-    let sphereCol = mix(spectral * (0.50 + diffuse * 0.36 + limb * 0.32), vec3<f32>(1.0, 0.985, 0.94), hotSpot * 0.34);
+    let sphereWhiteMix = mix(0.34, 0.08, coolWeight);
+    let sphereCol = mix(spectral * (0.50 + diffuse * 0.36 + limb * 0.32), vec3<f32>(1.0, 0.985, 0.94), hotSpot * sphereWhiteMix);
     let sphereAlpha = clamp(silhouette * mix(in.alpha * (0.45 + limb * 0.55), 1.0, in.selected), 0.0, 1.0);
     let corona = exp(-d2 * 4.8) * mix(0.28, 0.52, in.selected);
     let sphereHdr = (
       sphereCol * in.intensity * mix(in.alpha, 1.0, in.selected) * (0.38 + limb * 0.74 + hotSpot * 0.60) +
-      (spectral + vec3<f32>(corona * 0.28)) * in.intensity * corona
+      (spectral + vec3<f32>(corona * 0.28 * (1.0 - coolWeight * 0.72))) * in.intensity * corona
     ) * silhouette;
     hdr = mix(hdr, sphereHdr, sphereLod);
     alpha = mix(alpha, max(alpha, sphereAlpha), sphereLod);

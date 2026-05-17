@@ -60,6 +60,10 @@ fn subtle_spectral_color(color: vec3<f32>) -> vec3<f32> {
   return clamp(mix(vec3<f32>(1.0), color, 0.82), vec3<f32>(0.0), vec3<f32>(1.0));
 }
 
+fn cool_star_weight(color: vec3<f32>) -> f32 {
+  return clamp((color.r - max(color.g, color.b) + 0.08) / 0.58, 0.0, 1.0);
+}
+
 @vertex
 fn vs_main(
   @builtin(vertex_index)   vi:  u32,
@@ -126,11 +130,13 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   let core  = exp(-d2 * 22.0);
   let wings = max(0.0, 1.0 / (1.0 + d2 * 10.0) - 0.09);
 
-  let spectral = mix(in.color, subtle_spectral_color(in.color), in.effects);
+  let baseSpectral = mix(in.color, subtle_spectral_color(in.color), in.effects);
+  let coolWeight = cool_star_weight(baseSpectral);
+  let spectral = mix(baseSpectral, pow(baseSpectral, vec3<f32>(2.25)), coolWeight * in.effects * 0.72);
   var col = spectral;
   let lift   = mix(1.0, clamp(pow(max(in.brightness, 0.08), 0.28), 0.55, 1.8), in.effects);
-  let bleach = clamp(core * in.alpha * (0.95 + lift * 0.42) * in.effects, 0.0, 1.0);
-  let coreWhite = mix(spectral, vec3<f32>(1.0, 0.985, 0.94), 0.30);
+  let bleach = clamp(core * in.alpha * (0.95 + lift * 0.42) * mix(1.0, 0.38, coolWeight) * in.effects, 0.0, 1.0);
+  let coreWhite = mix(spectral, vec3<f32>(1.0, 0.985, 0.94), mix(0.30, 0.08, coolWeight));
   col = mix(spectral, coreWhite, bleach);
 
   let psf = mix(core, core * 1.12 + wings * 0.58, in.effects);
@@ -152,13 +158,13 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let sphereCol = mix(
       spectral * (0.50 + diffuse * 0.34 + limb * 0.32),
       vec3<f32>(1.0, 0.985, 0.94),
-      hotSpot * 0.30
+      hotSpot * mix(0.30, 0.08, coolWeight)
     );
     let sphereAlpha = clamp(silhouette * in.alpha * (0.46 + limb * 0.54), 0.0, 1.0);
     let corona = exp(-d2 * 4.8) * 0.24;
     let sphereHdr = (
       sphereCol * in.alpha * intensity * (0.36 + limb * 0.72 + hotSpot * 0.42) +
-      (spectral + vec3<f32>(corona * 0.20)) * intensity * corona * in.alpha
+      (spectral + vec3<f32>(corona * 0.20 * (1.0 - coolWeight * 0.72))) * intensity * corona * in.alpha
     ) * silhouette;
     hdr = mix(hdr, sphereHdr, sphereLod);
     alpha = mix(alpha, max(alpha, sphereAlpha), sphereLod);
