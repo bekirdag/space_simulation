@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Downsamples the NASA/GSFC LAMBDA Meisner & Finkbeiner 2015 E(B-V) dust map
-// into the compact 8-float world-anchored billboard format used by src/gpu/dust.wgsl.
+// into the compact 8-float line-of-sight format used by src/catalog/dust.ts.
 //
 // Raw FITS input is cached locally under public/cache/nasa and ignored by git.
 // Generated outputs:
@@ -244,10 +244,10 @@ const meta = {
   fitsUrl: FITS_URL,
   ipacDustServiceUrl: IPAC_DUST_URL,
   generatedAt: new Date().toISOString(),
-  projection: "Mollweide all-sky source, converted to world-anchored render-space Galactic shell billboards",
+  projection: "Mollweide all-sky source, converted to reddening-weighted Galactic line-of-sight cells",
   anchoring: {
-    type: "sun-observed all-sky shell",
-    note: "Galactic longitude 0 and latitude 0 are placed on the simulation Milky Way center / Sagittarius A* position.",
+    type: "sun-observed all-sky directions projected through the Milky Way disk at runtime",
+    note: "Cells store measured reddening directions and weights; runtime samples cloud locations through a Milky Way disk/spiral density model instead of rendering a Sun-centered shell.",
     milkyWayScaleAUPerKpc: MW_KPC_AU,
     sunGalacticRadiusKpc: SUN_GALACTIC_RADIUS_KPC,
     galacticCenterWorldAU: {
@@ -266,12 +266,12 @@ const meta = {
   },
   sourcePixelsPerDustCell: { width: blockW, height: blockH },
   strideFloat32: DUST_FLOATS,
-  shellRadiusAU: SHELL_RADIUS_AU,
+  legacyDirectionVectorScaleAU: SHELL_RADIUS_AU,
   cellCount: out.length / DUST_FLOATS,
   ebvPercentiles: { p95, p99 },
   notes: [
-    "This is a 2D total line-of-sight Galactic reddening visualization, not a 3D dust volume.",
-    "The runtime layer is fixed in world space so the map center tracks the Milky Way center instead of the camera.",
+    "This is a 2D total line-of-sight Galactic reddening source, not a distance-resolved 3D dust cube.",
+    "The runtime layer projects the public reddening directions into galaxy-scale disk cloud positions, so the visible layer is not a dust shell around the Sun.",
     "Raw FITS is cached locally under public/cache/nasa and ignored by git; generated binary is the runtime asset.",
   ],
 };

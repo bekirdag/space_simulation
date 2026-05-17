@@ -5,11 +5,13 @@ import { NEBULA_FLOATS } from "./nebulas";
 //
 // Each dust instance reuses the nebula billboard buffer layout so the renderer
 // can draw the clouds as batched procedural cloud models. The source map is a
-// 2D total line-of-sight reddening product, so these are real dust directions
-// anchored in the simulation frame, not true 3D distance-resolved cloud bodies.
+// 2D total line-of-sight reddening product: we use those measured directions
+// and weights, then project samples through a Milky Way disk/spiral density
+// model so the rendered cloud positions form a galaxy-scale dust map instead
+// of a Sun-centered shell.
 
 export const DUST_CLOUD_FLOATS = NEBULA_FLOATS;
-export const DUST_CLOUD_COUNT = 24_000;
+export const DUST_CLOUD_COUNT = 96_000;
 export const DUST_CLOUD_CAPACITY = DUST_CLOUD_COUNT;
 export const DUST_MAP_FLOATS = 8;
 export const DUST_MILKY_WAY_KPC_TO_AU = 8_000;
@@ -20,13 +22,16 @@ export const DUST_GALAXY_HALF_HEIGHT_AU = DUST_GALAXY_HALF_HEIGHT_KPC * DUST_MIL
 export const DUST_CLOUD_MAX_MODEL_HEIGHT_KPC = 0.02;
 export const DUST_CLOUD_MAX_MODEL_HEIGHT_AU = DUST_CLOUD_MAX_MODEL_HEIGHT_KPC * DUST_MILKY_WAY_KPC_TO_AU;
 export const DUST_CLOUD_SOURCE =
-  `${DUST_CLOUD_COUNT.toLocaleString()} MF2015 reddening-sampled procedural dust clouds`;
+  `${DUST_CLOUD_COUNT.toLocaleString()} MF2015 reddening-weighted Milky Way disk dust clouds`;
 
 const DUST_MAP_DATA_URL = "/data/dust-map-mf2015.bin";
 const DUST_MAP_META_URL = "/data/dust-map-mf2015.meta.json";
 const DUST_MAP_MIN_ALPHA = 0.006;
 const DUST_MAP_ALPHA_RANGE = 0.080;
 const DUST_CLOUD_MIN_RADIUS_AU = 12;
+const DUST_MIN_LINE_OF_SIGHT_KPC = 0.75;
+const DUST_DISK_SAMPLE_HALF_HEIGHT_KPC = 0.52;
+const DUST_VERTICAL_SCALE_KPC = 0.12;
 
 const TAU = Math.PI * 2;
 const GAL_TO_ECL = [
@@ -100,21 +105,6 @@ function normalize3(x: number, y: number, z: number): [number, number, number] {
   return [x / len, y / len, z / len];
 }
 
-function cross3(
-  ax: number,
-  ay: number,
-  az: number,
-  bx: number,
-  by: number,
-  bz: number,
-): [number, number, number] {
-  return [
-    ay * bz - az * by,
-    az * bx - ax * bz,
-    ax * by - ay * bx,
-  ];
-}
-
 function galacticCartesianToEclipticAU(xgc: number, ygc: number, zgc: number): [number, number, number] {
   const xh = xgc + DUST_SUN_GALACTIC_RADIUS_KPC;
   const yh = ygc;
@@ -124,6 +114,15 @@ function galacticCartesianToEclipticAU(xgc: number, ygc: number, zgc: number): [
     (GAL_TO_ECL[1][0] * xh + GAL_TO_ECL[1][1] * yh + GAL_TO_ECL[1][2] * zh) * DUST_MILKY_WAY_KPC_TO_AU,
     (GAL_TO_ECL[2][0] * xh + GAL_TO_ECL[2][1] * yh + GAL_TO_ECL[2][2] * zh) * DUST_MILKY_WAY_KPC_TO_AU,
   ];
+}
+
+function eclipticToGalacticDirection(xe: number, ye: number, ze: number): [number, number, number] {
+  const [x, y, z] = normalize3(xe, ye, ze);
+  return normalize3(
+    GAL_TO_ECL[0][0] * x + GAL_TO_ECL[1][0] * y + GAL_TO_ECL[2][0] * z,
+    GAL_TO_ECL[0][1] * x + GAL_TO_ECL[1][1] * y + GAL_TO_ECL[2][1] * z,
+    GAL_TO_ECL[0][2] * x + GAL_TO_ECL[1][2] * y + GAL_TO_ECL[2][2] * z,
+  );
 }
 
 function armBoost(radiusKpc: number, theta: number): number {
@@ -138,6 +137,46 @@ function armBoost(radiusKpc: number, theta: number): number {
     }
   }
   return boost;
+}
+
+function rayMaxDistanceInMilkyWayDiskKpc(dir: readonly [number, number, number]): number {
+  const sx = -DUST_SUN_GALACTIC_RADIUS_KPC;
+  const sy = 0;
+  const a = dir[0] * dir[0] + dir[1] * dir[1];
+  const b = 2 * (sx * dir[0] + sy * dir[1]);
+  const c = sx * sx + sy * sy - DUST_GALAXY_RADIUS_KPC * DUST_GALAXY_RADIUS_KPC;
+  let maxDistance = DUST_GALAXY_RADIUS_KPC * 2;
+
+  if (a > 1e-8) {
+    const disc = b * b - 4 * a * c;
+    if (disc <= 0) return 0;
+    const root = Math.sqrt(disc);
+    const t0 = (-b - root) / (2 * a);
+    const t1 = (-b + root) / (2 * a);
+    maxDistance = Math.max(t0, t1);
+  }
+
+  if (Math.abs(dir[2]) > 1e-5) {
+    maxDistance = Math.min(maxDistance, DUST_DISK_SAMPLE_HALF_HEIGHT_KPC / Math.abs(dir[2]));
+  }
+
+  return Math.max(0, maxDistance);
+}
+
+function galacticDustDensity(xgc: number, ygc: number, zgc: number, mapDensity: number): number {
+  const radius = Math.hypot(xgc, ygc);
+  if (radius > DUST_GALAXY_RADIUS_KPC || Math.abs(zgc) > DUST_DISK_SAMPLE_HALF_HEIGHT_KPC) return 0;
+
+  const theta = Math.atan2(ygc, xgc);
+  const radial = Math.exp(-radius / 5.2);
+  const vertical = Math.exp(-Math.abs(zgc) / DUST_VERTICAL_SCALE_KPC);
+  const arms = armBoost(radius, theta);
+  const centralBar = Math.exp(-Math.abs(radius * Math.sin(theta)) / 0.55) *
+    Math.exp(-Math.abs(radius * Math.cos(theta)) / 3.1) *
+    (1 - smoothstep(2.0, 5.2, radius));
+  const localHole = smoothstep(0.35, 1.15, Math.hypot(xgc + DUST_SUN_GALACTIC_RADIUS_KPC, ygc));
+  const disk = radial * (0.16 + arms * 0.24) + centralBar * 0.24;
+  return clamp(mapDensity * disk * vertical * localHole, 0, 1);
 }
 
 interface DustSeed {
@@ -214,23 +253,38 @@ function dustSeedFromMap(dustMap: Float32Array, dustCellCount: number, rand: () 
   const x = dustMap[offset + 0] ?? 0;
   const y = dustMap[offset + 1] ?? 0;
   const z = dustMap[offset + 2] ?? 0;
-  const sizeAU = Math.max(460, dustMap[offset + 3] ?? 980);
-  const density = dustMapCellDensity(dustMap, offset);
+  const mapDensity = dustMapCellDensity(dustMap, offset);
+  const dir = eclipticToGalacticDirection(x, y, z);
+  const maxDistanceKpc = rayMaxDistanceInMilkyWayDiskKpc(dir);
+  if (maxDistanceKpc <= DUST_MIN_LINE_OF_SIGHT_KPC) {
+    return fallbackDustPosition(rand);
+  }
 
-  const [nx, ny, nz] = normalize3(x, y, z);
-  const ref: [number, number, number] = Math.abs(ny) < 0.92 ? [0, 1, 0] : [1, 0, 0];
-  const [rx0, ry0, rz0] = cross3(ref[0], ref[1], ref[2], nx, ny, nz);
-  const [rx, ry, rz] = normalize3(rx0, ry0, rz0);
-  const [ux, uy, uz] = cross3(nx, ny, nz, rx, ry, rz);
-  const jitter = sizeAU * (0.10 + rand() * 0.26);
+  let best: DustSeed | null = null;
+  let bestDensity = 0;
+  for (let attempt = 0; attempt < 24; attempt++) {
+    const pathT = Math.pow(rand(), 0.62);
+    const distanceKpc = DUST_MIN_LINE_OF_SIGHT_KPC +
+      (maxDistanceKpc - DUST_MIN_LINE_OF_SIGHT_KPC) * pathT;
+    const xgc = -DUST_SUN_GALACTIC_RADIUS_KPC + dir[0] * distanceKpc;
+    const ygc = dir[1] * distanceKpc;
+    const zgc = dir[2] * distanceKpc + randn(rand) * 0.018;
+    const density = galacticDustDensity(xgc, ygc, zgc, mapDensity);
+    if (density > bestDensity) {
+      const [ex, ey, ez] = galacticCartesianToEclipticAU(xgc, ygc, zgc);
+      best = {
+        x: ex,
+        y: ey,
+        z: ez,
+        density,
+        sizeAU: (0.10 + density * 0.16) * DUST_MILKY_WAY_KPC_TO_AU,
+      };
+      bestDensity = density;
+    }
+    if (rand() < density * 2.1 + 0.015 && best) return best;
+  }
 
-  return {
-    x: x + rx * randn(rand) * jitter + ux * randn(rand) * jitter,
-    y: y + ry * randn(rand) * jitter + uy * randn(rand) * jitter,
-    z: z + rz * randn(rand) * jitter + uz * randn(rand) * jitter,
-    density,
-    sizeAU,
-  };
+  return best ?? fallbackDustPosition(rand);
 }
 
 export function buildDustCloudBuffer(dustMap?: Float32Array, count = DUST_CLOUD_COUNT): Float32Array {

@@ -6,10 +6,10 @@
   "fitsUrl": "https://lambda.gsfc.nasa.gov/data/foregrounds/EBV/lambda_mollweide_mf2015_dust_map_v2.fits",
   "ipacDustServiceUrl": "https://irsa.ipac.caltech.edu/applications/DUST/",
   "generatedAt": "2026-05-15T13:34:48.564Z",
-  "projection": "Mollweide all-sky source, converted to world-anchored render-space Galactic shell billboards",
+  "projection": "Mollweide all-sky source, converted to reddening-weighted Galactic line-of-sight cells",
   "anchoring": {
-    "type": "sun-observed all-sky shell",
-    "note": "Galactic longitude 0 and latitude 0 are placed on the simulation Milky Way center / Sagittarius A* position.",
+    "type": "sun-observed all-sky directions projected through the Milky Way disk at runtime",
+    "note": "Cells store measured reddening directions and weights; runtime samples cloud locations through a Milky Way disk/spiral density model instead of rendering a Sun-centered shell.",
     "milkyWayScaleAUPerKpc": 8000,
     "sunGalacticRadiusKpc": 8.5,
     "galacticCenterWorldAU": {
@@ -34,15 +34,15 @@
     "height": 8
   },
   "strideFloat32": 8,
-  "shellRadiusAU": 68000,
+  "legacyDirectionVectorScaleAU": 68000,
   "cellCount": 84281,
   "ebvPercentiles": {
     "p95": 1.3135239835828543,
     "p99": 3.5564041174948215
   },
   "notes": [
-    "This is a 2D total line-of-sight Galactic reddening visualization, not a 3D dust volume.",
-    "The runtime layer is fixed in world space so the map center tracks the Milky Way center instead of the camera.",
+    "This is a 2D total line-of-sight Galactic reddening source, not a distance-resolved 3D dust cube.",
+    "The runtime layer projects the public reddening directions into galaxy-scale disk cloud positions, so the visible layer is not a dust shell around the Sun.",
     "Raw FITS is cached locally under public/cache/nasa and ignored by git; generated binary is the runtime asset."
   ]
 }
