@@ -25,6 +25,9 @@ struct DustCloud {
   transform:   vec4<f32>,
 };
 
+const CAMERA_MIN_PIXEL_RADIUS: f32 = 2.5;
+const MICRO_CLOUD_PIXEL_RADIUS: f32 = 0.45;
+
 @group(0) @binding(0) var<uniform>       camera:   Camera;
 @group(0) @binding(1) var<storage, read> clouds:   array<DustCloud>;
 @group(0) @binding(2) var<uniform>       settings: DustSettings;
@@ -83,6 +86,11 @@ fn vs_main(
   let ndcY = clipCenter.y / clipCenter.w;
   let pxSize = radius * max(sx, sy) * camera.upAndFocal.w / clipCenter.w;
   out.px_size = pxSize;
+  let microNdcRadius = camera.rightAndMNR.w * (MICRO_CLOUD_PIXEL_RADIUS / CAMERA_MIN_PIXEL_RADIUS);
+  if (pxSize < microNdcRadius) {
+    out.clip_pos = vec4<f32>(10.0, 10.0, 10.0, 1.0);
+    return out;
+  }
   if (ndcX - pxSize > 1.35 || ndcX + pxSize < -1.35 ||
       ndcY - pxSize > 1.35 || ndcY + pxSize < -1.35) {
     out.clip_pos = vec4<f32>(10.0, 10.0, 10.0, 1.0);
