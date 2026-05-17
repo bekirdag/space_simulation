@@ -15,7 +15,10 @@ struct ModelUniform {
   centerRadius:     vec4<f32>, // xyz=center AU, w=physical radius AU
   lightAndKind:     vec4<f32>, // xyz=direction toward Sun, w=1 for emissive Sun
   fallbackOpacity:  vec4<f32>, // rgb=fallback color, w=opacity
-  params:           vec4<f32>, // x=emissive strength, remaining reserved
+  params:           vec4<f32>, // x=emissive strength, y=prime meridian degrees
+  orientationRight: vec4<f32>, // body +X axis in ecliptic J2000
+  orientationUp:    vec4<f32>, // body +Y axis in ecliptic J2000
+  orientationAxis:  vec4<f32>, // body north pole/+Z axis in ecliptic J2000
 };
 
 struct MaterialUniform {
@@ -69,11 +72,20 @@ fn vs_main(
   @location(3) vertexColor: vec4<f32>,
 ) -> VertexOut {
   var out: VertexOut;
-  let relativeToTarget = (model.centerRadius.xyz - camera.screenAndTarget.yzw) + position * model.centerRadius.w;
+  let orientedPosition =
+    model.orientationRight.xyz * position.x +
+    model.orientationUp.xyz * position.y +
+    model.orientationAxis.xyz * position.z;
+  let orientedNormal = normalize(
+    model.orientationRight.xyz * normal.x +
+    model.orientationUp.xyz * normal.y +
+    model.orientationAxis.xyz * normal.z
+  );
+  let relativeToTarget = (model.centerRadius.xyz - camera.screenAndTarget.yzw) + orientedPosition * model.centerRadius.w;
   let relativeToEye = relativeToTarget - camera.eyeOffset.xyz;
   out.clipPos = projectCameraRelative(relativeToEye);
   out.uv = uv;
-  out.normal = normalize(normal);
+  out.normal = orientedNormal;
   out.vertexColor = vertexColor;
   out.viewDir = normalize(-relativeToEye);
   return out;

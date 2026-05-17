@@ -1409,7 +1409,7 @@ async function main(): Promise<void> {
     console.info(`Loaded ${planets.length} exoplanets from ${source}.`);
     if (activeExoplanetHostName) {
       setExoplanetBodies(activeExoplanetHostName, activeExoplanetHostPos ?? undefined);
-      renderer.uploadBodies(bodies);
+      uploadBodiesForSimulation();
     }
   }));
 
@@ -1420,6 +1420,11 @@ async function main(): Promise<void> {
   let paused   = false;
   let pausedTW = timewarp;
   let galacticOrigin = createGalacticOriginState();
+
+  function uploadBodiesForSimulation(visibility?: ReadonlyMap<number, number>): void {
+    renderer.setSimulationTimeMs(hud.epochMs + simYears * SECONDS_PER_YEAR * 1000);
+    renderer.uploadBodies(bodies, visibility);
+  }
 
   // ── Load ephemeris from Horizons (or fall back to J2000.0) ────────────────
   async function loadEphemeris(dateStr: string, msg: string, hideWhenDone = true): Promise<boolean> {
@@ -1452,7 +1457,7 @@ async function main(): Promise<void> {
         trails.record(bodies);
       }
 
-      renderer.uploadBodies(bodies);
+      uploadBodiesForSimulation();
 
       sourceEl.textContent = horizonsSourceLabel(result, dateStr);
       if (result.warnings.length) console.warn("Horizons fallbacks:", result.warnings);
@@ -1474,7 +1479,7 @@ async function main(): Promise<void> {
       simYears = 0;
       renderer.resetTrailSlots();
       seedStartupTrails(trails, bodies, galacticOrigin);
-      renderer.uploadBodies(bodies);
+      uploadBodiesForSimulation();
       sourceEl.textContent = `J2000.0 preset (offline)`;
       if (hideWhenDone) hideLoading();
       return false;
@@ -1610,7 +1615,7 @@ async function main(): Promise<void> {
     simYears = 0;
     trails.clear();
     renderer.resetTrailSlots();
-    renderer.uploadBodies(bodies);
+    uploadBodiesForSimulation();
     trails.record(bodies);
   }
 
@@ -1713,7 +1718,7 @@ async function main(): Promise<void> {
         setExoplanetBodies(star?.name ?? null, star ? [star.x, star.y, star.z] : undefined);
         renderer.uploadSelectedStar(star ? [star.x, star.y, star.z] : null);
       }
-      renderer.uploadBodies(bodies);
+      uploadBodiesForSimulation();
     },
     onFocusTitleChange: (title, subtitle, objectType) => {
       if (objectType !== "constellation") clearSelectedConstellation();
@@ -1743,7 +1748,7 @@ async function main(): Promise<void> {
 
     autoSnapSuppressedBodyName = focusedBodyNameBeforeUnlock;
     renderer.uploadSelectedStar(null);
-    renderer.uploadBodies(bodies);
+    uploadBodiesForSimulation();
     event.preventDefault();
   });
 
@@ -1872,7 +1877,7 @@ async function main(): Promise<void> {
     renderer.setActiveMilkyWayModel(null);
     setExoplanetBodies(star.name, [star.x, star.y, star.z]);
     nav.selectCatalogStar(nearbyStarSearchResult(star));
-    renderer.uploadBodies(bodies);
+    uploadBodiesForSimulation();
     renderer.uploadSelectedStar([star.x, star.y, star.z]);
   }
 
@@ -1891,7 +1896,7 @@ async function main(): Promise<void> {
       color: [0.82, 0.88, 1.00],
       objectType: "galaxy",
     });
-    renderer.uploadBodies(bodies);
+    uploadBodiesForSimulation();
   }
 
   function focusGalaxyLabel(galaxy: GalaxyNameLabel): void {
@@ -1909,7 +1914,7 @@ async function main(): Promise<void> {
       color: [0.82, 0.88, 1.00],
       objectType: "galaxy",
     });
-    renderer.uploadBodies(bodies);
+    uploadBodiesForSimulation();
   }
 
   // Last computed viewProj matrix - used by pointer hit tests outside the render loop.
@@ -2040,7 +2045,7 @@ async function main(): Promise<void> {
     } else {
       nav.selectCatalogStarForWheelZoom(hit, MAP_WHEEL_ZOOM_STEPS);
     }
-    renderer.uploadBodies(bodies);
+    uploadBodiesForSimulation();
     renderer.uploadSelectedStar(
       shouldHighlightCatalogStar(hit)
         ? [hit.x, hit.y, hit.z]
@@ -2550,7 +2555,7 @@ async function main(): Promise<void> {
       actualSimRate     = actualSimRate * 0.92 + rawRate * 0.08; // smoothed EMA
       twDisplay.textContent = formatTW(timewarp);
 
-      renderer.uploadBodies(bodies);
+      uploadBodiesForSimulation();
     }
 
     // Update exoplanet orbital positions each frame (driven by simYears, not physics)
@@ -2568,7 +2573,7 @@ async function main(): Promise<void> {
         needsUpload = true;
       }
       if (needsUpload && (paused || timewarp === 0)) {
-        renderer.uploadBodies(bodies); // ensure GPU sees updated positions even when paused
+        uploadBodiesForSimulation(); // ensure GPU sees updated positions even when paused
       }
     }
 
@@ -2670,7 +2675,7 @@ async function main(): Promise<void> {
     renderer.uploadSelectedStarModel(selectedStarModelFromHit(highlightedStar));
     const focusedMembers = nav.focusedSystemMembers();
     const bodyVisibility = buildBodyRenderVisibility(bodies, camUniforms.viewProj, focusedMembers, camUniforms);
-    renderer.uploadBodies(bodies, bodyVisibility);
+    uploadBodiesForSimulation(bodyVisibility);
     renderer.draw(trails);
 
     labels.update(bodies, camUniforms.viewProj, focusedMembers, camUniforms.eye, bodyVisibility, (body) => {
@@ -2723,7 +2728,7 @@ async function main(): Promise<void> {
       renderer.setActiveMilkyWayModel(null);
       setExoplanetBodies(null);
       nav.selectCatalogStar(SGR_A_SEARCH_RESULT);
-      renderer.uploadBodies(bodies);
+      uploadBodiesForSimulation();
     }, !sgrASelected, 1 - milkyWayLabelOpacity, camUniforms);
     const selectedCatalogLabel =
       sgrASelected

@@ -17,6 +17,7 @@ import constellationWGSL from "./constellation.wgsl?raw";
 import trailWGSL    from "./trail.wgsl?raw";
 import { type GPUContext } from "./device";
 import { type Body, BODY_FLOATS } from "../physics/body";
+import { IDENTITY_BODY_ROTATION_BASIS, bodyRotationBasis } from "../physics/rotations";
 import { STAR_FLOATS } from "../catalog/stars";
 import { type StarModelTypeId, starModelTypeIndex } from "../catalog/star-types";
 import { MW_FLOATS } from "../catalog/milkyway";
@@ -49,6 +50,7 @@ const CAMERA_NEAR = 1e-8;
 const CAMERA_FAR = 50_000_000;
 const BLACK_HOLE_BYTES = 48;
 const MILKY_WAY_MODEL_UNIFORM_BYTES = 64;
+const SOLAR_SYSTEM_MODEL_UNIFORM_BYTES = 112;
 const MILKY_WAY_MODEL_MATERIAL_BYTES = 48;
 const STAR_MODEL_UNIFORM_BYTES = 48;
 const MODEL_DEPTH_FORMAT: GPUTextureFormat = "depth24plus";
@@ -695,6 +697,7 @@ export class Renderer {
   private _objectBrightness = 1;
   private _cameraDistanceFromSun = 0;
   private cameraUniforms: CameraUniforms | null = null;
+  private simulationTimeMs = Date.UTC(2000, 0, 1, 12, 0, 0);
   private _showDust = true;
   private _dustTransparency = DUST_DEFAULT_TRANSPARENCY;
   private _dustDrawLimit = DUST_CLOUD_DEFAULT_DRAW_COUNT;
@@ -748,6 +751,10 @@ export class Renderer {
     if (this.activeMilkyWayModelId) {
       this.milkyWayModelFailedAt.delete(this.activeMilkyWayModelId);
     }
+  }
+
+  setSimulationTimeMs(epochMs: number): void {
+    if (Number.isFinite(epochMs)) this.simulationTimeMs = epochMs;
   }
 
   constructor(
@@ -1770,7 +1777,7 @@ export class Renderer {
       const { device } = this.ctx;
       const uniformBuffer = device.createBuffer({
         label: `solar-system-model-uniform-${model.id}`,
-        size: MILKY_WAY_MODEL_UNIFORM_BYTES,
+        size: SOLAR_SYSTEM_MODEL_UNIFORM_BYTES,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       });
       const textures = mesh.textures.map((texture, index) => {
@@ -2149,7 +2156,8 @@ export class Renderer {
         const len = Math.hypot(lx, ly, lz) || 1;
         lx /= len; ly /= len; lz /= len;
       }
-      const data = new Float32Array(MILKY_WAY_MODEL_UNIFORM_BYTES / 4);
+      const basis = bodyRotationBasis(entry.bodyName, this.simulationTimeMs) ?? IDENTITY_BODY_ROTATION_BASIS;
+      const data = new Float32Array(SOLAR_SYSTEM_MODEL_UNIFORM_BYTES / 4);
       data[0] = body.x;
       data[1] = body.y;
       data[2] = body.z;
@@ -2163,6 +2171,16 @@ export class Renderer {
       data[10] = entry.fallbackColor[2];
       data[11] = 1;
       data[12] = entry.emissive;
+      data[13] = basis.primeMeridianDeg;
+      data[16] = basis.right[0];
+      data[17] = basis.right[1];
+      data[18] = basis.right[2];
+      data[20] = basis.up[0];
+      data[21] = basis.up[1];
+      data[22] = basis.up[2];
+      data[24] = basis.axis[0];
+      data[25] = basis.axis[1];
+      data[26] = basis.axis[2];
       this.ctx.device.queue.writeBuffer(entry.uniformBuffer, 0, data);
     }
   }
