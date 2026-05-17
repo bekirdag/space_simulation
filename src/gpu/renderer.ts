@@ -1197,6 +1197,7 @@ export class Renderer {
         texture.bitmap.close();
         return gpuTexture;
       });
+      const externalTextureIndex = await this.loadExternalMilkyWayModelTexture(model, textures);
       const parts: MilkyWayModelPartEntry[] = mesh.parts.map((part, index) => {
         const vertexBuffer = device.createBuffer({
           label: `milky-way-model-vertices-${model.id}-${index}`,
@@ -1204,9 +1205,10 @@ export class Renderer {
           usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
         });
         device.queue.writeBuffer(vertexBuffer, 0, part.vertices as GPUAllowSharedBufferSource);
-        const materialBuffer = this.createMilkyWayModelMaterialBuffer(model, part.material, index);
-        const texture = part.material.textureIndex >= 0
-          ? textures[part.material.textureIndex] ?? this.milkyWayModelWhiteTexture
+        const material = this.materialWithExternalTexture(part.material, externalTextureIndex);
+        const materialBuffer = this.createMilkyWayModelMaterialBuffer(model, material, index);
+        const texture = material.textureIndex >= 0
+          ? textures[material.textureIndex] ?? this.milkyWayModelWhiteTexture
           : this.milkyWayModelWhiteTexture;
         return {
           vertexBuffer,
@@ -1248,6 +1250,41 @@ export class Renderer {
     } finally {
       this.milkyWayModelLoading.delete(model.id);
     }
+  }
+
+  private async loadExternalMilkyWayModelTexture(
+    model: MilkyWayModelObject,
+    textures: GPUTexture[],
+  ): Promise<number> {
+    if (!model.textureUrl) return -1;
+    try {
+      const resp = await fetch(model.textureUrl, { cache: "force-cache" });
+      if (!resp.ok) throw new Error(`texture ${resp.status}`);
+      const blob = await resp.blob();
+      const bitmap = await createImageBitmap(blob);
+      const texture = this.createMilkyWayModelTexture(bitmap, `milky-way-model-external-texture-${model.id}`);
+      bitmap.close();
+      const index = textures.length;
+      textures.push(texture);
+      return index;
+    } catch (e) {
+      console.warn(`Failed to load Milky Way model texture for ${model.name}:`, e);
+      return -1;
+    }
+  }
+
+  private materialWithExternalTexture(
+    material: ParsedMilkyWayMaterial,
+    textureIndex: number,
+  ): ParsedMilkyWayMaterial {
+    if (textureIndex < 0 || material.useTexture > 0.5) return material;
+    return {
+      ...material,
+      baseColor: [1, 1, 1, material.baseColor[3]],
+      textureIndex,
+      useTexture: 1,
+      useProcedural: Math.min(material.useProcedural, 0.35),
+    };
   }
 
   private createMilkyWayModelTexture(bitmap: ImageBitmap, label: string): GPUTexture {

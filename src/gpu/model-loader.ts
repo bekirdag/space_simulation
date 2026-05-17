@@ -394,6 +394,52 @@ function looksLikeBinaryStl(buffer: ArrayBuffer): boolean {
   return 84 + triCount * 50 === buffer.byteLength;
 }
 
+function longestAxis(sizeX: number, sizeY: number, sizeZ: number): 0 | 1 | 2 {
+  if (sizeX >= sizeY && sizeX >= sizeZ) return 0;
+  if (sizeY >= sizeX && sizeY >= sizeZ) return 1;
+  return 2;
+}
+
+function cylindricalStlUv(
+  x: number,
+  y: number,
+  z: number,
+  cx: number,
+  cy: number,
+  cz: number,
+  minX: number,
+  minY: number,
+  minZ: number,
+  maxX: number,
+  maxY: number,
+  maxZ: number,
+  axis: 0 | 1 | 2,
+): [number, number] {
+  let radialA = x - cx;
+  let radialB = y - cy;
+  let axisValue = z;
+  let axisMin = minZ;
+  let axisMax = maxZ;
+
+  if (axis === 0) {
+    radialA = y - cy;
+    radialB = z - cz;
+    axisValue = x;
+    axisMin = minX;
+    axisMax = maxX;
+  } else if (axis === 1) {
+    radialA = x - cx;
+    radialB = z - cz;
+    axisValue = y;
+    axisMin = minY;
+    axisMax = maxY;
+  }
+
+  const u = (Math.atan2(radialB, radialA) / (Math.PI * 2) + 1.5) % 1;
+  const v = 1 - clamp01((axisValue - axisMin) / Math.max(1e-6, axisMax - axisMin));
+  return [u, v];
+}
+
 export function parseStlMesh(buffer: ArrayBuffer): ParsedMilkyWayMesh {
   if (!looksLikeBinaryStl(buffer)) throw new Error("Only binary STL models are supported.");
   const dv = new DataView(buffer);
@@ -418,6 +464,7 @@ export function parseStlMesh(buffer: ArrayBuffer): ParsedMilkyWayMesh {
   const cy = (minY + maxY) * 0.5;
   const cz = (minZ + maxZ) * 0.5;
   const radius = Math.max(maxX - minX, maxY - minY, maxZ - minZ) * 0.5 || 1;
+  const uvAxis = longestAxis(maxX - minX, maxY - minY, maxZ - minZ);
   const packed: number[] = [];
   let usedTriangles = 0;
 
@@ -431,12 +478,22 @@ export function parseStlMesh(buffer: ArrayBuffer): ParsedMilkyWayMesh {
     nx /= nLen; ny /= nLen; nz /= nLen;
     for (let v = 0; v < 3; v++) {
       const p = base + 12 + v * 12;
+      const x = dv.getFloat32(p + 0, true);
+      const y = dv.getFloat32(p + 4, true);
+      const z = dv.getFloat32(p + 8, true);
+      const [u, uv] = cylindricalStlUv(
+        x, y, z,
+        cx, cy, cz,
+        minX, minY, minZ,
+        maxX, maxY, maxZ,
+        uvAxis,
+      );
       packed.push(
-        (dv.getFloat32(p + 0, true) - cx) / radius,
-        (dv.getFloat32(p + 4, true) - cy) / radius,
-        (dv.getFloat32(p + 8, true) - cz) / radius,
+        (x - cx) / radius,
+        (y - cy) / radius,
+        (z - cz) / radius,
         nx, ny, nz,
-        0, 0,
+        u, uv,
         1, 1, 1, 1,
       );
     }

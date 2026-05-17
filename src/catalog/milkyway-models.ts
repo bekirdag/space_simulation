@@ -21,6 +21,7 @@ export interface MilkyWayModelObject {
   loadDistanceAU: number;
   color: [number, number, number];
   opacity: number;
+  textureUrl?: string;
   aliases: string[];
 }
 
@@ -39,6 +40,7 @@ interface ModelDef {
   radiusAU?: number;
   color: [number, number, number];
   opacity?: number;
+  textureUrl?: string;
   aliases?: string[];
 }
 
@@ -86,7 +88,7 @@ function toModel(def: ModelDef): MilkyWayModelObject {
   const fadeNearAU = clamp(radiusAU * 12, 120, 12_000);
   const fadeFarAU = clamp(radiusAU * 48, fadeNearAU + 80, 42_000);
 
-  return {
+  const model: MilkyWayModelObject = {
     id: def.id,
     name: def.name,
     modelGroup: def.modelGroup ?? def.id,
@@ -105,6 +107,8 @@ function toModel(def: ModelDef): MilkyWayModelObject {
     opacity: def.opacity ?? 0.78,
     aliases: def.aliases ?? [],
   };
+  if (def.textureUrl) model.textureUrl = def.textureUrl;
+  return model;
 }
 
 const DEFINITIONS: ModelDef[] = [
@@ -409,6 +413,7 @@ const DEFINITIONS: ModelDef[] = [
     distancePc: 2350,
     radiusAU: 42,
     color: [1.0, 0.62, 0.36],
+    textureUrl: "/textures/nebula-eta-carinae.jpg",
     aliases: ["Eta Carinae", "Homunculus Nebula", "Eta Carinae Nebula"],
   },
   {
