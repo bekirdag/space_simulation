@@ -23,6 +23,8 @@ struct Galaxy {
 @group(0) @binding(1) var<storage, read> galaxies: array<Galaxy>;
 @group(0) @binding(2) var<uniform>       galaxyLod: vec4<f32>; // x=legacy apparent boost, y=brightness effects
 
+const BACKGROUND_GALAXY_BRIGHTNESS_SCALE: f32 = 0.5;
+
 struct VertexOut {
   @builtin(position) clip_pos: vec4<f32>,
   @location(0)       uv:       vec2<f32>,
@@ -181,7 +183,11 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
 
   let profileBrightness = nucleus * 0.65 + disk * 0.45 + env * 0.15;
   let lift = clamp(pow(max(in.brightness, 0.08), 0.30), 0.55, 1.85);
-  let a = clamp(profileBrightness * in.alpha * (1.10 + lift * 0.55), 0.0, 1.0);
+  let a = clamp(
+    profileBrightness * in.alpha * (1.10 + lift * 0.55) * BACKGROUND_GALAXY_BRIGHTNESS_SCALE,
+    0.0,
+    1.0,
+  );
 
   // ── Nucleus colour ────────────────────────────────────────────────────────
   // Galaxy nuclei are dominated by old K/M stars → warmer than the outer disk.
