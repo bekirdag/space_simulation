@@ -30,12 +30,21 @@ struct VertexOut {
   @location(1)       color:    vec3<f32>,
   @location(2)       alpha:    f32,
   @location(3)       selected: f32,
+  @location(4)       intensity: f32,
 };
 
 var<private> quad: array<vec2<f32>, 6> = array<vec2<f32>, 6>(
   vec2(-1.0,-1.0), vec2(1.0,-1.0), vec2(-1.0,1.0),
   vec2(-1.0, 1.0), vec2(1.0,-1.0), vec2( 1.0,1.0),
 );
+
+fn star_hdr_intensity(color: vec3<f32>, size: f32, alpha: f32) -> f32 {
+  let blueWeight = clamp((color.b - color.r + 0.32) / 0.82, 0.0, 1.0);
+  let warmWeight = clamp((color.r - color.b + 0.20) / 0.90, 0.0, 1.0);
+  let spectralLum = mix(0.75, 4.5, blueWeight) * mix(1.0, 0.72, warmWeight * (1.0 - blueWeight));
+  let catalogFlux = max(size * size * (0.28 + alpha * 1.35), 0.01);
+  return clamp(pow(catalogFlux * spectralLum * 2.35, 1.85) * 8.0, 0.65, 260.0);
+}
 
 @vertex
 fn vs_main(
@@ -52,6 +61,7 @@ fn vs_main(
   out.color    = star.color_alpha.xyz;
   out.alpha    = star.color_alpha.w;
   out.selected = 0.0;
+  out.intensity = star_hdr_intensity(out.color, star.pos_size.w, out.alpha);
 
   // ── Global LOD fade ────────────────────────────────────────────────────────
   // HYG nearby stars fade out as the camera moves far from the solar system
@@ -70,6 +80,7 @@ fn vs_main(
     return out;
   }
   out.selected = select(0.0, 1.0, isSelected);
+  out.intensity = select(out.intensity, max(out.intensity, 520.0), isSelected);
 
   // ── Frustum culling ────────────────────────────────────────────────────────
   // Cull only when the whole billboard is outside the frame plus a small margin.
@@ -138,15 +149,17 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   let bleach = clamp(core * in.alpha * 1.6, 0.0, 1.0);
   col = mix(col, vec3<f32>(1.0, 0.97, 0.94), bleach * 0.65);
 
-  var alpha = clamp((core * 0.80 + wings * 0.55) * in.alpha * 2.8, 0.0, 1.0);
+  let psf = core * 1.20 + wings * 0.62;
+  var alpha = clamp(psf * in.alpha * 1.35, 0.0, 1.0);
+  var hdr = col * psf * in.intensity * in.alpha;
 
   // ── Selected star: glowing physical sphere ────────────────────────────────
   if in.selected > 0.5 {
     let glow  = exp(-d2 * 4.0);
     let bloom = max(0.0, 1.0 - d);
-    col   = col + vec3<f32>(glow * 0.5);
+    hdr  += (col + vec3<f32>(glow * 0.5)) * (glow * 120.0 + bloom * bloom * 60.0);
     alpha = clamp(glow * 0.9 + bloom * bloom * 0.35, 0.0, 1.0);
   }
 
-  return vec4<f32>(col * alpha, alpha);
+  return vec4<f32>(hdr, alpha);
 }

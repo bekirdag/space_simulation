@@ -37,6 +37,7 @@ const BLACK_HOLE_BYTES = 32;
 const MILKY_WAY_MODEL_UNIFORM_BYTES = 64;
 const MILKY_WAY_MODEL_MATERIAL_BYTES = 48;
 const MODEL_DEPTH_FORMAT: GPUTextureFormat = "depth24plus";
+const SCENE_COLOR_FORMAT: GPUTextureFormat = "rgba16float";
 const SCENE_DEPTH_DISABLED: GPUDepthStencilState = {
   format: MODEL_DEPTH_FORMAT,
   depthWriteEnabled: false,
@@ -334,6 +335,7 @@ export class Renderer {
 
   init(maxBodies: number, maxStars = 1, maxGalaxies = 1): void {
     const { device, format } = this.ctx;
+    const sceneFormat = SCENE_COLOR_FORMAT;
 
     this.cameraBuffer = device.createBuffer({
       label: "camera-uniform",
@@ -449,7 +451,7 @@ export class Renderer {
       fragment: {
         module: bodyShader, entryPoint: "fs_main",
         targets: [{
-          format,
+          format: sceneFormat,
           blend: {
             color: { srcFactor: "src-alpha", dstFactor: "one", operation: "add" },
             alpha: { srcFactor: "one",       dstFactor: "one", operation: "add" },
@@ -534,9 +536,9 @@ export class Renderer {
       fragment: {
         module: starShader, entryPoint: "fs_main",
         targets: [{
-          format,
+          format: sceneFormat,
           blend: {
-            color: { srcFactor: "src-alpha", dstFactor: "one", operation: "add" },
+            color: { srcFactor: "one",       dstFactor: "one", operation: "add" },
             alpha: { srcFactor: "one",       dstFactor: "one", operation: "add" },
           },
         }],
@@ -570,9 +572,9 @@ export class Renderer {
       fragment: {
         module: mwShader, entryPoint: "fs_main",
         targets: [{
-          format,
+          format: sceneFormat,
           blend: {
-            color: { srcFactor: "src-alpha", dstFactor: "one", operation: "add" },
+            color: { srcFactor: "one",       dstFactor: "one", operation: "add" },
             alpha: { srcFactor: "one",       dstFactor: "one", operation: "add" },
           },
         }],
@@ -615,7 +617,7 @@ export class Renderer {
       fragment: {
         module: galaxyShader, entryPoint: "fs_main",
         targets: [{
-          format,
+          format: sceneFormat,
           blend: {
             color: { srcFactor: "src-alpha", dstFactor: "one", operation: "add" },
             alpha: { srcFactor: "one",       dstFactor: "one", operation: "add" },
@@ -644,7 +646,7 @@ export class Renderer {
       fragment: {
         module: galaxyTexturedShader, entryPoint: "fs_main",
         targets: [{
-          format,
+          format: sceneFormat,
           blend: {
             color: { srcFactor: "src-alpha", dstFactor: "one", operation: "add" },
             alpha: { srcFactor: "one",       dstFactor: "one", operation: "add" },
@@ -678,7 +680,7 @@ export class Renderer {
       fragment: {
         module: nebulaShader, entryPoint: "fs_main",
         targets: [{
-          format,
+          format: sceneFormat,
           blend: {
             // Additive blending makes emission nebulas glow correctly
             color: { srcFactor: "src-alpha", dstFactor: "one", operation: "add" },
@@ -708,7 +710,7 @@ export class Renderer {
       fragment: {
         module: homunculusShader, entryPoint: "fs_main",
         targets: [{
-          format,
+          format: sceneFormat,
           blend: {
             color: { srcFactor: "src-alpha", dstFactor: "one", operation: "add" },
             alpha: { srcFactor: "one",       dstFactor: "one", operation: "add" },
@@ -773,7 +775,7 @@ export class Renderer {
         module: milkyWayModelShader,
         entryPoint: "fs_main",
         targets: [{
-          format,
+          format: sceneFormat,
           blend: {
             color: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" },
             alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" },
@@ -809,7 +811,7 @@ export class Renderer {
       fragment: {
         module: dustShader, entryPoint: "fs_main",
         targets: [{
-          format,
+          format: sceneFormat,
           blend: {
             color: { srcFactor: "src-alpha", dstFactor: "one-minus-src-alpha", operation: "add" },
             alpha: { srcFactor: "one",       dstFactor: "one-minus-src-alpha", operation: "add" },
@@ -870,7 +872,7 @@ export class Renderer {
       fragment: {
         module: constellationShader, entryPoint: "fs_main",
         targets: [{
-          format,
+          format: sceneFormat,
           blend: {
             color: { srcFactor: "src-alpha", dstFactor: "one", operation: "add" },
             alpha: { srcFactor: "one",       dstFactor: "one", operation: "add" },
@@ -910,7 +912,7 @@ export class Renderer {
       fragment: {
         module: trailShader, entryPoint: "fs_main",
         targets: [{
-          format,
+          format: sceneFormat,
           blend: {
             color: { srcFactor: "src-alpha", dstFactor: "one", operation: "add" },
             alpha: { srcFactor: "one",       dstFactor: "one", operation: "add" },
@@ -1505,13 +1507,13 @@ export class Renderer {
     ) return;
 
     this.sceneTexture?.destroy();
-    const { device, format } = this.ctx;
+    const { device } = this.ctx;
     this.sceneTextureWidth = width;
     this.sceneTextureHeight = height;
     this.sceneTexture = device.createTexture({
-      label: "black-hole-scene-color",
+      label: "hdr-scene-color",
       size: { width, height },
-      format,
+      format: SCENE_COLOR_FORMAT,
       usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
     });
     this.sceneTextureView = this.sceneTexture.createView();
@@ -1777,25 +1779,33 @@ export class Renderer {
       pass.end();
     };
 
+    this.ensureSceneTexture();
+    drawScene(this.sceneTextureView!);
+
     const blackHoleRadius = this._blackHoleUniform[3] ?? 0;
     const blackHoleStrength = this._blackHoleUniform[7] ?? 0;
-    if (this._showBlackHole && blackHoleRadius > 0 && blackHoleStrength > 0) {
-      this.ensureSceneTexture();
-      drawScene(this.sceneTextureView!);
-      const pass = encoder.beginRenderPass({
-        colorAttachments: [{
-          view: swapView,
-          clearValue: { r: 0.01, g: 0.01, b: 0.05, a: 1 },
-          loadOp: "clear", storeOp: "store",
-        }],
-      });
-      pass.setPipeline(this.blackHolePipeline);
-      pass.setBindGroup(0, this.blackHoleBindGroup);
-      pass.draw(6, 1, 0, 0);
-      pass.end();
+    const lensStrength = this._showBlackHole && blackHoleRadius > 0 && blackHoleStrength > 0
+      ? blackHoleStrength
+      : 0;
+    if (lensStrength !== blackHoleStrength) {
+      const displayUniform = new Float32Array(this._blackHoleUniform);
+      displayUniform[7] = lensStrength;
+      device.queue.writeBuffer(this.blackHoleBuffer, 0, displayUniform);
     } else {
-      drawScene(swapView);
+      device.queue.writeBuffer(this.blackHoleBuffer, 0, this._blackHoleUniform);
     }
+
+    const pass = encoder.beginRenderPass({
+      colorAttachments: [{
+        view: swapView,
+        clearValue: { r: 0.01, g: 0.01, b: 0.05, a: 1 },
+        loadOp: "clear", storeOp: "store",
+      }],
+    });
+    pass.setPipeline(this.blackHolePipeline);
+    pass.setBindGroup(0, this.blackHoleBindGroup);
+    pass.draw(6, 1, 0, 0);
+    pass.end();
 
     device.queue.submit([encoder.finish()]);
   }

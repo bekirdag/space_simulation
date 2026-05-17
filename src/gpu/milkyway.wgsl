@@ -112,6 +112,8 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   let bleach = clamp(core * in.alpha * (1.15 + lift * 0.55), 0.0, 1.0);
   col = mix(col, vec3<f32>(1.0, 0.97, 0.94), bleach * 0.65);
 
-  let alpha = clamp((core * 0.80 + wings * 0.55) * in.alpha * (1.8 + lift), 0.0, 1.0);
-  return vec4<f32>(col * alpha, alpha);
+  let psf = core * 1.12 + wings * 0.58;
+  let alpha = clamp(psf * in.alpha * (0.72 + lift * 0.42), 0.0, 1.0);
+  let intensity = clamp(pow(max(in.brightness, 0.05), 1.55) * 10.5, 0.40, 95.0);
+  return vec4<f32>(col * psf * in.alpha * intensity, alpha);
 }

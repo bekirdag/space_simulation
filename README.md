@@ -36,6 +36,8 @@ help from Claude and Codex 5.5.
   event-horizon radius derived from a 4.3-million-solar-mass black hole.
 - Camera-distance adjusted apparent brightness mode for bodies, Milky Way
   stars, and galaxies.
+- HDR `rgba16float` scene rendering with ACES-style tone mapping so high
+  star intensities can glow without flattening immediately to white.
 
 ## Requirements
 
@@ -141,8 +143,9 @@ astrophysical solver.
 - Large star and galaxy catalogs are mapped visually and do not exert gravity.
 - Galaxy distances are scaled with a Local Group linear range and a logarithmic
   deep-field range so large structures remain navigable in one scene.
-- Brightness is tone-mapped for display and adjusted by camera distance. It is
-  useful visually, but it is not a calibrated photometry pipeline.
+- Brightness is rendered into an HDR scene buffer, tone-mapped for display, and
+  adjusted by camera distance. It is useful visually, but it is not a calibrated
+  photometry pipeline.
 - Sagittarius A* uses a physical event-horizon radius of about 0.085 AU
   derived from a 4.3-million-solar-mass black hole. The lensing/accretion
   visuals are still illustrative and are not a relativistic ray tracer.

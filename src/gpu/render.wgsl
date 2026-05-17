@@ -126,7 +126,8 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
       let core = 1.0 - smoothstep(0.0, 0.55, sphereD);
       let limb = 0.76 + 0.24 * z;
       let starLift = clamp(pow(max(brightness, 1.0), 0.22), 1.0, 3.2);
-      coreCol = coreCol * (limb + core * 0.35) * starLift + vec3(core * 0.18);
+      let hdrStarLift = clamp(pow(max(brightness, 1.0), 0.58), 1.0, 85.0);
+      coreCol = (coreCol * (limb + core * 0.35) * starLift + vec3(core * 0.18)) * hdrStarLift;
     } else {
       let sphereUv = in.uv * glowScale;
       let normal = normalize(vec3(sphereUv.x, sphereUv.y, z));
@@ -146,7 +147,11 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   if glowPower > 0.0 && glowScale > 1.001 {
     haloAlpha = (1.0 - smoothstep(coreRadius, 1.0, d)) * glowPower * in.fade;
   }
-  let haloCol = in.color * (0.55 + glowPower * 1.5);
+  var haloCol = in.color * (0.55 + glowPower * 1.5);
+  if in.btype < 0.5 {
+    haloAlpha = max(haloAlpha, (1.0 - smoothstep(0.0, 1.0, d)) * clamp(log2(max(brightness, 1.0)) * 0.045, 0.0, 0.38) * in.fade);
+    haloCol *= clamp(pow(max(brightness, 1.0), 0.42), 1.0, 34.0);
+  }
   let outAlpha = max(coreAlpha, haloAlpha);
   let outCol = coreCol * coreAlpha + haloCol * haloAlpha;
   return vec4<f32>(outCol, outAlpha);
