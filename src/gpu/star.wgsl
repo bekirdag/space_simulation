@@ -46,6 +46,12 @@ fn star_hdr_intensity(color: vec3<f32>, size: f32, alpha: f32) -> f32 {
   return clamp(pow(catalogFlux * spectralLum * 2.35, 1.85) * 8.0, 0.65, 260.0);
 }
 
+fn subtle_spectral_color(color: vec3<f32>) -> vec3<f32> {
+  // Keep the catalog temperature tint visible but restrained. Full-saturation
+  // stellar colors look artificial once HDR bloom is added.
+  return clamp(mix(vec3<f32>(1.0), color, 0.82), vec3<f32>(0.0), vec3<f32>(1.0));
+}
+
 @vertex
 fn vs_main(
   @builtin(vertex_index)   vi:  u32,
@@ -145,9 +151,11 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   // ── Core bleaching ────────────────────────────────────────────────────────
   // Bright stars saturate to near-white in their centres (CCDs overexpose,
   // the eye bleaches at peak brightness). Faint stars retain their hue fully.
-  var col    = in.color;
-  let bleach = clamp(core * in.alpha * 1.6, 0.0, 1.0);
-  col = mix(col, vec3<f32>(1.0, 0.97, 0.94), bleach * 0.65);
+  let spectral = subtle_spectral_color(in.color);
+  let coreWhite = mix(spectral, vec3<f32>(1.0, 0.985, 0.94), 0.34);
+  var col = spectral;
+  let bleach = clamp(core * in.alpha * 1.25, 0.0, 1.0);
+  col = mix(spectral, coreWhite, bleach);
 
   let psf = core * 1.20 + wings * 0.62;
   var alpha = clamp(psf * in.alpha * 1.35, 0.0, 1.0);
@@ -157,7 +165,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   if in.selected > 0.5 {
     let glow  = exp(-d2 * 4.0);
     let bloom = max(0.0, 1.0 - d);
-    hdr  += (col + vec3<f32>(glow * 0.5)) * (glow * 120.0 + bloom * bloom * 60.0);
+    hdr  += (spectral + vec3<f32>(glow * 0.42)) * (glow * 120.0 + bloom * bloom * 60.0);
     alpha = clamp(glow * 0.9 + bloom * bloom * 0.35, 0.0, 1.0);
   }
 

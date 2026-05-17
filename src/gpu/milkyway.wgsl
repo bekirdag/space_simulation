@@ -49,6 +49,12 @@ fn apparent_mw_brightness(cameraDistanceAU: f32, color: vec3<f32>, size: f32, al
   return clamp(pow(max(flux * 8.0, 0.0001), 0.45), 0.05, 2.8);
 }
 
+fn subtle_spectral_color(color: vec3<f32>) -> vec3<f32> {
+  // Preserve temperature class without pushing the Milky Way field into
+  // over-saturated red/blue pixels after HDR tone mapping.
+  return clamp(mix(vec3<f32>(1.0), color, 0.82), vec3<f32>(0.0), vec3<f32>(1.0));
+}
+
 @vertex
 fn vs_main(
   @builtin(vertex_index)   vi:  u32,
@@ -107,10 +113,12 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   let core  = exp(-d2 * 22.0);
   let wings = max(0.0, 1.0 / (1.0 + d2 * 10.0) - 0.09);
 
-  var col    = in.color;
+  let spectral = subtle_spectral_color(in.color);
+  var col = spectral;
   let lift   = clamp(pow(max(in.brightness, 0.08), 0.28), 0.55, 1.8);
-  let bleach = clamp(core * in.alpha * (1.15 + lift * 0.55), 0.0, 1.0);
-  col = mix(col, vec3<f32>(1.0, 0.97, 0.94), bleach * 0.65);
+  let bleach = clamp(core * in.alpha * (0.95 + lift * 0.42), 0.0, 1.0);
+  let coreWhite = mix(spectral, vec3<f32>(1.0, 0.985, 0.94), 0.30);
+  col = mix(spectral, coreWhite, bleach);
 
   let psf = core * 1.12 + wings * 0.58;
   let alpha = clamp(psf * in.alpha * (0.72 + lift * 0.42), 0.0, 1.0);

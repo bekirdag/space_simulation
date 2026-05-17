@@ -50,6 +50,10 @@ interface ExoplanetHostRecord {
   dec: number;
   distancePc?: number | null;
   magnitude?: number | null;
+  temperatureK?: number | null;
+  spectralType?: string | null;
+  radiusSolar?: number | null;
+  luminosityLogSolar?: number | null;
   planetCount?: number | null;
 }
 
@@ -98,20 +102,18 @@ function hostAliasKey(value: string): string {
 
 /**
  * Convert B-V Johnson color index → linear sRGB [0,1].
- * Calibrated to Pickles stellar spectral atlas + blackbody physics.
- * Six anchor points covering O-type (deep blue) to M-type (deep red).
+ * Anchored to subtle O/B, A/F, G, K, and M visual classes.
  */
 function starColor(bv: number): [number, number, number] {
-  // B-V anchor → sRGB (validated against real stellar photometry)
   const keys: [number, [number,number,number]][] = [
-    [-0.35, [0.60, 0.70, 1.00]],  // O5V   ~55 000 K  deep blue
-    [ 0.00, [0.83, 0.91, 1.00]],  // A0V   ~10 000 K  blue-white
-    [ 0.30, [1.00, 0.98, 0.96]],  // F0V   ~ 7 500 K  white
-    [ 0.65, [1.00, 0.94, 0.82]],  // G2V   ~ 5 780 K  Sun yellow-white
-    [ 1.00, [1.00, 0.78, 0.50]],  // K5V   ~ 4 400 K  orange
-    [ 1.60, [1.00, 0.45, 0.20]],  // M8V   ~ 2 600 K  deep red
+    [-0.33, [0.65, 0.75, 1.00]], // O/B: hot blue-white
+    [ 0.00, [0.90, 0.95, 1.00]], // A: blue-white
+    [ 0.30, [0.94, 0.96, 1.00]], // F: near-white with a cool cast
+    [ 0.65, [1.00, 0.92, 0.75]], // G: Sun-like white-yellow
+    [ 1.00, [1.00, 0.65, 0.35]], // K: orange
+    [ 1.60, [1.00, 0.35, 0.20]], // M: red-orange
   ];
-  const bvC = clamp(bv, -0.35, 1.60);
+  const bvC = clamp(bv, -0.33, 1.60);
   for (let i = 0; i < keys.length - 1; i++) {
     const [t0, c0] = keys[i]!;
     const [t1, c1] = keys[i + 1]!;
@@ -121,6 +123,58 @@ function starColor(bv: number): [number, number, number] {
     }
   }
   return keys[keys.length - 1]![1];
+}
+
+function colorFromTemperature(temperatureK: number): [number, number, number] {
+  const keys: [number, [number,number,number]][] = [
+    [30_000, [0.65, 0.75, 1.00]], // O/B
+    [10_000, [0.90, 0.95, 1.00]], // A
+    [ 7_500, [0.94, 0.96, 1.00]], // F
+    [ 5_778, [1.00, 0.92, 0.75]], // G
+    [ 4_400, [1.00, 0.65, 0.35]], // K
+    [ 2_600, [1.00, 0.35, 0.20]], // M
+  ];
+  const t = clamp(temperatureK, 2_600, 30_000);
+  for (let i = 0; i < keys.length - 1; i++) {
+    const [t0, c0] = keys[i]!;
+    const [t1, c1] = keys[i + 1]!;
+    if (t >= t1) {
+      const k = (t - t1) / (t0 - t1);
+      return [c1[0]+(c0[0]-c1[0])*k, c1[1]+(c0[1]-c1[1])*k, c1[2]+(c0[2]-c1[2])*k];
+    }
+  }
+  return keys[keys.length - 1]![1];
+}
+
+function colorFromSpectralType(spectralType: string): [number, number, number] | null {
+  const letter = spectralType.trim().toUpperCase().match(/[OBAFGKM]/)?.[0];
+  switch (letter) {
+    case "O":
+    case "B": return [0.65, 0.75, 1.00];
+    case "A": return [0.90, 0.95, 1.00];
+    case "F": return [0.94, 0.96, 1.00];
+    case "G": return [1.00, 0.92, 0.75];
+    case "K": return [1.00, 0.65, 0.35];
+    case "M": return [1.00, 0.35, 0.20];
+    default: return null;
+  }
+}
+
+function hostColor(record: ExoplanetHostRecord, magnitude: number | null): [number, number, number] {
+  const temperatureK = Number.isFinite(record.temperatureK) ? Number(record.temperatureK) : null;
+  if (temperatureK !== null && temperatureK > 0) return colorFromTemperature(temperatureK);
+
+  if (record.spectralType) {
+    const spectralColor = colorFromSpectralType(record.spectralType);
+    if (spectralColor) return spectralColor;
+  }
+
+  // Fallback for older local cache files: most confirmed hosts are FGK dwarfs,
+  // while very faint hosts are often cooler K/M dwarfs.
+  const bvProxy = magnitude === null
+    ? 0.65
+    : clamp((magnitude - 3.0) / 9.0 * 1.4 + 0.20, -0.10, 1.55);
+  return starColor(bvProxy);
 }
 
 function catalogPosition(raDeg: number, decDeg: number, distancePc: number | null): [number, number, number] {
@@ -142,16 +196,13 @@ function hostToCatalogStar(record: ExoplanetHostRecord, index: number): CatalogS
   const planetCount = Math.max(1, Math.round(record.planetCount ?? 1));
   const [x, y, z] = catalogPosition(record.ra, record.dec, distancePc);
   const magFactor = magnitude === null ? 0.35 : clamp((18 - magnitude) / 14, 0.08, 1);
-  // Map V-magnitude to a BP-RP colour-index proxy.
-  // G-type exoplanet hosts (mag 5-8) are white-yellow; M dwarfs (mag >10) are orange-red.
-  // Formula (mag-2)/8 gives: Tau Ceti→white, 51 Peg→white, TRAPPIST-1→deep red.
-  // Map V-magnitude to approximate B-V for exoplanet hosts (statistical proxy).
-  // Most confirmed exoplanet hosts are FGK dwarfs (BV 0.3–1.1). Bright hosts
-  // (mag < 6) tend to be hotter F/G types; faint hosts (mag > 10) tend to be
-  // cooler K/M dwarfs. This gives a plausible color without per-star spectra.
-  const bvProxy = magnitude === null ? 0.7
-    : clamp((magnitude - 3.0) / 9.0 * 1.4 + 0.20, -0.10, 1.55);
-  const color = starColor(bvProxy);
+  const color = hostColor(record, magnitude);
+  const radiusSolar = Number.isFinite(record.radiusSolar) ? Number(record.radiusSolar) : null;
+  const luminositySolar = Number.isFinite(record.luminosityLogSolar)
+    ? Math.pow(10, Number(record.luminosityLogSolar))
+    : null;
+  const radiusScale = radiusSolar === null ? 1 : clamp(Math.sqrt(Math.max(radiusSolar, 0.05)), 0.45, 3.0);
+  const luminosityScale = luminositySolar === null ? 1 : clamp(Math.pow(Math.max(luminositySolar, 0.0001), 0.16), 0.45, 2.4);
 
   const star: CatalogStar = {
     id: `exo-${index}-${record.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
@@ -162,8 +213,8 @@ function hostToCatalogStar(record: ExoplanetHostRecord, index: number): CatalogS
     magnitude,
     planetCount,
     color,
-    size: 0.28 + magFactor * 0.75,
-    alpha: 0.35 + magFactor * 0.5,
+    size: clamp((0.22 + magFactor * 0.66) * (0.82 + radiusScale * 0.18), 0.10, 1.35),
+    alpha: clamp((0.30 + magFactor * 0.48) * luminosityScale, 0.14, 0.95),
   };
   const aliases = HOST_ALIASES_BY_KEY[hostAliasKey(record.name)];
   if (aliases) star.aliases = aliases;

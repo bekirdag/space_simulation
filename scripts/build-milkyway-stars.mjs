@@ -95,10 +95,11 @@ function armBoost(R, theta) {
 // OB: 5%, A: 12%, FG: 30%, KM: 53%
 function starColor() {
   const u = rand();
-  if (u < 0.05) return { r: 0.65, g: 0.75, b: 1.00 }; // O/B — hot blue
-  if (u < 0.17) return { r: 0.87, g: 0.92, b: 1.00 }; // A   — blue-white
-  if (u < 0.47) return { r: 1.00, g: 0.97, b: 0.88 }; // F/G — white-yellow
-  return         { r: 1.00, g: 0.55, b: 0.25 };        // K/M — orange-red
+  if (u < 0.05) return { r: 0.65, g: 0.75, b: 1.00 }; // O/B — hot blue-white
+  if (u < 0.17) return { r: 0.90, g: 0.95, b: 1.00 }; // A/F — blue-white
+  if (u < 0.47) return { r: 1.00, g: 0.92, b: 0.75 }; // G   — white-yellow
+  if (u < 0.72) return { r: 1.00, g: 0.65, b: 0.35 }; // K   — orange
+  return         { r: 1.00, g: 0.35, b: 0.20 };        // M   — red-orange
 }
 
 // ── Sampling ─────────────────────────────────────────────────────────────────

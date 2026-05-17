@@ -41,6 +41,9 @@ help from Claude and Codex 5.5.
 - Quarter-resolution HDR bloom: bright star pixels are extracted, blurred with
   a separable Gaussian pass, and composited before tone mapping so hotter,
   larger, and nearer stars form stronger halos.
+- Subtle spectral star tinting from cached catalog data: HYG visible stars use
+  B-V color index, and NASA Exoplanet Archive host stars use cached effective
+  temperature or spectral type when available.
 
 ## Requirements
 

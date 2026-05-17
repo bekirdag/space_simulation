@@ -11,6 +11,10 @@ select
   min(dec) as dec,
   min(sy_dist) as sy_dist,
   min(sy_vmag) as sy_vmag,
+  min(st_teff) as st_teff,
+  min(st_spectype) as st_spectype,
+  min(st_rad) as st_rad,
+  min(st_lum) as st_lum,
   count(pl_name) as planet_count
 from pscomppars
 where ra is not null and dec is not null
@@ -97,6 +101,10 @@ const hostRecords = hostCsv.rows.map(row => ({
   dec: numberOrNull(row[hostCsv.col.dec]),
   distancePc: numberOrNull(row[hostCsv.col.sy_dist]),
   magnitude: numberOrNull(row[hostCsv.col.sy_vmag]),
+  temperatureK: numberOrNull(row[hostCsv.col.st_teff]),
+  spectralType: row[hostCsv.col.st_spectype] || null,
+  radiusSolar: numberOrNull(row[hostCsv.col.st_rad]),
+  luminosityLogSolar: numberOrNull(row[hostCsv.col.st_lum]),
   planetCount: numberOrNull(row[hostCsv.col.planet_count]),
 })).filter(record => record.name && record.ra !== null && record.dec !== null);
 
