@@ -39,6 +39,21 @@ function publicHostFor(host) {
 function setIsolationHeaders(res) {
   res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
   res.setHeader("Cross-Origin-Embedder-Policy", "require-corp");
+  res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+}
+
+function handleVitePing(req, res) {
+  const accept = req.headers.accept ?? "";
+  if (!accept.includes("text/x-vite-ping")) return false;
+
+  res.writeHead(204, {
+    "Access-Control-Allow-Origin": "*",
+    "Cross-Origin-Opener-Policy": "same-origin",
+    "Cross-Origin-Embedder-Policy": "require-corp",
+    "Cross-Origin-Resource-Policy": "cross-origin",
+  });
+  res.end();
+  return true;
 }
 
 function isBrowserCacheablePublicPath(pathname) {
@@ -115,6 +130,7 @@ function listen(server, port, host) {
 function makeServer() {
   return createHttpServer(async (req, res) => {
     setIsolationHeaders(res);
+    if (handleVitePing(req, res)) return;
     if (handleHealthRequest(req, res)) return;
     if (await handleHorizonsRequest(req, res)) return;
     if (await handleModelAssetRequest(req, res)) return;
@@ -141,7 +157,6 @@ async function createViteForServer(server, port, host) {
       middlewareMode: true,
       hmr: {
         server,
-        host: publicHostFor(host),
         port,
         clientPort: port,
       },
