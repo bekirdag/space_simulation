@@ -1,9 +1,9 @@
-import { createReadStream } from "node:fs";
 import { createServer as createHttpServer } from "node:http";
 import { stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer as createViteServer } from "vite";
+import { sendAssetFile } from "./compressed-assets.mjs";
 import { handleHealthRequest } from "./health.mjs";
 import { handleHorizonsRequest } from "./horizons.mjs";
 import { handleModelAssetRequest } from "./model-assets.mjs";
@@ -82,19 +82,17 @@ async function serveBrowserCachedPublicAsset(req, res) {
   if (!info.isFile()) return false;
 
   const contentType = MIME_TYPES.get(path.extname(filePath).toLowerCase()) ?? "application/octet-stream";
-  res.writeHead(200, {
-    "Content-Type": contentType,
-    "Content-Length": String(info.size),
-    "Cache-Control": ASSET_CACHE_CONTROL,
-    "Cross-Origin-Opener-Policy": "same-origin",
-    "Cross-Origin-Embedder-Policy": "require-corp",
-    "Cross-Origin-Resource-Policy": "same-origin",
+  sendAssetFile(req, res, {
+    filePath,
+    size: info.size,
+    contentType,
+    headers: {
+      "Cache-Control": ASSET_CACHE_CONTROL,
+      "Cross-Origin-Opener-Policy": "same-origin",
+      "Cross-Origin-Embedder-Policy": "require-corp",
+      "Cross-Origin-Resource-Policy": "same-origin",
+    },
   });
-  if (req.method === "HEAD") {
-    res.end();
-    return true;
-  }
-  createReadStream(filePath).pipe(res);
   return true;
 }
 

@@ -1,9 +1,10 @@
 import { spawn } from "node:child_process";
-import { createReadStream, createWriteStream } from "node:fs";
+import { createWriteStream } from "node:fs";
 import { mkdir, open, rename, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
+import { sendAssetFile } from "./compressed-assets.mjs";
 
 const REPO_ROOT = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CACHE_ROOT = process.env.COSMOSMAP_MODEL_CACHE_DIR
@@ -358,21 +359,19 @@ export async function handleModelAssetRequest(req, res) {
 
   try {
     const { cachePath, size, cacheState } = await ensureCached(asset);
-    res.writeHead(200, {
-      "Access-Control-Allow-Origin": "*",
-      "Content-Type": asset.contentType,
-      "Content-Length": String(size),
-      "Cache-Control": MODEL_ASSET_CACHE_CONTROL,
-      "Cross-Origin-Resource-Policy": "cross-origin",
-      "Cross-Origin-Opener-Policy": "same-origin",
-      "Cross-Origin-Embedder-Policy": "require-corp",
-      "X-CosmosMap-Cache": cacheState,
+    sendAssetFile(req, res, {
+      filePath: cachePath,
+      size,
+      contentType: asset.contentType,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Cache-Control": MODEL_ASSET_CACHE_CONTROL,
+        "Cross-Origin-Resource-Policy": "cross-origin",
+        "Cross-Origin-Opener-Policy": "same-origin",
+        "Cross-Origin-Embedder-Policy": "require-corp",
+        "X-CosmosMap-Cache": cacheState,
+      },
     });
-    if (req.method === "HEAD") {
-      res.end();
-      return true;
-    }
-    createReadStream(cachePath).pipe(res);
   } catch (err) {
     console.warn(`Model asset fetch failed for ${id}:`, err);
     sendJson(res, 502, { error: "model_asset_fetch_failed" });

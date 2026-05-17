@@ -1,8 +1,8 @@
-import { createReadStream } from "node:fs";
 import { createServer as createHttpServer } from "node:http";
 import { stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { sendAssetFile } from "./compressed-assets.mjs";
 import { handleHealthRequest } from "./health.mjs";
 import { handleHorizonsRequest } from "./horizons.mjs";
 import { handleModelAssetRequest } from "./model-assets.mjs";
@@ -80,8 +80,9 @@ async function serveStatic(req, res) {
     return;
   }
 
+  let fileInfo;
   try {
-    await stat(filePath);
+    fileInfo = await stat(filePath);
   } catch {
     res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
     res.end("Build output not found. Run npm run build first.");
@@ -89,18 +90,16 @@ async function serveStatic(req, res) {
   }
 
   const contentType = MIME_TYPES.get(path.extname(filePath).toLowerCase()) ?? "application/octet-stream";
-  res.writeHead(200, {
-    "Content-Type": contentType,
-    "Cache-Control": path.basename(filePath) === "index.html" ? "no-store" : "public, max-age=31536000, immutable",
-    "Cross-Origin-Opener-Policy": "same-origin",
-    "Cross-Origin-Embedder-Policy": "require-corp",
+  sendAssetFile(req, res, {
+    filePath,
+    size: fileInfo.size,
+    contentType,
+    headers: {
+      "Cache-Control": path.basename(filePath) === "index.html" ? "no-store" : "public, max-age=31536000, immutable",
+      "Cross-Origin-Opener-Policy": "same-origin",
+      "Cross-Origin-Embedder-Policy": "require-corp",
+    },
   });
-
-  if (req.method === "HEAD") {
-    res.end();
-    return;
-  }
-  createReadStream(filePath).pipe(res);
 }
 
 function listen(server, port, host) {
