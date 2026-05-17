@@ -18,7 +18,7 @@ const WIKIPEDIA_SEARCH_API = "https://en.wikipedia.org/w/api.php";
 const WIKIPEDIA_WEB = "https://en.wikipedia.org/wiki";
 const WIKIMEDIA_COMMONS_API = "https://commons.wikimedia.org/w/api.php";
 const WIKIMEDIA_COMMONS_WEB = "https://commons.wikimedia.org/wiki";
-const OBJECT_INFO_CACHE_VERSION = 8;
+const OBJECT_INFO_CACHE_VERSION = 9;
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
 const DEFAULT_CACHE_TTL_DAYS = 30;
 const GENERAL_DESCRIPTION_MAX_LENGTH = 1400;
@@ -74,6 +74,10 @@ const WIKIPEDIA_OBJECT_PAGES = new Map([
   ["proxima centauri", "Proxima Centauri"],
   ["alpha centauri", "Alpha Centauri"],
   ["barnard s star", "Barnard's Star"],
+  ["sh2 298", "NGC 2359"],
+  ["sh 2 298", "NGC 2359"],
+  ["sharpless 2 298", "NGC 2359"],
+  ["thor s helmet", "NGC 2359"],
 ]);
 const HTML_FETCH_TIMEOUT_MS = 10_000;
 
@@ -127,6 +131,60 @@ function normalizeForMatch(value) {
     .replace(/\*/g, "")
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
+}
+
+function addCatalogDesignationGroup(groups, canonical, variants) {
+  const cleanedVariants = [...new Set(variants.map(normalizeForMatch).filter(Boolean))];
+  if (cleanedVariants.length === 0) return;
+  const key = normalizeForMatch(canonical || cleanedVariants[0]);
+  if (!key || groups.some(group => group.key === key)) return;
+  groups.push({ key, variants: cleanedVariants });
+}
+
+function catalogDesignationGroups(...values) {
+  const text = cleanText(values.filter(Boolean).join(" "), 500).toLowerCase();
+  const groups = [];
+
+  for (const match of text.matchAll(/\b(?:sh\s*2|sh2|sharpless\s*2)\s*[-–—]?\s*(\d{1,4}[a-z]?)\b/gi)) {
+    const number = match[1];
+    addCatalogDesignationGroup(groups, `sh2 ${number}`, [
+      `sh2 ${number}`,
+      `sh 2 ${number}`,
+      `sharpless 2 ${number}`,
+    ]);
+  }
+
+  const catalogPatterns = [
+    { prefix: "ngc", regex: /\bngc\s*[-–—]?\s*(\d{1,5}[a-z]?)\b/gi },
+    { prefix: "ic", regex: /\bic\s*[-–—]?\s*(\d{1,5}[a-z]?)\b/gi },
+    { prefix: "gum", regex: /\bgum\s*[-–—]?\s*(\d{1,4}[a-z]?)\b/gi },
+    { prefix: "abell", regex: /\babell\s*[-–—]?\s*(\d{1,4}[a-z]?)\b/gi },
+    { prefix: "ldn", regex: /\bldn\s*[-–—]?\s*(\d{1,5}[a-z]?)\b/gi },
+    { prefix: "vdB", regex: /\bvdb\s*[-–—]?\s*(\d{1,4}[a-z]?)\b/gi },
+    { prefix: "barnard", regex: /\bbarnard\s*[-–—]?\s*(\d{1,4}[a-z]?)\b/gi },
+  ];
+
+  for (const { prefix, regex } of catalogPatterns) {
+    for (const match of text.matchAll(regex)) {
+      const number = match[1];
+      addCatalogDesignationGroup(groups, `${prefix} ${number}`, [`${prefix} ${number}`]);
+    }
+  }
+
+  for (const match of text.matchAll(/\b(?:messier|m)\s*[-–—]?\s*(\d{1,3}[a-z]?)\b/gi)) {
+    const number = match[1];
+    addCatalogDesignationGroup(groups, `messier ${number}`, [
+      `messier ${number}`,
+      `m ${number}`,
+    ]);
+  }
+
+  return groups;
+}
+
+function catalogDesignationMatchesBlob(blob, groups) {
+  if (!groups.length) return true;
+  return groups.some(group => group.variants.some(variant => blob.includes(variant)));
 }
 
 function slugify(value, fallback = "object") {
@@ -670,9 +728,14 @@ function scoreWikipediaSearchItem(item, title, objectType) {
   const labels = wikipediaTypeSearchLabels(objectType);
   const labelWords = [...new Set(labels.join(" ").split(/\s+/).filter(word => word.length > 2))];
   const blob = wikipediaSearchBlob(item);
+  const designationGroups = catalogDesignationGroups(title);
+  const hasRequiredDesignation = catalogDesignationMatchesBlob(blob, designationGroups);
+  if (!hasRequiredDesignation) return -1000;
+
   const typeKey = normalizeForMatch(objectType);
   let score = 0;
 
+  if (designationGroups.length > 0) score += 90;
   if (pageTitle === titleKey || (knownTitle && pageTitle === knownTitle)) score += 95;
   if (titleKey && pageTitle.includes(titleKey)) score += 55;
   if (knownTitle && pageTitle.includes(knownTitle)) score += 55;
@@ -717,6 +780,23 @@ function scoreWikipediaSearchItem(item, title, objectType) {
   return score;
 }
 
+function wikipediaSearchItemMatchesCatalogDesignation(item, title) {
+  const groups = catalogDesignationGroups(title);
+  if (!groups.length) return false;
+  return catalogDesignationMatchesBlob(wikipediaSearchBlob(item), groups);
+}
+
+function wikipediaSummaryMatchesCatalogDesignation(summary, title) {
+  const groups = catalogDesignationGroups(title);
+  if (!groups.length) return true;
+  const blob = normalizeForMatch([
+    summary?.title,
+    summary?.description,
+    summary?.extract,
+  ].filter(Boolean).join(" "));
+  return catalogDesignationMatchesBlob(blob, groups);
+}
+
 function rankedWikipediaSearchItems(
   items,
   title,
@@ -724,12 +804,16 @@ function rankedWikipediaSearchItems(
   minScore = WIKIPEDIA_PRIMARY_SCORE_THRESHOLD,
 ) {
   return (Array.isArray(items) ? items : [])
-    .map(item => ({ item, score: scoreWikipediaSearchItem(item, title, objectType) }))
+    .map(item => ({
+      item,
+      score: scoreWikipediaSearchItem(item, title, objectType),
+      catalogDesignationMatch: wikipediaSearchItemMatchesCatalogDesignation(item, title),
+    }))
     .filter(({ item, score }) => cleanText(item?.title, 180) && score >= minScore)
     .sort((a, b) => b.score - a.score);
 }
 
-function addWikipediaPageCandidate(candidates, { pageTitle, query, score, matchKind }) {
+function addWikipediaPageCandidate(candidates, { pageTitle, query, score, matchKind, catalogDesignationMatch = false }) {
   const title = cleanText(pageTitle, 180);
   if (!title) return;
 
@@ -742,6 +826,7 @@ function addWikipediaPageCandidate(candidates, { pageTitle, query, score, matchK
     query: cleanText(query || title, 180) || title,
     score,
     matchKind,
+    catalogDesignationMatch,
   });
 }
 
@@ -754,6 +839,7 @@ async function wikipediaSearchPageCandidates({ title, objectType, subtitle }) {
       query: knownTitle,
       score: 120,
       matchKind: "known",
+      catalogDesignationMatch: catalogDesignationGroups(title).length > 0,
     });
   }
 
@@ -773,12 +859,13 @@ async function wikipediaSearchPageCandidates({ title, objectType, subtitle }) {
         objectType,
         WIKIPEDIA_SIMILAR_SCORE_THRESHOLD,
       );
-      for (const { item, score } of ranked.slice(0, 4)) {
+      for (const { item, score, catalogDesignationMatch } of ranked.slice(0, 4)) {
         addWikipediaPageCandidate(candidates, {
           pageTitle: item?.title,
           query,
           score,
           matchKind: score >= WIKIPEDIA_PRIMARY_SCORE_THRESHOLD ? "search" : "similar",
+          catalogDesignationMatch,
         });
       }
     } catch (err) {
@@ -793,6 +880,7 @@ async function wikipediaSearchPageCandidates({ title, objectType, subtitle }) {
       query: fallbackTitle,
       score: 1,
       matchKind: "fallback",
+      catalogDesignationMatch: false,
     });
   }
 
@@ -982,6 +1070,7 @@ async function wikipediaObjectInfo({ title, objectType, subtitle }) {
 
       const summary = await fetchJson(url);
       if (!isUsableWikipediaSummary(summary)) continue;
+      if (!resolved.catalogDesignationMatch && !wikipediaSummaryMatchesCatalogDesignation(summary, title)) continue;
 
       const description = cleanText(summary.extract, GENERAL_DESCRIPTION_MAX_LENGTH);
       let image = null;
