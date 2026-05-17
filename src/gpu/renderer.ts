@@ -2130,7 +2130,7 @@ export class Renderer {
     data[6] = material.emissive[2];
     data[7] = Math.max(material.emissive[3], model.emissive ?? 0);
     data[8] = material.useTexture;
-    data[9] = material.useProcedural;
+    data[9] = model.format === "procedural-sphere" || model.bodyName === "Sun" ? 1 : material.useProcedural;
     data[10] = material.useVertexColor;
     data[11] = material.textureEmission;
     device.queue.writeBuffer(buffer, 0, data);

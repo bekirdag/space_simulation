@@ -32,8 +32,8 @@ const CLOSE_STAR_SPHERE_LOD_FULL_PX:  f32 = 4.50;
 const CAMERA_NEAR: f32 = 1e-8;
 const CAMERA_FAR:  f32 = 50000000.0;
 const SOLAR_RADIUS_AU: f32 = 0.00465047;
-const SUN_STELLAR_MARKER_FADE_START_AU: f32 = 24.0;
-const SUN_STELLAR_MARKER_FADE_FULL_AU:  f32 = 96.0;
+const SUN_STELLAR_MARKER_FADE_START_AU: f32 = 128.0;
+const SUN_STELLAR_MARKER_FADE_FULL_AU:  f32 = 512.0;
 
 struct VertexOut {
   @builtin(position) clip_pos: vec4<f32>,
