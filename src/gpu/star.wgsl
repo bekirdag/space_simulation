@@ -25,8 +25,8 @@ struct Star {
 @group(0) @binding(2) var<uniform>       selectedStar: vec4<f32>; // xyz=pos, w=active
 @group(0) @binding(3) var<uniform>       lodFade:      vec4<f32>; // x=1, y=camera AU from Sun, z=brightness effects
 
-const CLOSE_STAR_SPHERE_LOD_START_PX: f32 = 6.0;
-const CLOSE_STAR_SPHERE_LOD_FULL_PX:  f32 = 18.0;
+const CLOSE_STAR_SPHERE_LOD_START_PX: f32 = 2.25;
+const CLOSE_STAR_SPHERE_LOD_FULL_PX:  f32 = 4.50;
 
 struct VertexOut {
   @builtin(position) clip_pos: vec4<f32>,
@@ -137,24 +137,25 @@ fn vs_main(
     let selectedNdcRadius = max(physNdcR, camera.rightAndMNR.w * 3.0);
     out.pixel_radius = selectedNdcRadius * 2.5 / max(camera.rightAndMNR.w, 0.000001);
     let worldR = selectedNdcRadius * clip_c.w / focalY;
+    let clipRight = camera.viewProj * vec4(camera.rightAndMNR.xyz * worldR, 0.0);
+    let clipUp = camera.viewProj * vec4(camera.upAndFocal.xyz * worldR, 0.0);
+    let clipOffset = uv.x * clipRight + uv.y * clipUp;
 
-    out.clip_pos = camera.viewProj * vec4(
-      center + uv.x * camera.rightAndMNR.xyz * worldR
-             + uv.y * camera.upAndFocal.xyz  * worldR,
-      1.0,
-    );
+    out.clip_pos = clip_c + vec4(clipOffset.xy, 0.0, 0.0);
     return out;
   }
 
-  // Normal (non-selected) stars: enforce minimum pixel radius (fixed-NDC billboard).
+  // Normal (non-selected) stars: enforce minimum pixel radius. Expand from the
+  // projected center in clip space so tiny star quads do not lose precision
+  // when their catalog positions are far from the origin.
   let pxRadius    = billboardNdcRadius;
   out.pixel_radius = pxRadius * 2.5 / max(camera.rightAndMNR.w, 0.000001);
   let worldRadius = pxRadius * clip_c.w / focalY;
-  let world_pos   = center
-    + uv.x * camera.rightAndMNR.xyz * worldRadius
-    + uv.y * camera.upAndFocal.xyz  * worldRadius;
+  let clipRight = camera.viewProj * vec4(camera.rightAndMNR.xyz * worldRadius, 0.0);
+  let clipUp = camera.viewProj * vec4(camera.upAndFocal.xyz * worldRadius, 0.0);
+  let clipOffset = uv.x * clipRight + uv.y * clipUp;
 
-  out.clip_pos = camera.viewProj * vec4(world_pos, 1.0);
+  out.clip_pos = clip_c + vec4(clipOffset.xy, 0.0, 0.0);
   return out;
 }
 

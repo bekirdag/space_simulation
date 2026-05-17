@@ -23,8 +23,8 @@ struct Star {
 @group(0) @binding(1) var<storage, read> stars:   array<Star>;
 @group(0) @binding(2) var<uniform>       lodFade: vec4<f32>; // x=fade 0..1, y=legacy apparent boost, z=brightness effects
 
-const CLOSE_STAR_SPHERE_LOD_START_PX: f32 = 6.0;
-const CLOSE_STAR_SPHERE_LOD_FULL_PX:  f32 = 18.0;
+const CLOSE_STAR_SPHERE_LOD_START_PX: f32 = 2.25;
+const CLOSE_STAR_SPHERE_LOD_FULL_PX:  f32 = 4.50;
 
 struct VertexOut {
   @builtin(position) clip_pos: vec4<f32>,
@@ -100,14 +100,16 @@ fn vs_main(
     return out;
   }
 
-  // Fixed-NDC billboard — same as normal stars
+  // Fixed-size billboard expanded from the projected center in clip space.
+  // This keeps small but inspectable Milky Way stars round instead of letting
+  // large galactic coordinates quantize the quad corners.
   let focalY      = camera.upAndFocal.w;
   let worldRadius = pxRadius * clip_c.w / focalY;
-  let world_pos   = center
-    + uv.x * camera.rightAndMNR.xyz * worldRadius
-    + uv.y * camera.upAndFocal.xyz  * worldRadius;
+  let clipRight = camera.viewProj * vec4(camera.rightAndMNR.xyz * worldRadius, 0.0);
+  let clipUp = camera.viewProj * vec4(camera.upAndFocal.xyz * worldRadius, 0.0);
+  let clipOffset = uv.x * clipRight + uv.y * clipUp;
 
-  out.clip_pos = camera.viewProj * vec4(world_pos, 1.0);
+  out.clip_pos = clip_c + vec4(clipOffset.xy, 0.0, 0.0);
   return out;
 }
 
