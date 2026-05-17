@@ -100,11 +100,16 @@ fn vs_main(
     return out;
   }
 
-  // The core body keeps its actual physical radius. Brightness mode may expand
-  // the quad only for optical glow around that core.
+  // The core body keeps its actual physical radius. Expand the billboard in
+  // clip space from camera-axis direction vectors instead of adding the tiny
+  // radius to a large absolute AU position. That avoids f32 precision loss for
+  // dwarf planets whose radii are only a few millionths of an AU at tens of AU
+  // from the origin.
   let glowScale = clamp(1.0 + log2(max(out.brightness, 1.0)) * 0.65, 1.0, 8.0);
-  let world_pos = center + uv.x * camRight * r_phys * glowScale + uv.y * camUp * r_phys * glowScale;
-  out.clip_pos  = camera.viewProj * vec4(world_pos, 1.0);
+  let clipRight = camera.viewProj * vec4(camRight * (r_phys * glowScale), 0.0);
+  let clipUp    = camera.viewProj * vec4(camUp    * (r_phys * glowScale), 0.0);
+  let clipOffset = uv.x * clipRight + uv.y * clipUp;
+  out.clip_pos = clip_c + vec4(clipOffset.xy, 0.0, 0.0);
   return out;
 }
 
@@ -117,11 +122,13 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   let displayLift = clamp(pow(max(brightness, 0.08), 0.35), 0.50, 5.25);
   let glowScale = clamp(1.0 + log2(max(brightness, 1.0)) * 0.65, 1.0, 8.0);
   let sphereD = d * glowScale;
-  let coreEdge = 1.0 - smoothstep(0.985, 1.0, sphereD);
+  let edgeAa = clamp(fwidth(sphereD), 0.0015, 0.045);
+  let coreEdge = 1.0 - smoothstep(1.0 - edgeAa, 1.0 + edgeAa, sphereD);
   var coreAlpha = coreEdge * in.fade;
   var coreCol = in.color;
-  if sphereD <= 1.0 {
-    let z = sqrt(max(0.0, 1.0 - sphereD * sphereD));
+  if coreEdge > 0.001 {
+    let sphereDClamped = min(sphereD, 1.0);
+    let z = sqrt(max(0.0, 1.0 - sphereDClamped * sphereDClamped));
     if in.btype < 0.5 {
       let core = 1.0 - smoothstep(0.0, 0.55, sphereD);
       let limb = 0.76 + 0.24 * z;
