@@ -5,5 +5,6 @@
   "selectedStars": 100000,
   "inputStars": 109400,
   "strideFloat32": 8,
-  "coordinateScale": "80 visual AU per parsec"
+  "coordinateScale": "80 visual AU per parsec",
+  "brightnessEncoding": "Johnson V apparent magnitude flux, relative to mag 6, compressed for display"
 }

@@ -57,6 +57,16 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
+function apparentFluxFromMagnitude(mag) {
+  // Relative visual flux with mag 6.0 as the naked-eye threshold reference.
+  return Math.pow(10, -0.4 * (mag - 6.0));
+}
+
+function starDisplayFromMagnitude(mag) {
+  const normalized = apparentFluxFromMagnitude(mag) / 260;
+  return clamp(Math.pow(Math.max(normalized, 1e-8), 0.18), 0.035, 1);
+}
+
 /**
  * B-V Johnson color index → linear sRGB.
  * Uses subtle O/B, A/F, G, K, and M anchors. Input `ci` is the B-V color
@@ -114,17 +124,17 @@ const data = new Float32Array(selected.length * STAR_FLOATS);
 
 for (let i = 0; i < selected.length; i++) {
   const star = selected[i];
-  const brightness = clamp((12 - star.mag) / 10, 0.05, 1);
+  const brightness = starDisplayFromMagnitude(star.mag);
   const color = starColor(star.ci);
   const o = i * STAR_FLOATS;
   data[o + 0] = star.x * AU_PER_PARSEC;
   data[o + 1] = star.y * AU_PER_PARSEC;
   data[o + 2] = star.z * AU_PER_PARSEC;
-  data[o + 3] = 0.1 + brightness * brightness * 0.8;
+  data[o + 3] = 0.09 + Math.pow(brightness, 1.35) * 0.95;
   data[o + 4] = color[0];
   data[o + 5] = color[1];
   data[o + 6] = color[2];
-  data[o + 7] = 0.12 + brightness * 0.68;
+  data[o + 7] = 0.08 + Math.pow(brightness, 0.92) * 0.82;
 }
 
 await mkdir(new URL("../public/data/", import.meta.url), { recursive: true });
@@ -137,6 +147,7 @@ await writeFile(OUT_META, `${JSON.stringify({
   inputStars: stars.length,
   strideFloat32: STAR_FLOATS,
   coordinateScale: `${AU_PER_PARSEC} visual AU per parsec`,
+  brightnessEncoding: "Johnson V apparent magnitude flux, relative to mag 6, compressed for display",
 }, null, 2)}\n`, "utf8");
 
 console.log(`Wrote ${selected.length} visible stars to ${OUT_BIN.pathname}`);

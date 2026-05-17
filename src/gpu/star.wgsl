@@ -48,6 +48,13 @@ fn star_hdr_intensity(color: vec3<f32>, size: f32, alpha: f32) -> f32 {
   return clamp(pow(catalogFlux * spectralLum * 2.35, 1.85) * 8.0, 0.65, 260.0);
 }
 
+fn camera_distance_flux(center: vec3<f32>) -> f32 {
+  let referenceDistanceAU = max(length(center), 1.0);
+  let cameraDistanceAU = max(length(center - camera.eyeAndFlags.xyz), referenceDistanceAU * 0.0005);
+  let ratio = clamp(referenceDistanceAU / cameraDistanceAU, 0.02, 400.0);
+  return clamp(ratio * ratio, 0.0004, 160000.0);
+}
+
 fn subtle_spectral_color(color: vec3<f32>) -> vec3<f32> {
   // Keep the catalog temperature tint visible but restrained. Full-saturation
   // stellar colors look artificial once HDR bloom is added.
@@ -70,7 +77,10 @@ fn vs_main(
   out.alpha    = star.color_alpha.w;
   out.selected = 0.0;
   out.effects   = clamp(lodFade.z, 0.0, 1.0);
-  out.intensity = mix(1.0, star_hdr_intensity(out.color, star.pos_size.w, out.alpha), out.effects);
+  let distanceFlux = camera_distance_flux(center);
+  let distanceIntensity = clamp(pow(distanceFlux, 0.72), 0.08, 96.0);
+  let distanceAlpha = clamp(pow(distanceFlux, 0.18), 0.22, 2.4);
+  out.intensity = mix(1.0, star_hdr_intensity(out.color, star.pos_size.w, out.alpha) * distanceIntensity, out.effects);
 
   // ── Global LOD fade ────────────────────────────────────────────────────────
   // HYG nearby stars fade out as the camera moves far from the solar system
@@ -79,6 +89,7 @@ fn vs_main(
   let globalFade = clamp(1.0 - (cameraAU - 500.0) / 19500.0, 0.0, 1.0);
   let isSelected = selectedStar.w > 0.5 && length(center - selectedStar.xyz) < 0.5;
   out.alpha     *= select(globalFade, max(globalFade, 0.9), isSelected);
+  out.alpha     *= mix(1.0, distanceAlpha, out.effects);
 
   if out.alpha <= 0.001 && !isSelected {
     out.clip_pos = vec4(10.0, 10.0, 10.0, 1.0);
@@ -96,7 +107,8 @@ fn vs_main(
   // Center-only tests can hide visible edge billboards.
   let ndcX = clip_c.x / clip_c.w;
   let ndcY = clip_c.y / clip_c.w;
-  let billboardNdcRadius = camera.rightAndMNR.w * max(star.pos_size.w * 1.8, 0.6);
+  let distanceSizeLift = mix(1.0, clamp(pow(distanceFlux, 0.14), 0.65, 7.0), out.effects);
+  let billboardNdcRadius = camera.rightAndMNR.w * max(star.pos_size.w * distanceSizeLift * 1.8, 0.6);
   let cullMargin = max(billboardNdcRadius * 1.5, 0.06);
   if ndcX - cullMargin > 1.0 || ndcX + cullMargin < -1.0 ||
      ndcY - cullMargin > 1.0 || ndcY + cullMargin < -1.0 {

@@ -95,11 +95,17 @@ function armBoost(R, theta) {
 // OB: 5%, A: 12%, FG: 30%, KM: 53%
 function starColor() {
   const u = rand();
-  if (u < 0.05) return { r: 0.65, g: 0.75, b: 1.00 }; // O/B — hot blue-white
-  if (u < 0.17) return { r: 0.90, g: 0.95, b: 1.00 }; // A/F — blue-white
-  if (u < 0.47) return { r: 1.00, g: 0.92, b: 0.75 }; // G   — white-yellow
-  if (u < 0.72) return { r: 1.00, g: 0.65, b: 0.35 }; // K   — orange
-  return         { r: 1.00, g: 0.35, b: 0.20 };        // M   — red-orange
+  if (u < 0.05) return { r: 0.65, g: 0.75, b: 1.00, luminosityBias: 5.0 }; // O/B
+  if (u < 0.17) return { r: 0.90, g: 0.95, b: 1.00, luminosityBias: 2.1 }; // A/F
+  if (u < 0.47) return { r: 1.00, g: 0.92, b: 0.75, luminosityBias: 0.9 }; // G
+  if (u < 0.72) return { r: 1.00, g: 0.65, b: 0.35, luminosityBias: 0.55 }; // K
+  return         { r: 1.00, g: 0.35, b: 0.20, luminosityBias: 0.28 };        // M
+}
+
+function displayBrightness(luminosityBias) {
+  // Skybox-like apparent distribution: many dim points and a few bright anchors.
+  const flux = Math.min(1, Math.pow(rand(), 8.0) * luminosityBias);
+  return Math.max(0.035, Math.pow(Math.max(flux, 1e-8), 0.18));
 }
 
 // ── Sampling ─────────────────────────────────────────────────────────────────
@@ -171,9 +177,10 @@ while (i < N_STARS) {
   const distKpc = Math.sqrt(xh*xh + yh*yh + zh*zh);
   if (distKpc < 0.1) continue;
 
-  const { r, g, b } = starColor();
-  const size  = 0.5 + rand() * 0.8;   // 0.5–1.3, modest point size
-  const alpha = 0.25 + rand() * 0.25; // 0.25–0.50, individually faint
+  const { r, g, b, luminosityBias } = starColor();
+  const brightness = displayBrightness(luminosityBias);
+  const size  = 0.32 + Math.pow(brightness, 1.25) * 1.35;
+  const alpha = 0.055 + Math.pow(brightness, 0.90) * 0.54;
 
   const o = i * 8;
   out[o+0] = x_au;
@@ -200,9 +207,9 @@ for (let j = 0; j < N_STARS; j++) {
   const x = out[o], y = out[o+1], z = out[o+2];
   const d = Math.sqrt(x*x + y*y + z*z);
   if (d < 1) { nearBulge++; continue; }
-  // galactic Z: project back
-  const zg = R[2][0]*x/KPC_TO_AU + R[2][1]*y/KPC_TO_AU + R[2][2]*z/KPC_TO_AU;
+  // Galactic Z: project back with the transpose of the galactic -> ecliptic matrix.
+  const zg = R[0][2]*x/KPC_TO_AU + R[1][2]*y/KPC_TO_AU + R[2][2]*z/KPC_TO_AU;
   if (Math.abs(zg) < 0.5) nearPlane++;
 }
-console.log(`Stars within b<~3° of galactic plane: ${Math.round(nearPlane/N_STARS*100)}% (expect ~60–75%)`);
+console.log(`Stars within b<~3° of galactic plane: ${Math.round(nearPlane/N_STARS*100)}% (expect ~75–85%)`);
 console.log(`Stars in bulge region (< 1 AU from origin): ${nearBulge}`);

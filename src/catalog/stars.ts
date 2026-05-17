@@ -96,6 +96,17 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
+function apparentFluxFromMagnitude(magnitude: number): number {
+  // Relative visual flux with mag 6.0 as the naked-eye threshold reference.
+  return Math.pow(10, -0.4 * (magnitude - 6.0));
+}
+
+function starDisplayFromMagnitude(magnitude: number | null, fallbackDisplay = 0.20): number {
+  if (magnitude === null || !Number.isFinite(magnitude)) return fallbackDisplay;
+  const normalized = apparentFluxFromMagnitude(magnitude) / 260;
+  return clamp(Math.pow(Math.max(normalized, 1e-8), 0.18), 0.035, 1);
+}
+
 function hostAliasKey(value: string): string {
   return value.trim().toLowerCase().replace(/[’`]/g, "'").replace(/\s+/g, " ");
 }
@@ -195,7 +206,7 @@ function hostToCatalogStar(record: ExoplanetHostRecord, index: number): CatalogS
   const magnitude = Number.isFinite(record.magnitude) ? Number(record.magnitude) : null;
   const planetCount = Math.max(1, Math.round(record.planetCount ?? 1));
   const [x, y, z] = catalogPosition(record.ra, record.dec, distancePc);
-  const magFactor = magnitude === null ? 0.35 : clamp((18 - magnitude) / 14, 0.08, 1);
+  const apparentDisplay = starDisplayFromMagnitude(magnitude, 0.22);
   const color = hostColor(record, magnitude);
   const radiusSolar = Number.isFinite(record.radiusSolar) ? Number(record.radiusSolar) : null;
   const luminositySolar = Number.isFinite(record.luminosityLogSolar)
@@ -213,8 +224,8 @@ function hostToCatalogStar(record: ExoplanetHostRecord, index: number): CatalogS
     magnitude,
     planetCount,
     color,
-    size: clamp((0.22 + magFactor * 0.66) * (0.82 + radiusScale * 0.18), 0.10, 1.35),
-    alpha: clamp((0.30 + magFactor * 0.48) * luminosityScale, 0.14, 0.95),
+    size: clamp((0.10 + Math.pow(apparentDisplay, 1.25) * 0.90) * (0.74 + radiusScale * 0.26), 0.08, 1.60),
+    alpha: clamp((0.10 + Math.pow(apparentDisplay, 0.90) * 0.82) * luminosityScale, 0.10, 0.98),
   };
   const aliases = HOST_ALIASES_BY_KEY[hostAliasKey(record.name)];
   if (aliases) star.aliases = aliases;
@@ -233,18 +244,19 @@ export function createVisibleStarField(count = DEFAULT_VISIBLE_STAR_COUNT): Star
     const distancePc = 4 + Math.pow(rng(), 1.7) * 950;
     const r = distancePc * AU_PER_PARSEC;
     const cosDec = Math.cos(dec);
-    const brightness = Math.pow(1 - rng(), 2.3);
+    const flux = Math.pow(rng(), 8.0);
+    const brightness = clamp(Math.pow(Math.max(flux, 1e-8), 0.18), 0.035, 1);
     const color = starColor(rng() * 2.4 - 0.2);
     const o = i * STAR_FLOATS;
 
     data[o + 0] = r * cosDec * Math.cos(ra);
     data[o + 1] = r * cosDec * Math.sin(ra);
     data[o + 2] = r * Math.sin(dec);
-    data[o + 3] = 0.12 + brightness * 0.75;
+    data[o + 3] = 0.09 + Math.pow(brightness, 1.35) * 0.95;
     data[o + 4] = color[0];
     data[o + 5] = color[1];
     data[o + 6] = color[2];
-    data[o + 7] = 0.16 + brightness * 0.72;
+    data[o + 7] = 0.08 + Math.pow(brightness, 0.92) * 0.82;
   }
 
   return data;
