@@ -1491,18 +1491,23 @@ async function main(): Promise<void> {
     return constellationFigures.find(figure => figure.id === figureId) ?? null;
   }
 
-  function focusConstellationFromEarth(figure: ConstellationFigure): void {
+  function constellationEarthFocus(figure: ConstellationFigure): {
+    target: [number, number, number];
+    direction: [number, number, number];
+    surfaceRadius: number;
+    earthRadius: number;
+  } | null {
     const earth = bodies.find(body => body.name === "Earth");
-    if (!earth) return;
+    if (!earth) return null;
 
-    const target: [number, number, number] = [
+    const constellationPoint: [number, number, number] = [
       figure.label.x,
       figure.label.y,
       figure.label.z,
     ];
-    let dx = target[0] - earth.x;
-    let dy = target[1] - earth.y;
-    let dz = target[2] - earth.z;
+    let dx = constellationPoint[0] - earth.x;
+    let dy = constellationPoint[1] - earth.y;
+    let dz = constellationPoint[2] - earth.z;
     let len = Math.hypot(dx, dy, dz);
     if (!Number.isFinite(len) || len <= 0) {
       dx = 1;
@@ -1511,13 +1516,44 @@ async function main(): Promise<void> {
       len = 1;
     }
 
+    const ux = dx / len;
+    const uy = dy / len;
+    const uz = dz / len;
     const surfaceRadius = Math.max(earth.radius * 1.04, earth.radius + 1e-7);
-    const eye: [number, number, number] = [
-      earth.x + dx / len * surfaceRadius,
-      earth.y + dy / len * surfaceRadius,
-      earth.z + dz / len * surfaceRadius,
+    const surfaceTarget: [number, number, number] = [
+      earth.x + ux * surfaceRadius,
+      earth.y + uy * surfaceRadius,
+      earth.z + uz * surfaceRadius,
     ];
-    camera.lookFromEyeToTarget(eye, target);
+    return {
+      target: surfaceTarget,
+      direction: [ux, uy, uz],
+      surfaceRadius,
+      earthRadius: earth.radius,
+    };
+  }
+
+  function focusConstellationFromEarth(figure: ConstellationFigure): void {
+    const focus = constellationEarthFocus(figure);
+    if (!focus) return;
+
+    const viewDistance = Math.max(
+      camera.closeDistanceForRadius(focus.earthRadius),
+      focus.surfaceRadius * 2.2,
+    );
+    const eye: [number, number, number] = [
+      focus.target[0] - focus.direction[0] * viewDistance,
+      focus.target[1] - focus.direction[1] * viewDistance,
+      focus.target[2] - focus.direction[2] * viewDistance,
+    ];
+    camera.lookFromEyeToTarget(eye, focus.target);
+  }
+
+  function updateConstellationEarthFocus(): void {
+    if (!selectedConstellation || !camera.lockTarget) return;
+    const focus = constellationEarthFocus(selectedConstellation);
+    if (!focus) return;
+    camera.target = focus.target;
   }
 
   function selectConstellation(id: string): void {
@@ -2549,6 +2585,8 @@ async function main(): Promise<void> {
         camera.lockTarget = true; // scroll only changes orbit radius, not target
       }
     }
+
+    updateConstellationEarthFocus();
 
     const camUniforms = camera.update(aspect);
     lastViewProj = camUniforms.viewProj;
