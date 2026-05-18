@@ -626,6 +626,8 @@ export class Renderer {
   private bloomBlurHBindGroup:   GPUBindGroup | null = null;
   private bloomBlurVBindGroup:   GPUBindGroup | null = null;
   private blackHoleBindGroup: GPUBindGroup | null = null;
+  private blackHoleLodTexture!: GPUTexture;
+  private blackHoleLodSampler!: GPUSampler;
   private constellationBindGroup!: GPUBindGroup;
   private trailBindGroup!:  GPUBindGroup;
   private starBGL!:         GPUBindGroupLayout;
@@ -861,6 +863,26 @@ export class Renderer {
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
     device.queue.writeBuffer(this.blackHoleBuffer, 0, this._blackHoleUniform);
+    this.blackHoleLodTexture = device.createTexture({
+      label: "black-hole-lod-fallback",
+      size: { width: 1, height: 1 },
+      format: "rgba8unorm",
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+    });
+    device.queue.writeTexture(
+      { texture: this.blackHoleLodTexture },
+      new Uint8Array([0, 0, 0, 0]),
+      { bytesPerRow: 4 },
+      { width: 1, height: 1 },
+    );
+    this.blackHoleLodSampler = device.createSampler({
+      label: "black-hole-lod-sampler",
+      magFilter: "linear",
+      minFilter: "linear",
+      mipmapFilter: "linear",
+      addressModeU: "clamp-to-edge",
+      addressModeV: "clamp-to-edge",
+    });
     this.sceneSampler = device.createSampler({
       label: "black-hole-scene-sampler",
       magFilter: "linear",
@@ -1468,6 +1490,8 @@ export class Renderer {
         { binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "filtering" } },
         { binding: 4, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float" } },
         { binding: 5, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "filtering" } },
+        { binding: 6, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float" } },
+        { binding: 7, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "filtering" } },
       ],
     });
     const blackHoleShader = device.createShaderModule({ code: blackholeWGSL });
@@ -1774,6 +1798,34 @@ export class Renderer {
     } catch (e) {
       console.warn("Failed to load Eta Carinae texture:", e);
     }
+  }
+
+  async loadBlackHoleLodTexture(url: string): Promise<void> {
+    const resp = await fetch(url, { cache: "force-cache" });
+    if (!resp.ok) throw new Error(`Sgr A* LOD image ${resp.status}`);
+
+    const blob = await resp.blob();
+    const bitmap = await createImageBitmap(blob, { colorSpaceConversion: "none" });
+    const width = bitmap.width;
+    const height = bitmap.height;
+    const texture = this.ctx.device.createTexture({
+      label: "black-hole-lod-texture",
+      size: [width, height],
+      format: "rgba8unorm",
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+    this.ctx.device.queue.copyExternalImageToTexture(
+      { source: bitmap },
+      { texture },
+      [width, height],
+    );
+    bitmap.close();
+
+    const previous = this.blackHoleLodTexture;
+    this.blackHoleLodTexture = texture;
+    this.blackHoleBindGroup = null;
+    previous.destroy();
+    console.info(`Sgr A* distant LOD image loaded (${width}x${height})`);
   }
 
   async loadSolarSystemModels(models: readonly SolarSystemModelAsset[]): Promise<void> {
@@ -2559,6 +2611,8 @@ export class Renderer {
           { binding: 3, resource: this.sceneSampler },
           { binding: 4, resource: this.bloomPongTextureView },
           { binding: 5, resource: this.bloomSampler },
+          { binding: 6, resource: this.blackHoleLodTexture.createView() },
+          { binding: 7, resource: this.blackHoleLodSampler },
         ],
       });
     }

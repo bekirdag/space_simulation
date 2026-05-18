@@ -94,6 +94,7 @@ import {
   type NebulaDet,
 } from "./catalog/nebulas";
 import { BackendUnavailableError, backendAssetUrl, backendFetch, readBackendJson } from "./services/backend";
+import sagaBlackHoleUrl from "./img/saga.jpg?url";
 
 const MAX_BODIES = 1024;
 const MAX_CATALOG_STARS  = DEFAULT_VISIBLE_STAR_COUNT + 8_000;
@@ -1180,7 +1181,7 @@ async function main(): Promise<void> {
   const labels = new LabelManager();
   applySettings();
 
-  const STARTUP_ASSET_TOTAL = 13;
+  const STARTUP_ASSET_TOTAL = 14;
   let startupLoading = true;
   let startupAssetsReady = 0;
   const startupAssetPromises: Promise<void>[] = [];
@@ -1212,6 +1213,10 @@ async function main(): Promise<void> {
   }
 
   showLoading("Installing CosmosMap assets...", STARTUP_ASSET_TOTAL, "assets");
+  startupAssetPromises.push(trackStartupAsset("Sgr A* distant LOD image", () => (
+    renderer.loadBlackHoleLodTexture(sagaBlackHoleUrl)
+  )));
+
   // Start with empty buffers — real data loads from binary within milliseconds.
   // Avoid the 100k-star placeholder allocation that can fail on low-memory devices.
   let rawVisibleStarBuffer: StarBuffer = new Float32Array(0);

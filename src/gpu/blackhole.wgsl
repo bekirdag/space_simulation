@@ -50,6 +50,12 @@ const DISK_EDGE_SOFTNESS_OUTER: f32 = 0.5;
 const GRAVITATIONAL_LENSING: f32 = 2.4;
 const DOPPLER_STRENGTH: f32 = 0.42;
 const RAY_STEP_SIZE: f32 = 0.85;
+const PROCEDURAL_FADE_START_RS: f32 = 1200.0;
+const PROCEDURAL_FADE_END_RS: f32 = 6500.0;
+const LOD_FADE_IN_START_RS: f32 = 850.0;
+const LOD_FADE_IN_END_RS: f32 = 6000.0;
+const LOD_FADE_OUT_START_RS: f32 = 4000000.0;
+const LOD_FADE_OUT_END_RS: f32 = 14000000.0;
 
 @group(0) @binding(0) var<uniform> camera:    Camera;
 @group(0) @binding(1) var<uniform> blackHole: BlackHole;
@@ -57,6 +63,8 @@ const RAY_STEP_SIZE: f32 = 0.85;
 @group(0) @binding(3) var sceneSampler: sampler;
 @group(0) @binding(4) var bloomTex: texture_2d<f32>;
 @group(0) @binding(5) var bloomSampler: sampler;
+@group(0) @binding(6) var blackHoleLodTex: texture_2d<f32>;
+@group(0) @binding(7) var blackHoleLodSampler: sampler;
 
 struct VertexOut {
   @builtin(position) clip_pos: vec4<f32>,
@@ -375,6 +383,34 @@ fn apply_black_hole_scene_lensing(sceneColor: vec3<f32>, uv: vec2<f32>, centerUv
   return mix(sceneColor, lensed, clamp(window * 0.62, 0.0, 0.82));
 }
 
+fn apply_black_hole_image_lod(sceneColor: vec3<f32>, uv: vec2<f32>, centerUv: vec2<f32>, radiusUv: f32, opacity: f32) -> vec3<f32> {
+  if opacity <= 0.001 || radiusUv <= 0.0001 {
+    return sceneColor;
+  }
+
+  let aspect = max(camera.screenAndTarget.x, 0.000001);
+  let delta = (uv - centerUv) * vec2<f32>(aspect, 1.0) / radiusUv;
+  let r = length(delta);
+  if r > 1.12 {
+    return sceneColor;
+  }
+
+  let imageUv = delta * 0.5 + vec2<f32>(0.5);
+  if imageUv.x < 0.0 || imageUv.x > 1.0 || imageUv.y < 0.0 || imageUv.y > 1.0 {
+    return sceneColor;
+  }
+
+  let imageColor = textureSampleLevel(blackHoleLodTex, blackHoleLodSampler, imageUv, 0.0).rgb;
+  let luma = dot(imageColor, vec3<f32>(0.2126, 0.7152, 0.0722));
+  let edgeFeather = 1.0 - smoothstep(0.88, 1.10, r);
+  let diskAlpha = smoothstep(0.025, 0.18, luma) * edgeFeather;
+  let shadowAlpha = (1.0 - smoothstep(0.20, 0.38, r)) * edgeFeather * 0.72;
+  let alpha = clamp(max(diskAlpha, shadowAlpha) * opacity, 0.0, 0.9);
+  let warmColor = imageColor * vec3<f32>(1.10, 0.94, 0.76);
+  let hdrColor = warmColor * (2.2 + smoothstep(0.12, 0.78, luma) * 3.4);
+  return sceneColor * (1.0 - alpha) + hdrColor * alpha;
+}
+
 fn black_hole_composite(sceneColor: vec3<f32>, uv: vec2<f32>) -> vec3<f32> {
   let strength = clamp(blackHole.params.w, 0.0, 1.0);
   let eventRadiusAU = max(blackHole.pos_size.w, 0.0);
@@ -384,7 +420,8 @@ fn black_hole_composite(sceneColor: vec3<f32>, uv: vec2<f32>) -> vec3<f32> {
 
   let centerRelWorld = camera_relative(blackHole.pos_size.xyz);
   let centerDistanceAU = length(centerRelWorld);
-  if centerDistanceAU > eventRadiusAU * 520.0 {
+  let distanceRs = centerDistanceAU / eventRadiusAU;
+  if distanceRs > LOD_FADE_OUT_END_RS {
     return sceneColor;
   }
 
@@ -396,20 +433,39 @@ fn black_hole_composite(sceneColor: vec3<f32>, uv: vec2<f32>) -> vec3<f32> {
   let centerNdc = centerClip.xy / max(centerClip.w, 0.000001);
   let centerUv = vec2<f32>(centerNdc.x * 0.5 + 0.5, 0.5 - centerNdc.y * 0.5);
   let diskRadiusNdcY = DISK_OUTER_RADIUS * eventRadiusAU * camera.upAndFocal.w / max(centerClip.w, 0.000001);
-  let diskRadiusUv = clamp(diskRadiusNdcY * 0.5, 0.012, 0.92);
+  let physicalDiskRadiusUv = max(diskRadiusNdcY * 0.5, 0.0);
+  let diskRadiusUv = clamp(physicalDiskRadiusUv, 0.012, 0.92);
+  let lodRadiusUv = clamp(max(physicalDiskRadiusUv * 8.0, 0.012), 0.012, 0.075);
   let aspect = max(camera.screenAndTarget.x, 0.000001);
   let screenRadius = length((uv - centerUv) * vec2<f32>(aspect, 1.0));
 
-  var base = apply_black_hole_scene_lensing(sceneColor, uv, centerUv, diskRadiusUv, strength);
-  if screenRadius > diskRadiusUv * 3.35 + 0.12 {
+  let proceduralFade = (1.0 - smoothstep(PROCEDURAL_FADE_START_RS, PROCEDURAL_FADE_END_RS, distanceRs)) * strength;
+  let lodFade = smoothstep(LOD_FADE_IN_START_RS, LOD_FADE_IN_END_RS, distanceRs) *
+    (1.0 - smoothstep(LOD_FADE_OUT_START_RS, LOD_FADE_OUT_END_RS, distanceRs)) *
+    strength;
+  let proceduralWindowRadius = select(0.0, diskRadiusUv * 3.35 + 0.12, proceduralFade > 0.001);
+  let lodWindowRadius = select(0.0, lodRadiusUv * 1.16, lodFade > 0.001);
+  let effectWindowRadius = max(proceduralWindowRadius, lodWindowRadius);
+
+  var base = sceneColor;
+  if proceduralFade > 0.001 {
+    base = apply_black_hole_scene_lensing(base, uv, centerUv, diskRadiusUv, proceduralFade);
+  }
+  if screenRadius > effectWindowRadius {
+    return base;
+  }
+  if lodFade > 0.001 {
+    base = apply_black_hole_image_lod(base, uv, centerUv, lodRadiusUv, lodFade);
+  }
+  if proceduralFade <= 0.001 {
     return base;
   }
 
   let rayWorld = screen_ray(uv);
   let rayPos = black_hole_space(-centerRelWorld) / eventRadiusAU;
   let rayDir = black_hole_space(rayWorld);
-  let sample = raymarch_black_hole(rayPos, rayDir, blackHole.params.x, strength);
-  let effectWindow = 1.0 - smoothstep(diskRadiusUv * 2.65 + 0.08, diskRadiusUv * 3.35 + 0.12, screenRadius);
+  let sample = raymarch_black_hole(rayPos, rayDir, blackHole.params.x, proceduralFade);
+  let effectWindow = (1.0 - smoothstep(diskRadiusUv * 2.65 + 0.08, diskRadiusUv * 3.35 + 0.12, screenRadius)) * proceduralFade;
   let occlusion = sample.occlusion * effectWindow;
   let emissionAlpha = sample.alpha * effectWindow;
 
