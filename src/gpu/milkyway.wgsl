@@ -56,9 +56,9 @@ fn stellar_luminosity_proxy(color: vec3<f32>, radiusAU: f32, alpha: f32) -> f32 
 }
 
 fn apparent_mw_brightness(cameraDistanceAU: f32, color: vec3<f32>, radiusAU: f32, alpha: f32) -> f32 {
-  let distKpc = max(cameraDistanceAU / 8000.0, 0.10);
+  let distKpc = max(cameraDistanceAU / 8000.0, 0.16);
   let flux = stellar_luminosity_proxy(color, radiusAU, alpha) / (distKpc * distKpc);
-  return clamp(pow(max(flux * 8.0, 0.0001), 0.45), 0.05, 2.8);
+  return clamp(pow(max(flux * 3.6, 0.0001), 0.34), 0.08, 2.15);
 }
 
 fn subtle_spectral_color(color: vec3<f32>) -> vec3<f32> {
@@ -106,15 +106,14 @@ fn camera_distance(center: vec3<f32>) -> f32 {
   return length(camera_relative(center));
 }
 
-fn stable_focus_distance(center: vec3<f32>) -> f32 {
-  let targetDelta = center - camera.screenAndTarget.yzw;
-  let orbitDelta = camera.eyeOffset.xyz;
-  return max(sqrt(dot(targetDelta, targetDelta) + dot(orbitDelta, orbitDelta)), 1e-6);
-}
-
 fn clip_billboard_offset(uv: vec2<f32>, radiusNdcY: f32, clipW: f32) -> vec4<f32> {
   let aspect = max(camera.screenAndTarget.x, 0.000001);
   return vec4<f32>(uv.x * radiusNdcY / aspect * clipW, uv.y * radiusNdcY * clipW, 0.0, 0.0);
+}
+
+fn brightness_camera_distance(center: vec3<f32>) -> f32 {
+  let referenceDistanceAU = max(length(center), 800.0);
+  return max(camera_distance(center), referenceDistanceAU * 0.025);
 }
 
 @vertex
@@ -133,10 +132,10 @@ fn vs_main(
   let actual = lodFade.z > 0.5;
   out.effects = clamp(lodFade.z, 0.0, 1.0);
   out.pixel_radius = 0.0;
-  let cameraDistanceAU = stable_focus_distance(center);
+  let cameraDistanceAU = brightness_camera_distance(center);
   let radiusAU = max(star.pos_size.w, SOLAR_RADIUS_AU * 0.08);
   out.brightness = select(1.0, apparent_mw_brightness(cameraDistanceAU, out.color, radiusAU, star.color_alpha.w), actual);
-  out.alpha = star.color_alpha.w * lodFade.x * select(1.0, clamp(0.35 + out.brightness, 0.25, 2.1), actual);
+  out.alpha = star.color_alpha.w * lodFade.x * select(1.0, clamp(0.58 + out.brightness * 0.48, 0.42, 1.45), actual);
 
   // Skip invisible or back-facing instances
   if lodFade.x < 0.01 || clip_c.w <= 0.0 {
@@ -155,13 +154,8 @@ fn vs_main(
   // for angular disk size, but keep the fallback marker from exaggerating
   // giant/supergiant radii while they are still sub-pixel objects.
   let radiusMarkerLift = clamp(pow(radiusSolar, 0.06), 0.85, 1.35);
-  let brightnessMarkerLift = select(
-    1.0,
-    clamp(pow(max(out.brightness, 0.08), 0.12), 0.75, 1.75),
-    actual,
-  );
   let pointNdcRadius = camera.rightAndMNR.w * max(
-    (0.46 + 0.12 * out.alpha) * radiusMarkerLift * brightnessMarkerLift,
+    (0.46 + 0.12 * out.alpha) * radiusMarkerLift,
     0.35,
   );
   let pxRadius = max(physicalNdcRadius, pointNdcRadius);

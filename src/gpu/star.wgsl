@@ -92,12 +92,6 @@ fn camera_distance(center: vec3<f32>) -> f32 {
   return length(camera_relative(center));
 }
 
-fn stable_focus_distance(center: vec3<f32>) -> f32 {
-  let targetDelta = center - camera.screenAndTarget.yzw;
-  let orbitDelta = camera.eyeOffset.xyz;
-  return max(sqrt(dot(targetDelta, targetDelta) + dot(orbitDelta, orbitDelta)), 1e-6);
-}
-
 fn clip_billboard_offset(uv: vec2<f32>, radiusNdcY: f32, clipW: f32) -> vec4<f32> {
   let aspect = max(camera.screenAndTarget.x, 0.000001);
   // NDC x covers the viewport width while NDC y covers the viewport height.
@@ -108,9 +102,11 @@ fn clip_billboard_offset(uv: vec2<f32>, radiusNdcY: f32, clipW: f32) -> vec4<f32
 
 fn camera_distance_flux(center: vec3<f32>) -> f32 {
   let referenceDistanceAU = max(length(center), 1.0);
-  let stableDistanceAU = max(stable_focus_distance(center), referenceDistanceAU * 0.0005);
-  let ratio = clamp(referenceDistanceAU / stableDistanceAU, 0.02, 400.0);
-  return clamp(ratio * ratio, 0.0004, 160000.0);
+  let distanceAU = max(camera_distance(center), referenceDistanceAU * 0.02);
+  // The catalog alpha already stores apparent brightness near the Sun. Camera
+  // distance should shape brightness, but not make stars pulse while panning.
+  let ratio = clamp(referenceDistanceAU / distanceAU, 0.18, 22.0);
+  return clamp(pow(ratio, 1.15), 0.20, 34.8);
 }
 
 fn subtle_spectral_color(color: vec3<f32>) -> vec3<f32> {
@@ -145,8 +141,8 @@ fn vs_main(
   out.effects   = clamp(lodFade.z, 0.0, 1.0);
   out.pixel_radius = 0.0;
   let distanceFlux = camera_distance_flux(center);
-  let distanceIntensity = clamp(pow(distanceFlux, 0.72), 0.08, 96.0);
-  let distanceAlpha = clamp(pow(distanceFlux, 0.18), 0.22, 2.4);
+  let distanceIntensity = clamp(pow(distanceFlux, 0.82), 0.28, 18.0);
+  let distanceAlpha = clamp(pow(distanceFlux, 0.10), 0.72, 1.38);
   out.intensity = mix(1.0, star_hdr_intensity(out.color, star.pos_size.w, out.alpha) * distanceIntensity, out.effects);
 
   // ── Global LOD fade ────────────────────────────────────────────────────────
@@ -192,9 +188,8 @@ fn vs_main(
   // resolvable, so giants do not make the Sun look wrongly tiny at catalog scale.
   let radiusMarkerLift = clamp(pow(radiusSolar, 0.06), 0.85, 1.35);
   let alphaMarkerLift = clamp(pow(max(out.alpha, 0.04), 0.35), 0.55, 1.35);
-  let distanceSizeLift = mix(1.0, clamp(pow(distanceFlux, 0.045), 0.85, 1.8), out.effects);
   let pointNdcRadius = camera.rightAndMNR.w * max(
-    (0.58 + 0.12 * alphaMarkerLift) * radiusMarkerLift * distanceSizeLift,
+    (0.58 + 0.12 * alphaMarkerLift) * radiusMarkerLift,
     0.38,
   );
   let billboardNdcRadius = max(physicalNdcRadius, pointNdcRadius);
