@@ -48,7 +48,7 @@ const TURBULENCE_PERSISTENCE: f32 = 0.8;
 const DISK_EDGE_SOFTNESS_INNER: f32 = 0.18;
 const DISK_EDGE_SOFTNESS_OUTER: f32 = 0.5;
 const GRAVITATIONAL_LENSING: f32 = 2.4;
-const DOPPLER_STRENGTH: f32 = 1.0;
+const DOPPLER_STRENGTH: f32 = 0.42;
 const RAY_STEP_SIZE: f32 = 0.85;
 
 @group(0) @binding(0) var<uniform> camera:    Camera;
@@ -216,10 +216,13 @@ fn fbm(p: vec3<f32>, lacunarity: f32, persistence: f32) -> f32 {
 
 fn blackbody_color(tempK: f32) -> vec3<f32> {
   let t = clamp((tempK - 1000.0) / 9000.0, 0.0, 1.0);
-  let red = clamp(1.0 - (t - 0.8) * 2.0, 0.5, 1.0);
-  let green = smoothstep(0.0, 0.5, t) * (1.0 - max(t - 0.7, 0.0) * 0.3);
-  let blue = smoothstep(0.3, 1.0, t) * t;
-  return vec3<f32>(red, green, blue);
+  let ember = vec3<f32>(0.50, 0.14, 0.035);
+  let orange = vec3<f32>(1.00, 0.42, 0.08);
+  let gold = vec3<f32>(1.00, 0.70, 0.22);
+  let whiteGold = vec3<f32>(1.00, 0.92, 0.66);
+  let low = mix(ember, orange, smoothstep(0.0, 0.45, t));
+  let high = mix(gold, whiteGold, smoothstep(0.45, 1.0, t));
+  return mix(low, high, smoothstep(0.22, 0.88, t));
 }
 
 fn rotate_disk_unit(unitXZ: vec2<f32>, angle: f32) -> vec2<f32> {
@@ -246,7 +249,7 @@ fn accretion_disk_color(hitR: f32, unitXZ: vec2<f32>, time: f32, rayDir: vec3<f3
   let cosTheta = dot(velocityDir, rayDir);
   let dopplerFactor = 1.0 / max(1.0 - beta * cosTheta, 0.12);
   let dopplerBoost = pow(dopplerFactor, 3.0 * DOPPLER_STRENGTH);
-  diskColor *= clamp(dopplerBoost, 0.1, 5.0);
+  diskColor *= clamp(dopplerBoost, 0.22, 2.65);
 
   let edgeFalloff =
     smoothstep(0.0, DISK_EDGE_SOFTNESS_INNER, normR) *
@@ -288,6 +291,7 @@ fn raymarch_black_hole(rayPos0: vec3<f32>, rayDir0: vec3<f32>, time: f32, visual
   var alpha = 0.0;
   var occlusion = 0.0;
   var minR = 100000.0;
+  var diskCrossings: i32 = 0;
   var captured = false;
   var escaped = false;
 
@@ -322,20 +326,28 @@ fn raymarch_black_hole(rayPos0: vec3<f32>, rayDir0: vec3<f32>, time: f32, visual
       let t = clamp(-prevPos.y / (rayPos.y - prevPos.y), 0.0, 1.0);
       let hitPos = mix(prevPos, rayPos, t);
       let hitR = length(hitPos.xz);
-      if hitR > DISK_INNER_RADIUS && hitR < DISK_OUTER_RADIUS {
+      if diskCrossings < 1 && hitR > DISK_INNER_RADIUS && hitR < DISK_OUTER_RADIUS {
         let unitXZ = hitPos.xz / max(hitR, 0.0001);
         let disk = accretion_disk_color(hitR, unitXZ, time, rayDir);
+        let shadowDiskMask = 1.0 - smoothstep(1.62, 1.02, minR) * 0.96;
+        let diskAlpha = disk.w * shadowDiskMask;
         let remainingAlpha = 1.0 - alpha;
-        color += disk.xyz * disk.w * remainingAlpha;
-        alpha += disk.w * remainingAlpha;
+        color += disk.xyz * diskAlpha * remainingAlpha;
+        alpha += diskAlpha * remainingAlpha;
+        diskCrossings = diskCrossings + 1;
       }
     }
   }
 
-  let photonRing = smoothstep(1.78, 1.12, minR) * smoothstep(0.82, 1.03, minR);
-  let secondaryRing = smoothstep(2.55, 1.72, minR) * smoothstep(1.12, 1.58, minR);
-  let ringColor = vec3<f32>(1.0, 0.52, 0.16) * photonRing * 3.6 +
-    vec3<f32>(0.45, 0.70, 1.0) * secondaryRing * 0.42;
+  let photonRing = pow(1.0 - smoothstep(0.025, 0.16, abs(minR - 1.54)), 2.0);
+  let secondaryRing = pow(1.0 - smoothstep(0.05, 0.30, abs(minR - 2.12)), 2.0);
+  let shadowInterior = smoothstep(1.46, 1.04, minR);
+  color *= 1.0 - shadowInterior * 0.985;
+  alpha = max(alpha, shadowInterior * 0.92);
+  occlusion = max(occlusion, shadowInterior * 0.98);
+
+  let ringColor = vec3<f32>(1.0, 0.66, 0.20) * photonRing * 3.1 +
+    vec3<f32>(1.0, 0.88, 0.62) * secondaryRing * 0.24;
   color += ringColor * (1.0 - alpha * 0.35);
   alpha = max(alpha, photonRing * 0.42 + secondaryRing * 0.18);
 
