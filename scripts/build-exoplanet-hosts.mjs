@@ -1,4 +1,5 @@
 import { mkdir, writeFile } from "node:fs/promises";
+import { canonicalHostKey } from "./exoplanet-host-key.mjs";
 
 const HOST_OUT_PATH = new URL("../public/data/exoplanet-hosts.json", import.meta.url);
 const PLANET_OUT_PATH = new URL("../public/data/exoplanets.json", import.meta.url);
@@ -31,7 +32,7 @@ select
   pl_rade,
   pl_bmasse
 from pscomppars
-where hostname is not null and pl_name is not null
+where hostname is not null and pl_name is not null and ra is not null and dec is not null
 order by hostname, pl_orbsmax, pl_orbper, pl_name
 `.trim().replace(/\s+/g, " ");
 
@@ -108,8 +109,10 @@ const hostRecords = hostCsv.rows.map(row => ({
   planetCount: numberOrNull(row[hostCsv.col.planet_count]),
 })).filter(record => record.name && record.ra !== null && record.dec !== null);
 
+const mappedHostKeys = new Set(hostRecords.map(record => canonicalHostKey(record.name)));
+
 const planetCsv = await archiveCsv(planetQuery);
-const planetRecords = planetCsv.rows.map(row => ({
+const rawPlanetRecords = planetCsv.rows.map(row => ({
   name: row[planetCsv.col.pl_name] ?? "",
   hostName: row[planetCsv.col.hostname] ?? "",
   semiMajorAU: numberOrNull(row[planetCsv.col.pl_orbsmax]),
@@ -117,6 +120,17 @@ const planetRecords = planetCsv.rows.map(row => ({
   radiusEarth: numberOrNull(row[planetCsv.col.pl_rade]),
   massEarth: numberOrNull(row[planetCsv.col.pl_bmasse]),
 })).filter(record => record.name && record.hostName);
+const planetRecords = rawPlanetRecords.filter(record => mappedHostKeys.has(canonicalHostKey(record.hostName)));
+const skippedPlanetCount = rawPlanetRecords.length - planetRecords.length;
+if (skippedPlanetCount > 0) {
+  console.warn(`Skipped ${skippedPlanetCount} exoplanet rows whose host stars do not have mappable RA/Dec coordinates.`);
+}
+
+const missingHostNames = [...new Set(planetRecords.map(record => record.hostName))]
+  .filter(hostName => !mappedHostKeys.has(canonicalHostKey(hostName)));
+if (missingHostNames.length > 0) {
+  throw new Error(`Exoplanet host coverage check failed for: ${missingHostNames.slice(0, 20).join(", ")}`);
+}
 
 await mkdir(new URL("../public/data/", import.meta.url), { recursive: true });
 await writeFile(HOST_OUT_PATH, `${JSON.stringify(hostRecords, null, 2)}\n`, "utf8");
