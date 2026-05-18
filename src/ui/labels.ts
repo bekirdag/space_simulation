@@ -24,7 +24,7 @@ const LABEL_EDGE_MARGIN = 24;
 const LABEL_NAV_MARGIN = 238;
 const LABEL_BOTTOM_MARGIN = 86;
 const LABEL_OUTSKIRT_GAP_PX = 24;
-const LABEL_MIN_OUTSKIRT_OFFSET_PX = 18;
+const LABEL_MIN_OUTSKIRT_OFFSET_PX = 34;
 const SOLAR_SYSTEM_LABEL_COLLAPSE_DISTANCE_AU = 250;
 // Near a direct 180-degree behind-camera alignment, every screen edge is arbitrary.
 const BEHIND_CAMERA_PIN_DEADZONE = 0.16;
@@ -198,11 +198,17 @@ function offsetLabelToObjectOutskirts(
     LABEL_MIN_OUTSKIRT_OFFSET_PX,
     dynamicMax,
   );
+  const halfLabelWidth = Math.max(0, labelWidth * 0.5);
+  const halfLabelHeight = Math.max(0, labelHeight * 0.5);
+  const halfLabelAlongDirection =
+    Math.abs(dirX) * halfLabelWidth + Math.abs(dirY) * halfLabelHeight;
   const bounds = viewportLabelBounds(cssW, cssH, labelWidth, labelHeight);
+  const labelCenterX = pos.x + dirX * (offset + halfLabelAlongDirection);
+  const labelCenterY = pos.y + dirY * (offset + halfLabelAlongDirection);
 
   return {
-    x: clamp(pos.x + dirX * offset, bounds.minX, bounds.maxX),
-    y: clamp(pos.y + dirY * offset, bounds.minY, bounds.maxY),
+    x: clamp(labelCenterX - halfLabelWidth, bounds.minX, bounds.maxX),
+    y: clamp(labelCenterY - halfLabelHeight, bounds.minY, bounds.maxY),
   };
 }
 
