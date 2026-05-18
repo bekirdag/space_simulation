@@ -151,8 +151,9 @@ const MAP_DOUBLE_CLICK_TRAVEL_SECONDS = 2.5;
 // Active substep size (yr) — changed via Settings panel.
 // Larger steps = faster simulation but reduced moon accuracy.
 let simSubstepYr = MAX_SUBSTEP_YR; // default: 15 min (precise)
-// With angle-based trail recording, startup years determines arc coverage for outer planets.
-// 50 yr: Saturn ~1.7 orbits, Uranus ~0.6 orbit, Neptune ~0.3 orbit; adds ~0.6s to load.
+// Startup years determines available history for slow outer bodies; TrailSystem
+// caps each body's retained path to at most one current orbital circumference.
+// 50 yr: Saturn can fill one capped orbit, Uranus ~0.6 orbit, Neptune ~0.3 orbit.
 const STARTUP_TRAIL_YEARS = 50;
 const STARTUP_TRAIL_STEP_YR = 1 / 365.25;
 const STARTUP_TRAIL_STEPS = Math.round(STARTUP_TRAIL_YEARS / STARTUP_TRAIL_STEP_YR);
