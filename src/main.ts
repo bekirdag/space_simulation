@@ -148,6 +148,10 @@ const CAMERA_NEAR_AU = 1e-8; // keep in sync with src/scene/camera.ts
 const CAMERA_FAR_AU = 50_000_000; // keep in sync with src/scene/camera.ts
 const MAP_WHEEL_ZOOM_STEPS = 10;
 const MAP_DOUBLE_CLICK_TRAVEL_SECONDS = 2.5;
+const MAP_TARGET_LOCK_BOX_PX = 10;
+const MAP_TARGET_LOCK_HALF_PX = MAP_TARGET_LOCK_BOX_PX / 2;
+const MAP_TARGET_LOCK_MIN_RADIUS_PX = 2.5;
+const MAP_TARGET_LOCK_MAX_RANK_RADIUS_PX = 260;
 // Active substep size (yr) — changed via Settings panel.
 // Larger steps = faster simulation but reduced moon accuracy.
 let simSubstepYr = MAX_SUBSTEP_YR; // default: 15 min (precise)
@@ -1932,12 +1936,12 @@ async function main(): Promise<void> {
   }
 
   interface MapObjectHit {
-    score: number;
+    screenDistance: number;
     cameraDistance: number;
+    apparentRadiusPx: number;
+    edgeDistancePx: number;
     select: (mode: MapObjectClickMode) => void;
   }
-
-  const MAP_HIT_CLICK_PRIORITY_PX = 8;
 
   function projectMapPoint(x: number, y: number, z: number): ProjectedMapPoint | null {
     if (!lastViewProj) return null;
@@ -1962,16 +1966,56 @@ async function main(): Promise<void> {
     return Math.hypot(x - eye[0], y - eye[1], z - eye[2]);
   }
 
-  function bodyHitThreshold(body: Body, projected: ProjectedMapPoint): number {
+  function projectedRadiusPx(radiusAU: number, projected: ProjectedMapPoint): number {
     const focalY = 1 / Math.tan(CAMERA_FOV_Y / 2);
-    const radiusPx = body.radius * focalY / Math.max(projected.w, 1e-9) * window.innerHeight * 0.5;
-    return clamp(radiusPx * 1.35 + 8, 12, 52);
+    return Math.max(0, radiusAU) * focalY / Math.max(projected.w, 1e-9) * window.innerHeight * 0.5;
+  }
+
+  function bodyApparentRadiusPx(body: Body, projected: ProjectedMapPoint): number {
+    return Math.max(projectedRadiusPx(body.radius, projected), MAP_TARGET_LOCK_MIN_RADIUS_PX);
+  }
+
+  function starApparentRadiusPx(radiusAU: number | undefined, projected: ProjectedMapPoint, display = 0.20): number {
+    const physical = projectedRadiusPx(radiusAU ?? SOLAR_RADIUS_AU, projected);
+    const marker = clamp(display * 10 + 4, MAP_TARGET_LOCK_MIN_RADIUS_PX, 16);
+    return Math.max(physical, marker);
+  }
+
+  function galaxyApparentRadiusPx(sizeMult: number, alpha: number, cameraDistance: number): number {
+    const catalogRadius = MAP_TARGET_LOCK_MIN_RADIUS_PX * Math.max(sizeMult * 2.5, 0.8);
+    const t = clamp((900 - cameraDistance) / (900 - GENERIC_GALAXY_CLOSE_FOCUS_AU), 0, 1);
+    const closeFocus = t * t * (3 - 2 * t);
+    const closeRadius = closeFocus * window.innerHeight * 0.25;
+    const alphaLift = clamp(alpha * 6, 0, 8);
+    return Math.max(catalogRadius + alphaLift, closeRadius, MAP_TARGET_LOCK_MIN_RADIUS_PX);
+  }
+
+  function hitAreaEdgeDistancePx(cx: number, cy: number, projected: ProjectedMapPoint, radiusPx: number): number {
+    const dx = Math.max(Math.abs(cx - projected.x) - MAP_TARGET_LOCK_HALF_PX, 0);
+    const dy = Math.max(Math.abs(cy - projected.y) - MAP_TARGET_LOCK_HALF_PX, 0);
+    return Math.max(0, Math.hypot(dx, dy) - Math.max(radiusPx, 0));
+  }
+
+  function targetLockAreaTouches(cx: number, cy: number, projected: ProjectedMapPoint, radiusPx: number): boolean {
+    return hitAreaEdgeDistancePx(cx, cy, projected, radiusPx) <= 0;
+  }
+
+  function mapObjectHitRank(hit: MapObjectHit): number {
+    const distanceScore = Math.log10(Math.max(hit.cameraDistance, CAMERA_NEAR_AU));
+    const sizeScore = Math.log2(clamp(hit.apparentRadiusPx, 1, MAP_TARGET_LOCK_MAX_RANK_RADIUS_PX) + 1);
+    const centerPenalty = Math.min(
+      hit.screenDistance / Math.max(hit.apparentRadiusPx + MAP_TARGET_LOCK_HALF_PX, 1),
+      2,
+    ) * 0.18;
+    return distanceScore - sizeScore * 0.78 + hit.edgeDistancePx * 0.05 + centerPenalty;
   }
 
   function compareMapObjectHits(a: MapObjectHit, b: MapObjectHit): number {
-    const scoreDelta = a.score - b.score;
-    if (Math.abs(scoreDelta) > MAP_HIT_CLICK_PRIORITY_PX) return scoreDelta;
-    return (a.cameraDistance - b.cameraDistance) || scoreDelta;
+    const rankDelta = mapObjectHitRank(a) - mapObjectHitRank(b);
+    if (Math.abs(rankDelta) > 0.01) return rankDelta;
+    return (b.apparentRadiusPx - a.apparentRadiusPx) ||
+      (a.cameraDistance - b.cameraDistance) ||
+      (a.screenDistance - b.screenDistance);
   }
 
   function closestMapObjectHit(hits: Array<MapObjectHit | null>): MapObjectHit | null {
@@ -2064,11 +2108,14 @@ async function main(): Promise<void> {
       const projected = projectMapPoint(body.x, body.y, body.z);
       if (!projected) continue;
       const dist = screenDistance(cx, cy, projected);
-      const threshold = bodyHitThreshold(body, projected);
-      if (dist > threshold) continue;
+      const apparentRadiusPx = bodyApparentRadiusPx(body, projected);
+      const edgeDistancePx = hitAreaEdgeDistancePx(cx, cy, projected, apparentRadiusPx);
+      if (!targetLockAreaTouches(cx, cy, projected, apparentRadiusPx)) continue;
       addCandidate({
-        score: dist - 10,
+        screenDistance: dist,
         cameraDistance: cameraDistanceTo(body.x, body.y, body.z),
+        apparentRadiusPx,
+        edgeDistancePx,
         select: (mode) => {
           if (mode === "double") nav.travelToClose(body.name);
           else nav.focusBodyForWheelZoom(body.name, MAP_WHEEL_ZOOM_STEPS);
@@ -2080,11 +2127,19 @@ async function main(): Promise<void> {
       const projected = projectMapPoint(star.x, star.y, star.z);
       if (!projected) continue;
       const dist = screenDistance(cx, cy, projected);
-      if (dist > 14) continue;
+      const apparentRadiusPx = starApparentRadiusPx(
+        star.radiusAU,
+        projected,
+        starDisplayFromMagnitude(star.magnitude ?? null, 0.20),
+      );
+      const edgeDistancePx = hitAreaEdgeDistancePx(cx, cy, projected, apparentRadiusPx);
+      if (!targetLockAreaTouches(cx, cy, projected, apparentRadiusPx)) continue;
       const hit = nearbyStarSearchResult(star);
       addCandidate({
-        score: dist - 3,
+        screenDistance: dist,
         cameraDistance: cameraDistanceTo(star.x, star.y, star.z),
+        apparentRadiusPx,
+        edgeDistancePx,
         select: (mode) => selectMapCatalogObject(hit, mode, () => {
           setExoplanetBodies(star.name, [star.x, star.y, star.z]);
         }),
@@ -2095,11 +2150,15 @@ async function main(): Promise<void> {
       const projected = projectMapPoint(star.x, star.y, star.z);
       if (!projected) continue;
       const dist = screenDistance(cx, cy, projected);
-      if (dist > 13) continue;
+      const apparentRadiusPx = starApparentRadiusPx(star.size, projected, star.alpha);
+      const edgeDistancePx = hitAreaEdgeDistancePx(cx, cy, projected, apparentRadiusPx);
+      if (!targetLockAreaTouches(cx, cy, projected, apparentRadiusPx)) continue;
       const hit = catalogHitFromStar(star);
       addCandidate({
-        score: dist,
+        screenDistance: dist,
         cameraDistance: cameraDistanceTo(star.x, star.y, star.z),
+        apparentRadiusPx,
+        edgeDistancePx,
         select: (mode) => selectMapCatalogObject(hit, mode, () => {
           setExoplanetBodies(star.name, [star.x, star.y, star.z]);
         }),
@@ -2114,8 +2173,9 @@ async function main(): Promise<void> {
       const projected = projectMapPoint(x, y, z);
       if (!projected) continue;
       const dist = screenDistance(cx, cy, projected);
-      const threshold = clamp(visibleStarBuffer[o + 7]! * 8 + 5, 6, 13);
-      if (dist > threshold) continue;
+      const apparentRadiusPx = starApparentRadiusPx(visibleStarBuffer[o + 3]!, projected, visibleStarBuffer[o + 7]!);
+      const edgeDistancePx = hitAreaEdgeDistancePx(cx, cy, projected, apparentRadiusPx);
+      if (!targetLockAreaTouches(cx, cy, projected, apparentRadiusPx)) continue;
       const distancePc = Math.hypot(x, y, z) / AU_PER_PARSEC;
       const distanceLy = distancePc * LIGHT_YEARS_PER_PARSEC;
       const hit: StarSearchResult = {
@@ -2137,8 +2197,10 @@ async function main(): Promise<void> {
         color: hit.color,
       });
       const candidate: MapObjectHit = {
-        score: dist + 6,
+        screenDistance: dist,
         cameraDistance: cameraDistanceTo(x, y, z),
+        apparentRadiusPx,
+        edgeDistancePx,
         select: (mode) => selectMapCatalogObject(hit, mode, () => setExoplanetBodies(null)),
       };
       if (!bestVisibleStar || compareMapObjectHits(candidate, bestVisibleStar) < 0) {
@@ -2156,8 +2218,10 @@ async function main(): Promise<void> {
         const projected = projectMapPoint(x, y, z);
         if (!projected) continue;
         const dist = screenDistance(cx, cy, projected);
-        const threshold = clamp(galaxyBuffer[o + 3]! * 7 + galaxyBuffer[o + 7]! * 5 + 7, 10, 28);
-        if (dist > threshold) continue;
+        const cameraDistance = cameraDistanceTo(x, y, z);
+        const apparentRadiusPx = galaxyApparentRadiusPx(galaxyBuffer[o + 3]!, galaxyBuffer[o + 7]!, cameraDistance);
+        const edgeDistancePx = hitAreaEdgeDistancePx(cx, cy, projected, apparentRadiusPx);
+        if (!targetLockAreaTouches(cx, cy, projected, apparentRadiusPx)) continue;
         const named = galaxyNames.find(g => g.index === i);
         const label = LOCAL_GROUP_GALAXY_LABELS.find(item => item.name === named?.name);
         const hit: StarSearchResult = {
@@ -2170,8 +2234,10 @@ async function main(): Promise<void> {
           objectType: "galaxy",
         };
         const candidate: MapObjectHit = {
-          score: dist + 4,
-          cameraDistance: cameraDistanceTo(x, y, z),
+          screenDistance: dist,
+          cameraDistance,
+          apparentRadiusPx,
+          edgeDistancePx,
           select: (mode) => selectMapCatalogObject(hit, mode, () => setExoplanetBodies(null)),
         };
         if (!bestGalaxy || compareMapObjectHits(candidate, bestGalaxy) < 0) {
@@ -2186,11 +2252,15 @@ async function main(): Promise<void> {
       const projected = projectMapPoint(neb.x, neb.y, neb.z);
       if (!projected) continue;
       const dist = screenDistance(cx, cy, projected);
-      if (dist > 18) continue;
+      const apparentRadiusPx = Math.max(projectedRadiusPx(neb.radiusAU, projected), 8);
+      const edgeDistancePx = hitAreaEdgeDistancePx(cx, cy, projected, apparentRadiusPx);
+      if (!targetLockAreaTouches(cx, cy, projected, apparentRadiusPx)) continue;
       const hit = nebulaSearchResult(neb);
       const candidate: MapObjectHit = {
-        score: dist + 5,
+        screenDistance: dist,
         cameraDistance: cameraDistanceTo(neb.x, neb.y, neb.z),
+        apparentRadiusPx,
+        edgeDistancePx,
         select: (mode) => selectMapCatalogObject(hit, mode, () => setExoplanetBodies(null)),
       };
       if (!bestNebula || compareMapObjectHits(candidate, bestNebula) < 0) {
@@ -2243,11 +2313,17 @@ async function main(): Promise<void> {
     const clickGap = Math.hypot(e.clientX - lastClickAt.x, e.clientY - lastClickAt.y);
     const isDbl = now - lastClickMs < 300 && clickGap < 12;
 
-    const labelBody = labels.findBodyAtScreen(e.clientX, e.clientY);
+    const labelBody = labels.findBodyAtScreen(e.clientX, e.clientY, MAP_TARGET_LOCK_HALF_PX);
+    const labelProjected = labelBody ? projectMapPoint(labelBody.x, labelBody.y, labelBody.z) : null;
+    const labelApparentRadiusPx = labelBody && labelProjected ? bodyApparentRadiusPx(labelBody, labelProjected) : 0;
     const labelHit = labelBody
+      && labelProjected
+      && targetLockAreaTouches(e.clientX, e.clientY, labelProjected, labelApparentRadiusPx)
       ? {
-          score: -8,
+          screenDistance: screenDistance(e.clientX, e.clientY, labelProjected),
           cameraDistance: cameraDistanceTo(labelBody.x, labelBody.y, labelBody.z),
+          apparentRadiusPx: labelApparentRadiusPx,
+          edgeDistancePx: hitAreaEdgeDistancePx(e.clientX, e.clientY, labelProjected, labelApparentRadiusPx),
           select: (mode: MapObjectClickMode) => {
             if (mode === "double") nav.travelToClose(labelBody.name);
             else nav.focusBodyForWheelZoom(labelBody.name, MAP_WHEEL_ZOOM_STEPS);
