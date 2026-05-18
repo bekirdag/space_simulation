@@ -1,6 +1,6 @@
 import { initGPU } from "./gpu/device";
 import { Renderer, type BlackHoleModelAsset, type SelectedStarModel } from "./gpu/renderer";
-import blackHoleModelUrl from "./models/blackhole.glb?url";
+import blackHoleModelUrl from "./models/blackhole-2.glb?url";
 import { Camera, type CameraUniforms } from "./scene/camera";
 import { HUD } from "./ui/hud";
 import { ScaleBar } from "./ui/scale-bar";
@@ -114,7 +114,7 @@ const SGR_A_SHADOW_RADIUS_AU = SGR_A_EVENT_HORIZON_RADIUS_AU * 2.6;
 const SGR_A_DEFAULT_OBSERVER_DISTANCE_RS = 30;
 const SGR_A_BLACK_HOLE_FOCUS_AU =
   SGR_A_EVENT_HORIZON_RADIUS_AU * SGR_A_DEFAULT_OBSERVER_DISTANCE_RS;
-const SGR_A_MODEL_RADIUS_AU = SGR_A_SHADOW_RADIUS_AU;
+const SGR_A_MODEL_RADIUS_AU = SGR_A_EVENT_HORIZON_RADIUS_AU;
 const SGR_A_BLACK_HOLE_MODEL: BlackHoleModelAsset = {
   id: "blackhole:sgr-a-model",
   assetUrl: blackHoleModelUrl,
