@@ -1063,13 +1063,16 @@ async function main(): Promise<void> {
   const infoCloseBtn    = document.getElementById("info-close")!;
   const navAboutBtn     = document.getElementById("nav-about-btn")!;
   const navLimitsBtn    = document.getElementById("nav-limits-btn")!;
+  const navCreditsBtn   = document.getElementById("nav-credits-btn")!;
   const infoAboutPage   = document.getElementById("info-about")!;
   const infoLimitsPage  = document.getElementById("info-limits")!;
+  const infoCreditsPage = document.getElementById("info-credits")!;
 
   function openSettings()  { settingsModal.classList.add("open"); }
   function closeSettings() { settingsModal.classList.remove("open"); }
-  function openInfo(page: "about" | "limits") {
+  function openInfo(page: "about" | "credits" | "limits") {
     infoAboutPage.classList.toggle("active", page === "about");
+    infoCreditsPage.classList.toggle("active", page === "credits");
     infoLimitsPage.classList.toggle("active", page === "limits");
     infoModal.classList.add("open");
   }
@@ -1077,6 +1080,7 @@ async function main(): Promise<void> {
 
   navSettingsBtn.addEventListener("click",  openSettings);
   navAboutBtn.addEventListener("click", () => openInfo("about"));
+  navCreditsBtn.addEventListener("click", () => openInfo("credits"));
   navLimitsBtn.addEventListener("click", () => openInfo("limits"));
   settingsCloseBtn.addEventListener("click", closeSettings);
   infoCloseBtn.addEventListener("click", closeInfo);

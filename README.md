@@ -172,6 +172,20 @@ astrophysical solver.
   disk positions. It is still based on a 2D total line-of-sight product,
   not calibrated 3D extinction distances.
 
+## Credits
+
+- Black-hole WebGPU raytracing reference:
+  [Raytracing a Black Hole with WebGPU](https://threejsroadmap.com/blog/raytracing-a-black-hole-with-webgpu)
+  by Dan Greenheck.
+- Earth 3D model by [Matteo Pascale](https://www.artstation.com/matteopascale).
+- Solar-system state vectors: NASA/JPL Horizons.
+- Planet model assets where available: NASA Science 3D Resources.
+- Exoplanet host-star data: NASA Exoplanet Archive.
+- Constellation source data: NASA SVS Deep Star Maps.
+- Galactic dust source map: NASA/GSFC LAMBDA Meisner-Finkbeiner 2015 E(B-V).
+- Object summaries and images: Wikipedia and Wikimedia Commons through the
+  local backend cache.
+
 ## Culling And LOD
 
 - Frustum culling stays in WGSL shaders so off-screen billboards can be skipped

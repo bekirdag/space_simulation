@@ -1428,7 +1428,7 @@
         background: rgba(0, 0, 0, 0.80) !important;
       }
 
-      /* ── About / limits modal ── */
+      /* ── About / credits / limits modal ── */
       #info-modal {
         display: none;
         position: fixed;
@@ -2132,6 +2132,7 @@
               <div class="nav-section-block nav-utility-section">
                 <div class="nav-section-title">Info</div>
                 <button id="nav-limits-btn" class="nav-footer-btn">Limits &amp; Assumptions</button>
+                <button id="nav-credits-btn" class="nav-footer-btn">Credits</button>
                 <button id="nav-about-btn" class="nav-footer-btn">About</button>
               </div>
             </div>
@@ -2272,7 +2273,7 @@
       </div>
     </div>
 
-    <!-- About / limits modal -->
+    <!-- About / credits / limits modal -->
     <div id="info-modal">
       <div id="info-panel" role="dialog" aria-modal="true" aria-labelledby="info-heading">
         <div class="info-header">
@@ -2310,9 +2311,34 @@
             <li><a href="https://bekirdag.com" target="_blank" rel="noopener">bekirdag.com</a></li>
           </ul>
 
-          <h3>Model Credits</h3>
+        </section>
+
+        <section id="info-credits" class="info-page">
+          <div class="info-kicker">Credits</div>
+          <h2>Credits</h2>
+          <p>
+            CosmosMap combines original implementation work with public scientific data,
+            open educational resources, and credited visual references.
+          </p>
+
+          <h3>Visual And Simulation References</h3>
+          <ul>
+            <li>Black-hole WebGPU raytracing reference: <a href="https://threejsroadmap.com/blog/raytracing-a-black-hole-with-webgpu" target="_blank" rel="noopener">Raytracing a Black Hole with WebGPU</a> by Dan Greenheck.</li>
+          </ul>
+
+          <h3>3D Model Credits</h3>
           <ul>
             <li>Earth 3D model by <a href="https://www.artstation.com/matteopascale" target="_blank" rel="noopener">Matteo Pascale</a>.</li>
+          </ul>
+
+          <h3>Data And Public Sources</h3>
+          <ul>
+            <li>Solar-system state vectors: NASA/JPL Horizons.</li>
+            <li>Planet model assets where available: NASA Science 3D Resources.</li>
+            <li>Exoplanet host stars: NASA Exoplanet Archive.</li>
+            <li>Constellation source data: NASA SVS Deep Star Maps.</li>
+            <li>Galactic dust source map: NASA/GSFC LAMBDA Meisner-Finkbeiner 2015 E(B-V).</li>
+            <li>Object summaries and images: Wikipedia and Wikimedia Commons through the local backend cache.</li>
           </ul>
         </section>
 
