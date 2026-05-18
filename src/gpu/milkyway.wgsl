@@ -12,6 +12,8 @@ struct Camera {
   rightAndMNR: vec4<f32>,
   upAndFocal:  vec4<f32>,
   eyeAndFlags: vec4<f32>,
+  screenAndTarget: vec4<f32>,
+  eyeOffset:       vec4<f32>,
 };
 
 struct Star {
@@ -25,6 +27,8 @@ struct Star {
 
 const CLOSE_STAR_SPHERE_LOD_START_PX: f32 = 2.25;
 const CLOSE_STAR_SPHERE_LOD_FULL_PX:  f32 = 4.50;
+const CAMERA_NEAR: f32 = 1e-8;
+const CAMERA_FAR:  f32 = 50000000.0;
 const SOLAR_RADIUS_AU: f32 = 0.00465047;
 
 struct VertexOut {
@@ -71,6 +75,42 @@ fn bright_spectral_color(color: vec3<f32>, coolWeight: f32) -> vec3<f32> {
   return color * mix(1.06, 1.24, coolWeight);
 }
 
+fn camera_back() -> vec3<f32> {
+  return normalize(cross(camera.rightAndMNR.xyz, camera.upAndFocal.xyz));
+}
+
+fn camera_relative(pos: vec3<f32>) -> vec3<f32> {
+  let rel = (pos - camera.screenAndTarget.yzw) - camera.eyeOffset.xyz;
+  let back = camera_back();
+  return vec3<f32>(
+    dot(rel, camera.rightAndMNR.xyz),
+    dot(rel, camera.upAndFocal.xyz),
+    dot(rel, back),
+  );
+}
+
+fn project_world(pos: vec3<f32>) -> vec4<f32> {
+  let v = camera_relative(pos);
+  let nf = 1.0 / (CAMERA_NEAR - CAMERA_FAR);
+  let aspect = max(camera.screenAndTarget.x, 0.000001);
+  let focalY = camera.upAndFocal.w;
+  return vec4<f32>(
+    v.x * focalY / aspect,
+    v.y * focalY,
+    CAMERA_FAR * nf * v.z + CAMERA_FAR * CAMERA_NEAR * nf,
+    -v.z,
+  );
+}
+
+fn camera_distance(center: vec3<f32>) -> f32 {
+  return length(camera_relative(center));
+}
+
+fn clip_billboard_offset(uv: vec2<f32>, radiusNdcY: f32, clipW: f32) -> vec4<f32> {
+  let aspect = max(camera.screenAndTarget.x, 0.000001);
+  return vec4<f32>(uv.x * radiusNdcY / aspect * clipW, uv.y * radiusNdcY * clipW, 0.0, 0.0);
+}
+
 @vertex
 fn vs_main(
   @builtin(vertex_index)   vi:  u32,
@@ -79,7 +119,7 @@ fn vs_main(
   let star   = stars[idx];
   let uv     = quad[vi];
   let center = star.pos_size.xyz;
-  let clip_c = camera.viewProj * vec4(center, 1.0);
+  let clip_c = project_world(center);
 
   var out: VertexOut;
   out.uv    = uv;
@@ -87,7 +127,7 @@ fn vs_main(
   let actual = lodFade.z > 0.5;
   out.effects = clamp(lodFade.z, 0.0, 1.0);
   out.pixel_radius = 0.0;
-  let cameraDistanceAU = length(center - camera.eyeAndFlags.xyz);
+  let cameraDistanceAU = camera_distance(center);
   let radiusAU = max(star.pos_size.w, SOLAR_RADIUS_AU * 0.08);
   out.brightness = select(1.0, apparent_mw_brightness(cameraDistanceAU, out.color, radiusAU, star.color_alpha.w), actual);
   out.alpha = star.color_alpha.w * lodFade.x * select(1.0, clamp(0.35 + out.brightness, 0.25, 2.1), actual);
@@ -128,14 +168,10 @@ fn vs_main(
   }
 
   // Fixed-size billboard expanded from the projected center in clip space.
-  // This keeps small but inspectable Milky Way stars round instead of letting
-  // large galactic coordinates quantize the quad corners.
-  let worldRadius = pxRadius * clip_c.w / focalY;
-  let clipRight = camera.viewProj * vec4(camera.rightAndMNR.xyz * worldRadius, 0.0);
-  let clipUp = camera.viewProj * vec4(camera.upAndFocal.xyz * worldRadius, 0.0);
-  let clipOffset = uv.x * clipRight + uv.y * clipUp;
-
-  out.clip_pos = clip_c + vec4(clipOffset.xy, 0.0, 0.0);
+  // Keep the math target-relative like the catalog-star shader. Absolute
+  // viewProj projection loses precision at galaxy scale and makes star HDR
+  // brightness/culling flicker while orbiting or panning.
+  out.clip_pos = clip_c + clip_billboard_offset(uv, pxRadius, clip_c.w);
   return out;
 }
 

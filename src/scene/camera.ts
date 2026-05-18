@@ -37,6 +37,7 @@ interface CameraTravelAnimation {
 interface WheelZoomGoal {
   distance: number;
   remainingSteps: number;
+  stepDistance: number;
   point?: Vec3;
 }
 
@@ -306,10 +307,11 @@ export class Camera {
         if (Number.isFinite(currentDistance) && currentDistance > MIN_DISTANCE) {
           let nextDistance = currentDistance * (zoomingIn ? 0.9 : 1.1);
           if (zoomingIn && currentDistance > pointGoal.distance * 1.001) {
-            const steps = Math.max(1, pointGoal.remainingSteps);
-            const factor = clamp(Math.pow(pointGoal.distance / currentDistance, 1 / steps), 0.02, 0.995);
-            nextDistance = currentDistance * factor;
-            pointGoal.remainingSteps = steps - 1;
+            const stepDistance = Number.isFinite(pointGoal.stepDistance) && pointGoal.stepDistance > 0
+              ? pointGoal.stepDistance
+              : (currentDistance - pointGoal.distance) / Math.max(1, pointGoal.remainingSteps);
+            nextDistance = Math.max(pointGoal.distance, currentDistance - stepDistance);
+            pointGoal.remainingSteps -= 1;
           }
           if (zoomingIn && (pointGoal.remainingSteps <= 0 || nextDistance <= pointGoal.distance * 1.001)) {
             nextDistance = pointGoal.distance;
@@ -332,13 +334,15 @@ export class Camera {
       const activeGoal = zoomingIn && this.wheelZoomGoal && oldDist > this.wheelZoomGoal.distance * 1.001
         ? this.wheelZoomGoal
         : null;
-      let factor = zoomingIn ? 0.9 : 1.1;
+      let nextDistance = oldDist * (zoomingIn ? 0.9 : 1.1);
       if (activeGoal) {
-        const steps = Math.max(1, activeGoal.remainingSteps);
-        factor = clamp(Math.pow(activeGoal.distance / oldDist, 1 / steps), 0.02, 0.995);
-        activeGoal.remainingSteps = steps - 1;
+        const stepDistance = Number.isFinite(activeGoal.stepDistance) && activeGoal.stepDistance > 0
+          ? activeGoal.stepDistance
+          : (oldDist - activeGoal.distance) / Math.max(1, activeGoal.remainingSteps);
+        nextDistance = Math.max(activeGoal.distance, oldDist - stepDistance);
+        activeGoal.remainingSteps -= 1;
       }
-      this.distance  = clampDistance(oldDist * factor);
+      this.distance  = clampDistance(nextDistance);
       if (activeGoal && (activeGoal.remainingSteps <= 0 || this.distance <= activeGoal.distance * 1.001)) {
         this.distance = activeGoal.distance;
         this.wheelZoomGoal = null;
@@ -379,9 +383,16 @@ export class Camera {
       this.wheelZoomGoal = null;
       return;
     }
+    const remainingSteps = Math.max(1, Math.round(steps));
+    const stepDistance = (referenceDistance - targetDistance) / remainingSteps;
+    if (!Number.isFinite(stepDistance) || stepDistance <= 0) {
+      this.wheelZoomGoal = null;
+      return;
+    }
     this.wheelZoomGoal = {
       distance: targetDistance,
-      remainingSteps: Math.max(1, Math.round(steps)),
+      remainingSteps,
+      stepDistance,
     };
   }
 
@@ -391,13 +402,22 @@ export class Camera {
 
   setWheelZoomPointGoal(x: number, y: number, z: number, closeDistance: number, steps = 10): void {
     const targetDistance = clampDistance(closeDistance);
-    if (!Number.isFinite(targetDistance)) {
+    const currentEye = this._uniforms?.eye ?? this.currentEye();
+    const referenceDistance = Math.hypot(currentEye[0] - x, currentEye[1] - y, currentEye[2] - z);
+    if (!Number.isFinite(targetDistance) || !Number.isFinite(referenceDistance) || referenceDistance <= targetDistance) {
+      this.wheelZoomGoal = null;
+      return;
+    }
+    const remainingSteps = Math.max(1, Math.round(steps));
+    const stepDistance = (referenceDistance - targetDistance) / remainingSteps;
+    if (!Number.isFinite(stepDistance) || stepDistance <= 0) {
       this.wheelZoomGoal = null;
       return;
     }
     this.wheelZoomGoal = {
       distance: targetDistance,
-      remainingSteps: Math.max(1, Math.round(steps)),
+      remainingSteps,
+      stepDistance,
       point: [x, y, z],
     };
   }
