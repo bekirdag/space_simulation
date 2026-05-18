@@ -54,8 +54,8 @@ const PROCEDURAL_FADE_START_RS: f32 = 1200.0;
 const PROCEDURAL_FADE_END_RS: f32 = 6500.0;
 const LOD_FADE_IN_START_RS: f32 = 850.0;
 const LOD_FADE_IN_END_RS: f32 = 6000.0;
-const LOD_FADE_OUT_START_RS: f32 = 4000000.0;
-const LOD_FADE_OUT_END_RS: f32 = 14000000.0;
+const LOD_FADE_OUT_START_RS: f32 = 260000.0;
+const LOD_FADE_OUT_END_RS: f32 = 760000.0;
 
 @group(0) @binding(0) var<uniform> camera:    Camera;
 @group(0) @binding(1) var<uniform> blackHole: BlackHole;
