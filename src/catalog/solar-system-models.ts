@@ -49,7 +49,7 @@ export const SOLAR_SYSTEM_MODEL_ASSETS: readonly SolarSystemModelAsset[] = [
     format: "glb",
     source: MATTEO_PASCALE,
     sourceUrl: "https://www.artstation.com/matteopascale",
-    assetUrl: "/api/model-assets/solar-earth?v=matteo-pascale",
+    assetUrl: "/api/model-assets/solar-earth?v=earth-glb-50c6352f",
     fallbackColor: [0.36, 0.56, 0.96],
   },
   {
