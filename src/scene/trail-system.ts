@@ -2,7 +2,7 @@ import { type Body } from "../physics/body";
 import { BodyType } from "../physics/constants";
 import { MOON_PARENT } from "../physics/moons";
 
-const TRAIL_LEN        = 15_000;
+const TRAIL_LEN        = 4_096;
 const POINTS_PER_ORBIT = 3_000;
 const ANGLE_STEP       = (2 * Math.PI) / POINTS_PER_ORBIT;
 const TRAIL_CIRCUMFERENCE_MARGIN = 1.02;
@@ -34,6 +34,7 @@ export class TrailSystem {
   // Pre-allocated CPU vertex cache: one fixed-size Float32Array per body.
   // Eliminates the ~15 MB / frame of Float32Array allocations.
   private vcache = new Map<number, Float32Array>();
+  private disabledForLowMemory = false;
 
   private parentForBody(body: Body, bodyByName: ReadonlyMap<string, Body>): Body | null {
     const parentName = MOON_PARENT[body.name] ?? (
@@ -83,6 +84,7 @@ export class TrailSystem {
   }
 
   record(bodies: Body[]): void {
+    if (this.disabledForLowMemory) return;
     const bodyByName = new Map(bodies.map(body => [body.name, body]));
 
     for (const b of bodies) {
@@ -98,13 +100,27 @@ export class TrailSystem {
       }
 
       if (!this.positions.has(b.id)) {
-        this.positions.set(b.id, new Float32Array(TRAIL_LEN * COORDS));
-        this.segments.set(b.id, new Float32Array(TRAIL_LEN));
+        let positions: Float32Array;
+        let segments: Float32Array;
+        let cache: Float32Array;
+        try {
+          positions = new Float32Array(TRAIL_LEN * COORDS);
+          segments = new Float32Array(TRAIL_LEN);
+          cache = new Float32Array(TRAIL_LEN * TRAIL_VTXFLOATS);
+        } catch (error) {
+          if (!(error instanceof RangeError)) throw error;
+          this.clear();
+          this.disabledForLowMemory = true;
+          console.info("Orbital trails disabled because the browser could not allocate the trail cache.");
+          return;
+        }
+        this.positions.set(b.id, positions);
+        this.segments.set(b.id, segments);
         this.heads.set(b.id, 0);
         this.counts.set(b.id, 0);
         this.pathLens.set(b.id, 0);
         // Pre-allocate vertex cache at max size — done once, never reallocated.
-        this.vcache.set(b.id, new Float32Array(TRAIL_LEN * TRAIL_VTXFLOATS));
+        this.vcache.set(b.id, cache);
       }
 
       this.colors.set(b.id, b.color);
@@ -189,5 +205,6 @@ export class TrailSystem {
     this.lastPos.clear();
     this.dirty.clear();
     this.vcache.clear();
+    this.disabledForLowMemory = false;
   }
 }

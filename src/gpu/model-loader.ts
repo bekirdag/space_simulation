@@ -541,16 +541,16 @@ export function parseStlMesh(buffer: ArrayBuffer): ParsedMilkyWayMesh {
   };
 }
 
-export function createUvSphereMesh(latitudeBands = 64, longitudeBands = 128): ParsedMilkyWayMesh {
+export function createUvSphereMesh(latitudeBands = 24, longitudeBands = 48): ParsedMilkyWayMesh {
   const latBands = clampBandCount(
     latitudeBands,
-    64,
+    24,
     UV_SPHERE_MIN_LAT_BANDS,
     UV_SPHERE_MAX_LAT_BANDS,
   );
   const lonBands = clampBandCount(
     longitudeBands,
-    128,
+    48,
     UV_SPHERE_MIN_LON_BANDS,
     UV_SPHERE_MAX_LON_BANDS,
   );
@@ -604,7 +604,16 @@ export function createUvSphereMesh(latitudeBands = 64, longitudeBands = 128): Pa
     vertices = buildVertices(latBands, lonBands);
   } catch (error) {
     if (!(error instanceof RangeError)) throw error;
-    vertices = buildVertices(UV_SPHERE_FALLBACK_LAT_BANDS, UV_SPHERE_FALLBACK_LON_BANDS);
+    try {
+      vertices = buildVertices(UV_SPHERE_FALLBACK_LAT_BANDS, UV_SPHERE_FALLBACK_LON_BANDS);
+    } catch (fallbackError) {
+      if (!(fallbackError instanceof RangeError)) throw fallbackError;
+      vertices = new Float32Array([
+        0, 1, 0, 0, 1, 0, 0.5, 0, 1, 1, 1, 1,
+        -1, -1, 0, -1, -1, 0, 0, 1, 1, 1, 1, 1,
+        1, -1, 0, 1, -1, 0, 1, 1, 1, 1, 1, 1,
+      ]);
+    }
   }
   const vertexCount = vertices.length / MILKY_WAY_MODEL_VERTEX_FLOATS;
   const triangleCount = vertexCount / 3;

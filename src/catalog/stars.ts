@@ -2,6 +2,7 @@ import { classifyStarModelType, type StarModelTypeId } from "./star-types";
 
 export const STAR_FLOATS = 8;
 export const DEFAULT_VISIBLE_STAR_COUNT = 100_000;
+const FALLBACK_VISIBLE_STAR_COUNT = 12_000;
 export const AU_PER_PARSEC = 80;
 export const SOLAR_RADIUS_AU = 0.00465047;
 
@@ -133,6 +134,19 @@ function mulberry32(seed: number): () => number {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
+}
+
+function allocateStarBuffer(requestedCount: number): { data: StarBuffer; count: number } {
+  let count = Math.max(0, Math.floor(requestedCount));
+  while (count > 0) {
+    try {
+      return { data: new Float32Array(count * STAR_FLOATS), count };
+    } catch (error) {
+      if (!(error instanceof RangeError)) throw error;
+      count = Math.floor(count / 2);
+    }
+  }
+  return { data: new Float32Array(0), count: 0 };
 }
 
 function starCell(value: number, cellSize: number): number {
@@ -515,9 +529,14 @@ function hostToCatalogStar(record: ExoplanetHostRecord, index: number): CatalogS
 
 export function createVisibleStarField(count = DEFAULT_VISIBLE_STAR_COUNT): StarBuffer {
   const rng = mulberry32(0xC0FFEE);
-  const data = new Float32Array(count * STAR_FLOATS);
+  const allocated = allocateStarBuffer(count);
+  const data = allocated.data;
+  const actualCount = allocated.count;
+  if (actualCount < Math.floor(count)) {
+    console.info(`Generated visible star fallback reduced to ${actualCount.toLocaleString()} stars for the available browser memory.`);
+  }
 
-  for (let i = 0; i < count; i++) {
+  for (let i = 0; i < actualCount; i++) {
     const u = rng();
     const v = rng();
     const ra = u * Math.PI * 2;
@@ -558,10 +577,12 @@ export async function loadVisibleStarField(): Promise<VisibleStarLoad> {
       source: "HYG 4.2 local binary snapshot with nearby-anchor de-duplication and physical stellar radii",
     };
   } catch (error) {
-    console.warn("Using generated visible star field:", error);
+    const message = error instanceof Error ? error.message : String(error);
+    console.info(`Using generated visible star field (${message}).`);
+    const data = createVisibleStarField(FALLBACK_VISIBLE_STAR_COUNT);
     return {
-      data: createVisibleStarField(),
-      source: "generated visible star fallback",
+      data,
+      source: `generated visible star fallback (${(data.length / STAR_FLOATS).toLocaleString()} stars)`,
     };
   }
 }
@@ -618,7 +639,7 @@ export function filterStarBufferByPosition(
 
   const dropped = input - kept;
   return {
-    data: output.slice(0, writeOffset),
+    data: output.subarray(0, writeOffset),
     input,
     kept,
     dropped,
@@ -672,7 +693,7 @@ export function combineStarBuffersUnique(
   }
 
   return {
-    data: combined.slice(0, writeOffset),
+    data: combined.subarray(0, writeOffset),
     input,
     kept,
     dropped: input - kept,

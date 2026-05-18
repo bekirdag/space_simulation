@@ -72,7 +72,7 @@ const MILKY_WAY_MODEL_RETRY_MS = 120_000;
 const MILKY_WAY_MODEL_BACKEND_RETRY_MS = 120_000;
 
 const TRAIL_MAX_BODIES   = 64;
-const TRAIL_VTXBUF_BYTES = TRAIL_MAX_BODIES * TRAIL_SLOT_BYTES; // 64 × fixed slot = ~31 MB
+const TRAIL_VTXBUF_BYTES = TRAIL_MAX_BODIES * TRAIL_SLOT_BYTES;
 
 interface BodyBrightnessSample {
   display: number;
@@ -1710,7 +1710,8 @@ export class Renderer {
         this.galaxyModelDraws.push({ bindGroup, index: i });
         this.createGalaxyTypeModelEntry(model, texture);
       } catch (e) {
-        console.warn(`Failed to load galaxy texture for ${model.name}:`, e);
+        const message = e instanceof Error ? e.message : String(e);
+        console.info(`Skipped galaxy texture/model for ${model.name}: ${message}`);
       }
     }
 
@@ -1787,7 +1788,7 @@ export class Renderer {
     this.solarSystemModelLoading.add(model.id);
     try {
       const mesh = model.format === "procedural-sphere"
-        ? createUvSphereMesh()
+        ? createUvSphereMesh(16, 32)
         : await (async (format: ParsedModelFormat) => {
           const buffer = await fetchValidatedModelAsset(model.assetUrl, { format });
           return parseMilkyWayModel(buffer, format);
@@ -1850,6 +1851,10 @@ export class Renderer {
     } catch (e) {
       this.solarSystemModelFailedAt.set(model.id, Date.now());
       if (e instanceof BackendUnavailableError) return;
+      if (e instanceof RangeError) {
+        console.info(`Skipped solar-system model ${model.bodyName} because the browser could not allocate its mesh buffers.`);
+        return;
+      }
       console.warn(`Failed to load solar-system model ${model.bodyName}:`, e);
       throw e;
     } finally {
@@ -2023,7 +2028,16 @@ export class Renderer {
   }
 
   private createGalaxyTypeModelEntry(model: GalaxyTextureModel, texture: GPUTexture): void {
-    const mesh = buildGalaxyTypeMesh(model);
+    let mesh: GalaxyMeshBuild;
+    try {
+      mesh = buildGalaxyTypeMesh(model);
+    } catch (error) {
+      if (error instanceof RangeError) {
+        console.info(`Skipped ${model.name} morphology mesh because the browser could not allocate its vertex buffer.`);
+        return;
+      }
+      throw error;
+    }
     if (mesh.vertexCount <= 0) return;
 
     const { device } = this.ctx;

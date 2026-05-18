@@ -1257,7 +1257,18 @@ async function main(): Promise<void> {
       renderer.setStarOctants(sortIntoOctants(combined));
       renderer.uploadStars(combined);
     } catch (e) {
-      console.warn("Star catalog upload failed (low memory?):", e);
+      try {
+        const compact = combineStarBuffersUnique([
+          { label: "Sun stellar anchor", buffer: sunStellarAnchorBuffer },
+          { label: "nearby known stars", buffer: nearbyStarLabelBuffer },
+          { label: "exoplanet host stars", buffer: exoplanetHostBuffer },
+        ]).data;
+        renderer.setStarOctants(sortIntoOctants(compact));
+        renderer.uploadStars(compact);
+        console.info("Visible star catalog skipped because the browser could not allocate the full startup star buffer.");
+      } catch {
+        console.warn("Star catalog upload failed because the browser could not allocate even the compact star buffer.");
+      }
     }
   }
 
@@ -1326,7 +1337,8 @@ async function main(): Promise<void> {
         `Loaded ${dustClouds.length / DUST_CLOUD_FLOATS} Milky Way dust clouds from ${source} via ${DUST_CLOUD_SOURCE}`,
       );
     } catch (err) {
-      console.warn("Galactic dust map failed; using procedural fallback:", err);
+      const message = err instanceof Error ? err.message : String(err);
+      console.info(`Galactic dust map unavailable; using procedural fallback (${message}).`);
       const dustClouds = buildDustCloudBuffer();
       renderer.uploadDustClouds(dustClouds);
       console.info(`Loaded ${dustClouds.length / DUST_CLOUD_FLOATS} fallback Milky Way dust clouds from ${DUST_CLOUD_SOURCE}`);

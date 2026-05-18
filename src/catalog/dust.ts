@@ -30,6 +30,7 @@ const DUST_MAP_MIN_ALPHA = 0.006;
 const DUST_MAP_ALPHA_RANGE = 0.080;
 const DUST_CLOUD_MIN_RADIUS_AU = 180;
 const DUST_CLOUD_MAX_RADIUS_AU = 950;
+const DUST_CLOUD_LOW_MEMORY_COUNT = 6_000;
 const DUST_DISK_SAMPLE_HALF_HEIGHT_KPC = 0.52;
 const DUST_VERTICAL_SCALE_KPC = 0.12;
 const DUST_DIRECTION_LON_BINS = 360;
@@ -396,11 +397,28 @@ function dustSeedFromDirectionGrid(grid: DustDirectionGrid, rand: () => number):
 export function buildDustCloudBuffer(dustMap?: Float32Array, count = DUST_CLOUD_COUNT): Float32Array {
   const rand = createRand();
   const dustCellCount = dustMap ? Math.floor(dustMap.length / DUST_MAP_FLOATS) : 0;
-  const directionGrid = dustMap && dustCellCount > 0
-    ? buildDustDirectionGrid(dustMap, dustCellCount)
-    : null;
+  let directionGrid: DustDirectionGrid | null = null;
+  if (dustMap && dustCellCount > 0) {
+    try {
+      directionGrid = buildDustDirectionGrid(dustMap, dustCellCount);
+    } catch (error) {
+      if (!(error instanceof RangeError)) throw error;
+      console.info("Dust direction grid could not be allocated; using procedural Milky Way dust positions.");
+    }
+  }
   const n = clamp(Math.floor(count), 0, DUST_CLOUD_CAPACITY);
-  const buf = new Float32Array(n * DUST_CLOUD_FLOATS);
+  let buf: Float32Array;
+  try {
+    buf = new Float32Array(n * DUST_CLOUD_FLOATS);
+  } catch (error) {
+    if (!(error instanceof RangeError)) throw error;
+    if (n > DUST_CLOUD_LOW_MEMORY_COUNT) {
+      console.info(`Dust cloud fallback reduced to ${DUST_CLOUD_LOW_MEMORY_COUNT.toLocaleString()} clouds for the available browser memory.`);
+      return buildDustCloudBuffer(undefined, DUST_CLOUD_LOW_MEMORY_COUNT);
+    }
+    console.info("Dust clouds disabled because the browser could not allocate the cloud buffer.");
+    return new Float32Array(0);
+  }
 
   for (let i = 0; i < n; i++) {
     const seed = directionGrid
