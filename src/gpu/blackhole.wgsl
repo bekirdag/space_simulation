@@ -300,6 +300,7 @@ fn raymarch_black_hole(rayPos0: vec3<f32>, rayDir0: vec3<f32>, time: f32, visual
   var occlusion = 0.0;
   var minR = 100000.0;
   var diskCrossings: i32 = 0;
+  var foregroundDiskAlpha = 0.0;
   var captured = false;
   var escaped = false;
 
@@ -313,7 +314,6 @@ fn raymarch_black_hole(rayPos0: vec3<f32>, rayDir0: vec3<f32>, time: f32, visual
 
     if r < rs * 1.015 {
       captured = true;
-      occlusion = 1.0;
       break;
     }
 
@@ -339,6 +339,9 @@ fn raymarch_black_hole(rayPos0: vec3<f32>, rayDir0: vec3<f32>, time: f32, visual
         let disk = accretion_disk_color(hitR, unitXZ, time, rayDir);
         let shadowDiskMask = 1.0 - smoothstep(1.62, 1.02, minR) * 0.96;
         let diskAlpha = disk.w * shadowDiskMask;
+        let cameraSide = dot(normalize(hitPos), normalize(rayPos0));
+        let foregroundWeight = smoothstep(-0.10, 0.35, cameraSide);
+        foregroundDiskAlpha = max(foregroundDiskAlpha, diskAlpha * foregroundWeight);
         let remainingAlpha = 1.0 - alpha;
         color += disk.xyz * diskAlpha * remainingAlpha;
         alpha += diskAlpha * remainingAlpha;
@@ -349,10 +352,16 @@ fn raymarch_black_hole(rayPos0: vec3<f32>, rayDir0: vec3<f32>, time: f32, visual
 
   let photonRing = pow(1.0 - smoothstep(0.025, 0.16, abs(minR - 1.54)), 2.0);
   let secondaryRing = pow(1.0 - smoothstep(0.05, 0.30, abs(minR - 2.12)), 2.0);
-  let shadowInterior = smoothstep(1.46, 1.04, minR);
-  color *= 1.0 - shadowInterior * 0.985;
-  alpha = max(alpha, shadowInterior * 0.92);
-  occlusion = max(occlusion, shadowInterior * 0.98);
+  var captureShadow = 0.0;
+  if captured {
+    captureShadow = 1.0;
+  }
+  let shadowInterior = max(smoothstep(1.46, 1.04, minR), captureShadow);
+  let foregroundDiskProtection = smoothstep(0.015, 0.18, foregroundDiskAlpha) * 0.92;
+  let visibleShadowInterior = shadowInterior * (1.0 - foregroundDiskProtection);
+  color *= 1.0 - visibleShadowInterior * 0.985;
+  alpha = max(alpha, visibleShadowInterior * 0.92);
+  occlusion = max(occlusion, visibleShadowInterior * 0.98);
 
   let ringColor = vec3<f32>(1.0, 0.66, 0.20) * photonRing * 3.1 +
     vec3<f32>(1.0, 0.88, 0.62) * secondaryRing * 0.24;
