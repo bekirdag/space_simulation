@@ -106,6 +106,12 @@ fn camera_distance(center: vec3<f32>) -> f32 {
   return length(camera_relative(center));
 }
 
+fn stable_focus_distance(center: vec3<f32>) -> f32 {
+  let targetDelta = center - camera.screenAndTarget.yzw;
+  let orbitDelta = camera.eyeOffset.xyz;
+  return max(sqrt(dot(targetDelta, targetDelta) + dot(orbitDelta, orbitDelta)), 1e-6);
+}
+
 fn clip_billboard_offset(uv: vec2<f32>, radiusNdcY: f32, clipW: f32) -> vec4<f32> {
   let aspect = max(camera.screenAndTarget.x, 0.000001);
   return vec4<f32>(uv.x * radiusNdcY / aspect * clipW, uv.y * radiusNdcY * clipW, 0.0, 0.0);
@@ -127,7 +133,7 @@ fn vs_main(
   let actual = lodFade.z > 0.5;
   out.effects = clamp(lodFade.z, 0.0, 1.0);
   out.pixel_radius = 0.0;
-  let cameraDistanceAU = camera_distance(center);
+  let cameraDistanceAU = stable_focus_distance(center);
   let radiusAU = max(star.pos_size.w, SOLAR_RADIUS_AU * 0.08);
   out.brightness = select(1.0, apparent_mw_brightness(cameraDistanceAU, out.color, radiusAU, star.color_alpha.w), actual);
   out.alpha = star.color_alpha.w * lodFade.x * select(1.0, clamp(0.35 + out.brightness, 0.25, 2.1), actual);

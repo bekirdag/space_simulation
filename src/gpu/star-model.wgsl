@@ -60,6 +60,11 @@ fn project_world(pos: vec3<f32>) -> vec4<f32> {
   );
 }
 
+fn target_relative_view_dir(worldPos: vec3<f32>) -> vec3<f32> {
+  let targetRelativePos = worldPos - camera.screenAndTarget.yzw;
+  return normalize(camera.eyeOffset.xyz - targetRelativePos);
+}
+
 fn hash31(p: vec3<f32>) -> f32 {
   return fract(sin(dot(p, vec3<f32>(127.1, 311.7, 74.7))) * 43758.5453123);
 }
@@ -148,7 +153,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   let effects = clamp(model.params.z, 0.0, 1.0);
   let base = type_color(typeIndex, clamp(model.colorType.rgb, vec3<f32>(0.0), vec3<f32>(1.0)));
   let normal = normalize(in.normal);
-  let viewDir = normalize(camera.eyeAndFlags.xyz - in.worldPos);
+  let viewDir = target_relative_view_dir(in.worldPos);
   let facing = clamp(dot(normal, viewDir), 0.0, 1.0);
   let limb = pow(facing, 0.38);
   let radiusSolar = clamp(model.centerRadius.w / SOLAR_RADIUS_AU, 0.01, 1800.0);

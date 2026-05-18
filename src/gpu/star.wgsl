@@ -92,6 +92,12 @@ fn camera_distance(center: vec3<f32>) -> f32 {
   return length(camera_relative(center));
 }
 
+fn stable_focus_distance(center: vec3<f32>) -> f32 {
+  let targetDelta = center - camera.screenAndTarget.yzw;
+  let orbitDelta = camera.eyeOffset.xyz;
+  return max(sqrt(dot(targetDelta, targetDelta) + dot(orbitDelta, orbitDelta)), 1e-6);
+}
+
 fn clip_billboard_offset(uv: vec2<f32>, radiusNdcY: f32, clipW: f32) -> vec4<f32> {
   let aspect = max(camera.screenAndTarget.x, 0.000001);
   // NDC x covers the viewport width while NDC y covers the viewport height.
@@ -102,8 +108,8 @@ fn clip_billboard_offset(uv: vec2<f32>, radiusNdcY: f32, clipW: f32) -> vec4<f32
 
 fn camera_distance_flux(center: vec3<f32>) -> f32 {
   let referenceDistanceAU = max(length(center), 1.0);
-  let cameraDistanceAU = max(camera_distance(center), referenceDistanceAU * 0.0005);
-  let ratio = clamp(referenceDistanceAU / cameraDistanceAU, 0.02, 400.0);
+  let stableDistanceAU = max(stable_focus_distance(center), referenceDistanceAU * 0.0005);
+  let ratio = clamp(referenceDistanceAU / stableDistanceAU, 0.02, 400.0);
   return clamp(ratio * ratio, 0.0004, 160000.0);
 }
 
