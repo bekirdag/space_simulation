@@ -1,5 +1,6 @@
 import { initGPU } from "./gpu/device";
-import { Renderer, type SelectedStarModel } from "./gpu/renderer";
+import { Renderer, type BlackHoleModelAsset, type SelectedStarModel } from "./gpu/renderer";
+import blackHoleModelUrl from "./models/blackhole.glb?url";
 import { Camera, type CameraUniforms } from "./scene/camera";
 import { HUD } from "./ui/hud";
 import { ScaleBar } from "./ui/scale-bar";
@@ -113,6 +114,16 @@ const SGR_A_SHADOW_RADIUS_AU = SGR_A_EVENT_HORIZON_RADIUS_AU * 2.6;
 const SGR_A_DEFAULT_OBSERVER_DISTANCE_RS = 30;
 const SGR_A_BLACK_HOLE_FOCUS_AU =
   SGR_A_EVENT_HORIZON_RADIUS_AU * SGR_A_DEFAULT_OBSERVER_DISTANCE_RS;
+const SGR_A_MODEL_RADIUS_AU = SGR_A_SHADOW_RADIUS_AU;
+const SGR_A_BLACK_HOLE_MODEL: BlackHoleModelAsset = {
+  id: "blackhole:sgr-a-model",
+  assetUrl: blackHoleModelUrl,
+  format: "glb",
+  position: SGR_A_STAR_POS,
+  radiusAU: SGR_A_MODEL_RADIUS_AU,
+  color: [0.012, 0.018, 0.026],
+  opacity: 1,
+};
 const SGR_A_SEARCH_RESULT: StarSearchResult = {
   id: "blackhole:sgr-a",
   label: "Sagittarius A*",
@@ -1174,7 +1185,7 @@ async function main(): Promise<void> {
   const labels = new LabelManager();
   applySettings();
 
-  const STARTUP_ASSET_TOTAL = 12;
+  const STARTUP_ASSET_TOTAL = 13;
   let startupLoading = true;
   let startupAssetsReady = 0;
   const startupAssetPromises: Promise<void>[] = [];
@@ -1297,6 +1308,9 @@ async function main(): Promise<void> {
   )));
   startupAssetPromises.push(trackStartupAsset("solar-system 3D models", () => (
     renderer.loadSolarSystemModels(SOLAR_SYSTEM_MODEL_ASSETS)
+  )));
+  startupAssetPromises.push(trackStartupAsset("Sagittarius A* 3D model", () => (
+    renderer.loadBlackHoleModel(SGR_A_BLACK_HOLE_MODEL)
   )));
 
   // ── Milky Way background star catalog (galaxy-scale LOD layer) ───────────
@@ -2725,11 +2739,11 @@ async function main(): Promise<void> {
     renderer.updateCamera(camUniforms, canvas.width, canvas.height);
     renderer.updateBlackHoleVisual(
       SGR_A_STAR_POS,
-      SGR_A_EVENT_HORIZON_RADIUS_AU,
+      0,
       now / 1000,
       canvas.width,
       canvas.height,
-      1,
+      0,
     );
 
     // Catalog frustum culling happens in the WGSL shaders per instance.

@@ -5,3 +5,8 @@ declare module "*.wgsl?raw" {
   const content: string;
   export default content;
 }
+
+declare module "*.glb?url" {
+  const url: string;
+  export default url;
+}

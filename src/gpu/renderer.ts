@@ -88,6 +88,14 @@ interface MilkyWayModelEntry {
   vertexCount: number;
 }
 
+interface BlackHoleModelEntry {
+  id: string;
+  uniformBuffer: GPUBuffer;
+  parts: MilkyWayModelPartEntry[];
+  textures: GPUTexture[];
+  vertexCount: number;
+}
+
 interface GalaxyTypeModelEntry {
   id: string;
   morphology: string;
@@ -120,6 +128,18 @@ export interface SelectedStarModel {
   color: [number, number, number];
   starType?: StarModelTypeId;
   alpha?: number;
+}
+
+export interface BlackHoleModelAsset {
+  id: string;
+  assetUrl: string;
+  format: ParsedModelFormat;
+  position: readonly [number, number, number];
+  radiusAU: number;
+  color: readonly [number, number, number];
+  opacity?: number;
+  fadeNearAU?: number;
+  fadeFarAU?: number;
 }
 
 interface GalaxyMeshBuild {
@@ -541,6 +561,26 @@ async function fetchValidatedModelAsset(
   }
 }
 
+async function fetchStaticModelAsset(
+  assetUrl: string,
+  model: { format: ParsedModelFormat },
+): Promise<ArrayBuffer> {
+  const fetchOnce = async (url: string, cache: RequestCache): Promise<ArrayBuffer> => {
+    const resp = await fetch(url, { cache });
+    if (!resp.ok) throw new Error(`asset ${resp.status}`);
+    const buffer = await resp.arrayBuffer();
+    validateMilkyWayModelResponse(model, resp, buffer);
+    return buffer;
+  };
+
+  try {
+    return await fetchOnce(assetUrl, "force-cache");
+  } catch (error) {
+    if (!(error instanceof ModelAssetResponseError) || !error.retryable) throw error;
+    return await fetchOnce(cacheBustedModelAssetUrl(assetUrl), "reload");
+  }
+}
+
 export class Renderer {
   private bodyPipeline!:    GPURenderPipeline;
   private starPipeline!:    GPURenderPipeline;
@@ -598,6 +638,9 @@ export class Renderer {
   private milkyWayModelFailedAt = new Map<string, number>();
   private milkyWayModelBackendRetryAt = 0;
   private activeMilkyWayModelId: string | null = null;
+  private blackHoleModelEntry: BlackHoleModelEntry | null = null;
+  private blackHoleModelLoading = false;
+  private blackHoleModelFailed = false;
   private solarSystemModelEntries = new Map<string, SolarSystemModelEntry>();
   private solarSystemModelLoading = new Set<string>();
   private solarSystemModelFailedAt = new Map<string, number>();
@@ -1438,7 +1481,7 @@ export class Renderer {
       primitive: { topology: "triangle-list" },
     });
 
-    // ── Sagittarius A* black-hole lensing post-process ────────────────────
+    // ── HDR/bloom presentation post-process ───────────────────────────────
     this.blackHoleBGL = device.createBindGroupLayout({
       label: "black-hole-bgl",
       entries: [
@@ -1950,6 +1993,74 @@ export class Renderer {
     }
   }
 
+  async loadBlackHoleModel(model: BlackHoleModelAsset): Promise<void> {
+    if (this.blackHoleModelEntry?.id === model.id || this.blackHoleModelLoading || this.blackHoleModelFailed) return;
+    this.blackHoleModelLoading = true;
+    try {
+      const buffer = await fetchStaticModelAsset(model.assetUrl, model);
+      const mesh = await parseMilkyWayModel(buffer, model.format);
+      if (mesh.vertexCount <= 0) throw new Error("empty mesh");
+
+      const { device } = this.ctx;
+      const uniformBuffer = device.createBuffer({
+        label: `black-hole-model-uniform-${model.id}`,
+        size: MILKY_WAY_MODEL_UNIFORM_BYTES,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      });
+      const textures = mesh.textures.map((texture, index) => {
+        const gpuTexture = this.createMilkyWayModelTexture(texture.bitmap, `black-hole-model-texture-${model.id}-${index}`);
+        texture.bitmap.close();
+        return gpuTexture;
+      });
+      const parts: MilkyWayModelPartEntry[] = mesh.parts.map((part, index) => {
+        const vertexBuffer = device.createBuffer({
+          label: `black-hole-model-vertices-${model.id}-${index}`,
+          size: part.vertices.byteLength,
+          usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+        });
+        device.queue.writeBuffer(vertexBuffer, 0, part.vertices as GPUAllowSharedBufferSource);
+        const materialBuffer = this.createBlackHoleModelMaterialBuffer(model, part.material, index);
+        const texture = part.material.textureIndex >= 0
+          ? textures[part.material.textureIndex] ?? this.milkyWayModelWhiteTexture
+          : this.milkyWayModelWhiteTexture;
+        return {
+          vertexBuffer,
+          materialBuffer,
+          bindGroup: device.createBindGroup({
+            label: `black-hole-model-bg-${model.id}-${index}`,
+            layout: this.milkyWayModelBGL,
+            entries: [
+              { binding: 0, resource: { buffer: this.cameraBuffer } },
+              { binding: 1, resource: { buffer: uniformBuffer } },
+              { binding: 2, resource: { buffer: materialBuffer } },
+              { binding: 3, resource: texture.createView() },
+              { binding: 4, resource: this.milkyWayModelSampler },
+            ],
+          }),
+          vertexCount: part.vertexCount,
+        };
+      });
+      const entry: BlackHoleModelEntry = {
+        id: model.id,
+        uniformBuffer,
+        parts,
+        textures,
+        vertexCount: mesh.vertexCount,
+      };
+      this.writeBlackHoleModelUniform(entry, model);
+      this.blackHoleModelEntry = entry;
+      console.info(
+        `Loaded Sagittarius A* 3D model: ${mesh.usedTriangleCount.toLocaleString()} / ${mesh.sourceTriangleCount.toLocaleString()} triangles.`,
+      );
+    } catch (e) {
+      this.blackHoleModelFailed = true;
+      console.warn("Failed to load Sagittarius A* 3D model:", e);
+      throw e;
+    } finally {
+      this.blackHoleModelLoading = false;
+    }
+  }
+
   private async loadExternalMilkyWayModelTexture(
     model: MilkyWayModelObject,
     textures: GPUTexture[],
@@ -2091,6 +2202,42 @@ export class Renderer {
         material.baseColor[3],
       ]
       : material.baseColor;
+    const data = new Float32Array(MILKY_WAY_MODEL_MATERIAL_BYTES / 4);
+    data[0] = baseColor[0];
+    data[1] = baseColor[1];
+    data[2] = baseColor[2];
+    data[3] = baseColor[3];
+    data[4] = material.emissive[0];
+    data[5] = material.emissive[1];
+    data[6] = material.emissive[2];
+    data[7] = material.emissive[3];
+    data[8] = material.useTexture;
+    data[9] = material.useProcedural;
+    data[10] = material.useVertexColor;
+    data[11] = material.textureEmission;
+    device.queue.writeBuffer(buffer, 0, data);
+    return buffer;
+  }
+
+  private createBlackHoleModelMaterialBuffer(
+    model: BlackHoleModelAsset,
+    material: ParsedMilkyWayMaterial,
+    partIndex: number,
+  ): GPUBuffer {
+    const { device } = this.ctx;
+    const buffer = device.createBuffer({
+      label: `black-hole-model-material-${model.id}-${partIndex}`,
+      size: MILKY_WAY_MODEL_MATERIAL_BYTES,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    const hasEmission = material.emissive[3] > 0 && (
+      material.emissive[0] > 0 ||
+      material.emissive[1] > 0 ||
+      material.emissive[2] > 0
+    );
+    const baseColor: [number, number, number, number] = hasEmission || material.useTexture > 0.5 || material.useVertexColor > 0.5
+      ? material.baseColor
+      : [model.color[0], model.color[1], model.color[2], material.baseColor[3]];
     const data = new Float32Array(MILKY_WAY_MODEL_MATERIAL_BYTES / 4);
     data[0] = baseColor[0];
     data[1] = baseColor[1];
@@ -2362,6 +2509,23 @@ export class Renderer {
     data[4] = model.fadeNearAU;
     data[5] = model.fadeFarAU;
     data[6] = model.opacity;
+    data[7] = 0;
+    data[8] = model.color[0];
+    data[9] = model.color[1];
+    data[10] = model.color[2];
+    data[11] = 0;
+    this.ctx.device.queue.writeBuffer(entry.uniformBuffer, 0, data);
+  }
+
+  private writeBlackHoleModelUniform(entry: BlackHoleModelEntry, model: BlackHoleModelAsset): void {
+    const data = new Float32Array(MILKY_WAY_MODEL_UNIFORM_BYTES / 4);
+    data[0] = model.position[0];
+    data[1] = model.position[1];
+    data[2] = model.position[2];
+    data[3] = model.radiusAU;
+    data[4] = model.fadeNearAU ?? CAMERA_FAR * 0.92;
+    data[5] = model.fadeFarAU ?? CAMERA_FAR;
+    data[6] = model.opacity ?? 1;
     data[7] = 0;
     data[8] = model.color[0];
     data[9] = model.color[1];
@@ -2760,6 +2924,14 @@ export class Renderer {
         }
       };
 
+      const drawMilkyWayModelEntry = (entry: { parts: MilkyWayModelPartEntry[] }): void => {
+        for (const part of entry.parts) {
+          pass.setBindGroup(0, part.bindGroup);
+          pass.setVertexBuffer(0, part.vertexBuffer);
+          pass.draw(part.vertexCount);
+        }
+      };
+
     // ── Galaxies (furthest layer) ──────────────────────────────────────────
     if (this._showGalaxies) {
       pass.setPipeline(this.galaxyPipeline);
@@ -2788,11 +2960,7 @@ export class Renderer {
       if (this.galaxyTypeModelEntries.size > 0) {
         pass.setPipeline(this.milkyWayModelPipeline);
         for (const entry of this.galaxyTypeModelEntries.values()) {
-          for (const part of entry.parts) {
-            pass.setBindGroup(0, part.bindGroup);
-            pass.setVertexBuffer(0, part.vertexBuffer);
-            pass.draw(part.vertexCount);
-          }
+          drawMilkyWayModelEntry(entry);
         }
       }
     }
@@ -2813,22 +2981,15 @@ export class Renderer {
     // ── NASA/Chandra object meshes — close LOD only, shader fades by camera distance.
     if (this.milkyWayModelEntries.size > 0) {
       pass.setPipeline(this.milkyWayModelPipeline);
-      const drawModelEntry = (entry: MilkyWayModelEntry): void => {
-        for (const part of entry.parts) {
-          pass.setBindGroup(0, part.bindGroup);
-          pass.setVertexBuffer(0, part.vertexBuffer);
-          pass.draw(part.vertexCount);
-        }
-      };
       if (this.activeMilkyWayModelId) {
         const activeEntry = this.milkyWayModelEntries.get(this.activeMilkyWayModelId);
-        if (activeEntry) drawModelEntry(activeEntry);
+        if (activeEntry) drawMilkyWayModelEntry(activeEntry);
       } else {
         const drawnGroups = new Set<string>();
         for (const entry of this.milkyWayModelEntries.values()) {
           if (drawnGroups.has(entry.modelGroup)) continue;
           drawnGroups.add(entry.modelGroup);
-          drawModelEntry(entry);
+          drawMilkyWayModelEntry(entry);
         }
       }
     }
@@ -2871,6 +3032,11 @@ export class Renderer {
       pass.draw(this.selectedStarModelVertexCount);
     }
 
+    if (this._showBlackHole && this.blackHoleModelEntry !== null) {
+      pass.setPipeline(this.milkyWayModelPipeline);
+      drawMilkyWayModelEntry(this.blackHoleModelEntry);
+    }
+
     // ── Constellation lines between snapped visible-star positions ─────────
     if (this._showConstellations && this.constellationCount > 0) {
       pass.setPipeline(this.constellationPipeline);
@@ -2908,18 +3074,9 @@ export class Renderer {
       this.clearBloomPass(encoder);
     }
 
-    const blackHoleRadius = this._blackHoleUniform[3] ?? 0;
-    const blackHoleStrength = this._blackHoleUniform[7] ?? 0;
-    const lensStrength = this._showBlackHole && blackHoleRadius > 0 && blackHoleStrength > 0
-      ? blackHoleStrength
-      : 0;
-    if (lensStrength !== blackHoleStrength) {
-      const displayUniform = new Float32Array(this._blackHoleUniform);
-      displayUniform[7] = lensStrength;
-      device.queue.writeBuffer(this.blackHoleBuffer, 0, displayUniform);
-    } else {
-      device.queue.writeBuffer(this.blackHoleBuffer, 0, this._blackHoleUniform);
-    }
+    const displayUniform = new Float32Array(this._blackHoleUniform);
+    displayUniform[7] = 0;
+    device.queue.writeBuffer(this.blackHoleBuffer, 0, displayUniform);
 
     const pass = encoder.beginRenderPass({
       colorAttachments: [{
