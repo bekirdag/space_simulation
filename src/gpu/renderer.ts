@@ -951,7 +951,7 @@ export class Renderer {
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
     device.queue.writeBuffer(this.selectedStarModelBuffer, 0, this.selectedStarModelUniform);
-    const selectedStarMesh = createUvSphereMesh(48, 96);
+    const selectedStarMesh = createUvSphereMesh(24, 48);
     const selectedStarPart = selectedStarMesh.parts[0]!;
     this.selectedStarModelVertexCount = selectedStarPart.vertexCount;
     this.selectedStarModelVertexBuffer = device.createBuffer({

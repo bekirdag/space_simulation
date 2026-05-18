@@ -65,6 +65,12 @@ type ThreeMaterialLike = Material & {
 };
 
 const MAX_TRIANGLES = 160_000;
+const UV_SPHERE_MIN_LAT_BANDS = 8;
+const UV_SPHERE_MIN_LON_BANDS = 16;
+const UV_SPHERE_MAX_LAT_BANDS = 64;
+const UV_SPHERE_MAX_LON_BANDS = 128;
+const UV_SPHERE_FALLBACK_LAT_BANDS = 12;
+const UV_SPHERE_FALLBACK_LON_BANDS = 24;
 let gltfLoader: GLTFLoader | null = null;
 
 function getGltfLoader(): GLTFLoader {
@@ -87,6 +93,11 @@ function defaultMaterial(useProcedural = 0): ParsedMilkyWayMaterial {
     useVertexColor: 0,
     textureEmission: 0,
   };
+}
+
+function clampBandCount(value: number, fallback: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(min, Math.min(max, Math.floor(value)));
 }
 
 function clamp01(value: number): number {
@@ -531,41 +542,70 @@ export function parseStlMesh(buffer: ArrayBuffer): ParsedMilkyWayMesh {
 }
 
 export function createUvSphereMesh(latitudeBands = 64, longitudeBands = 128): ParsedMilkyWayMesh {
-  const latBands = Math.max(8, Math.floor(latitudeBands));
-  const lonBands = Math.max(16, Math.floor(longitudeBands));
-  const packed: number[] = [];
+  const latBands = clampBandCount(
+    latitudeBands,
+    64,
+    UV_SPHERE_MIN_LAT_BANDS,
+    UV_SPHERE_MAX_LAT_BANDS,
+  );
+  const lonBands = clampBandCount(
+    longitudeBands,
+    128,
+    UV_SPHERE_MIN_LON_BANDS,
+    UV_SPHERE_MAX_LON_BANDS,
+  );
 
-  const pushVertex = (lat: number, lon: number): void => {
-    const v = lat / latBands;
-    const u = lon / lonBands;
-    const theta = v * Math.PI;
-    const phi = (1 - u) * Math.PI * 2;
-    const sinTheta = Math.sin(theta);
-    const x = Math.cos(phi) * sinTheta;
-    const y = Math.cos(theta);
-    const z = Math.sin(phi) * sinTheta;
-    packed.push(
-      x, y, z,
-      x, y, z,
-      u, v,
-      1, 1, 1, 1,
-    );
+  const buildVertices = (latCount: number, lonCount: number): Float32Array => {
+    const vertexCount = latCount * lonCount * 6;
+    const vertices = new Float32Array(vertexCount * MILKY_WAY_MODEL_VERTEX_FLOATS);
+    let offset = 0;
+
+    const pushVertex = (lat: number, lon: number): void => {
+      const v = lat / latCount;
+      const u = lon / lonCount;
+      const theta = v * Math.PI;
+      const phi = (1 - u) * Math.PI * 2;
+      const sinTheta = Math.sin(theta);
+      const x = Math.cos(phi) * sinTheta;
+      const y = Math.cos(theta);
+      const z = Math.sin(phi) * sinTheta;
+      vertices[offset++] = x;
+      vertices[offset++] = y;
+      vertices[offset++] = z;
+      vertices[offset++] = x;
+      vertices[offset++] = y;
+      vertices[offset++] = z;
+      vertices[offset++] = u;
+      vertices[offset++] = v;
+      vertices[offset++] = 1;
+      vertices[offset++] = 1;
+      vertices[offset++] = 1;
+      vertices[offset++] = 1;
+    };
+
+    for (let lat = 0; lat < latCount; lat++) {
+      for (let lon = 0; lon < lonCount; lon++) {
+        const nextLat = lat + 1;
+        const nextLon = lon + 1;
+        pushVertex(lat, lon);
+        pushVertex(nextLat, lon);
+        pushVertex(lat, nextLon);
+        pushVertex(lat, nextLon);
+        pushVertex(nextLat, lon);
+        pushVertex(nextLat, nextLon);
+      }
+    }
+
+    return vertices;
   };
 
-  for (let lat = 0; lat < latBands; lat++) {
-    for (let lon = 0; lon < lonBands; lon++) {
-      const nextLat = lat + 1;
-      const nextLon = lon + 1;
-      pushVertex(lat, lon);
-      pushVertex(nextLat, lon);
-      pushVertex(lat, nextLon);
-      pushVertex(lat, nextLon);
-      pushVertex(nextLat, lon);
-      pushVertex(nextLat, nextLon);
-    }
+  let vertices: Float32Array;
+  try {
+    vertices = buildVertices(latBands, lonBands);
+  } catch (error) {
+    if (!(error instanceof RangeError)) throw error;
+    vertices = buildVertices(UV_SPHERE_FALLBACK_LAT_BANDS, UV_SPHERE_FALLBACK_LON_BANDS);
   }
-
-  const vertices = new Float32Array(packed);
   const vertexCount = vertices.length / MILKY_WAY_MODEL_VERTEX_FLOATS;
   const triangleCount = vertexCount / 3;
   return {
