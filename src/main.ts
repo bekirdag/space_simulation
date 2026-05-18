@@ -71,7 +71,7 @@ import {
   milkyWayModelSearchResults,
   searchMilkyWayModels,
 } from "./catalog/milkyway-models";
-import { loadMilkywayStars } from "./catalog/milkyway";
+import { MW_FLOATS, loadMilkywayStars } from "./catalog/milkyway";
 import {
   buildDustCloudBuffer,
   DUST_CLOUD_DEFAULT_DRAW_COUNT,
@@ -80,7 +80,7 @@ import {
   loadDustMap,
 } from "./catalog/dust";
 import { NEARBY_STAR_LABELS, SGR_A_STAR_POS, type NearbyStarLabel } from "./catalog/nearby-stars";
-import { sortIntoOctants } from "./gpu/sky-cull";
+import { sortIntoOctants, type OctantRange } from "./gpu/sky-cull";
 import {
   constellationsToSearchResults,
   loadConstellationLines,
@@ -163,6 +163,7 @@ const MAP_TARGET_LOCK_BOX_PX = 10;
 const MAP_TARGET_LOCK_HALF_PX = MAP_TARGET_LOCK_BOX_PX / 2;
 const MAP_TARGET_LOCK_MIN_RADIUS_PX = 2.5;
 const MAP_TARGET_LOCK_MAX_RANK_RADIUS_PX = 260;
+const MAP_TARGET_LOCK_EDGE_TOLERANCE_PX = 8;
 // Active substep size (yr) — changed via Settings panel.
 // Larger steps = faster simulation but reduced moon accuracy.
 let simSubstepYr = MAX_SUBSTEP_YR; // default: 15 min (precise)
@@ -1095,6 +1096,7 @@ async function main(): Promise<void> {
   infoModal.addEventListener("click", e => { if (e.target === infoModal) closeInfo(); });
   let showGalaxies = true;
   let showConstellations = false;
+  let currentMwStarLimit = 200_000;
 
   // Accumulates "owed" simulation time when at fast timewarp and using fixed
   // substeps. Apply settings runs during startup, so this must be initialized
@@ -1132,6 +1134,7 @@ async function main(): Promise<void> {
     const nearbyVal  = parseInt((document.querySelector('input[name="nearby-stars"]:checked') as HTMLInputElement)?.value ?? "100000");
     const galVal     = parseInt((document.querySelector('input[name="galaxies"]:checked') as HTMLInputElement)?.value ?? "100000");
     const stepPreset = (document.querySelector('input[name="sim-step"]:checked') as HTMLInputElement)?.value ?? "precise";
+    currentMwStarLimit = Number.isFinite(mwVal) ? Math.max(0, mwVal) : 200_000;
 
     // Map preset to substep size in years
     const stepMap: Record<string, number> = {
@@ -1221,6 +1224,8 @@ async function main(): Promise<void> {
   // Avoid the 100k-star placeholder allocation that can fail on low-memory devices.
   let rawVisibleStarBuffer: StarBuffer = new Float32Array(0);
   let visibleStarBuffer: StarBuffer = new Float32Array(0);
+  let milkyWayStarBuffer: StarBuffer = new Float32Array(0);
+  let milkyWayStarOctants: OctantRange[] | null = null;
   let exoplanetHostBuffer: StarBuffer = new Float32Array(0);
   const sunStellarAnchorBuffer = sunStellarAnchorRenderBuffer();
   const nearbyStarLabelBuffer = nearbyStarLabelsToRenderBuffer(NEARBY_STAR_LABELS);
@@ -1316,9 +1321,11 @@ async function main(): Promise<void> {
   // ── Milky Way background star catalog (galaxy-scale LOD layer) ───────────
   startupAssetPromises.push(trackStartupAsset("Milky Way star field", async () => {
     const { data, source } = await loadMilkywayStars();
-    renderer.setMwOctants(sortIntoOctants(data));
+    milkyWayStarBuffer = data;
+    milkyWayStarOctants = sortIntoOctants(data);
+    renderer.setMwOctants(milkyWayStarOctants);
     renderer.uploadMilkywayStars(data);
-    console.info(`Loaded ${data.length / 8} Milky Way background stars from ${source}`);
+    console.info(`Loaded ${data.length / MW_FLOATS} Milky Way background stars from ${source}`);
   }));
 
   // ── Galactic dust clouds seeded from MF2015 all-sky reddening map ────────
@@ -2020,8 +2027,14 @@ async function main(): Promise<void> {
     return Math.max(0, Math.hypot(dx, dy) - Math.max(radiusPx, 0));
   }
 
-  function targetLockAreaTouches(cx: number, cy: number, projected: ProjectedMapPoint, radiusPx: number): boolean {
-    return hitAreaEdgeDistancePx(cx, cy, projected, radiusPx) <= 0;
+  function targetLockAreaTouches(
+    cx: number,
+    cy: number,
+    projected: ProjectedMapPoint,
+    radiusPx: number,
+    tolerancePx = MAP_TARGET_LOCK_EDGE_TOLERANCE_PX,
+  ): boolean {
+    return hitAreaEdgeDistancePx(cx, cy, projected, radiusPx) <= tolerancePx;
   }
 
   function mapObjectHitRank(hit: MapObjectHit): number {
@@ -2232,6 +2245,66 @@ async function main(): Promise<void> {
       }
     }
     addCandidate(bestVisibleStar);
+
+    let bestMilkyWayStar: MapObjectHit | null = null;
+    const mwFullStarCount = Math.floor(milkyWayStarBuffer.length / MW_FLOATS);
+    const mwDrawnStarCount = Math.min(mwFullStarCount, currentMwStarLimit);
+    if (mwDrawnStarCount > 0) {
+      const visitMilkyWayStar = (i: number): void => {
+        const o = i * MW_FLOATS;
+        const x = milkyWayStarBuffer[o]!;
+        const y = milkyWayStarBuffer[o + 1]!;
+        const z = milkyWayStarBuffer[o + 2]!;
+        const projected = projectMapPoint(x, y, z);
+        if (!projected) return;
+        const dist = screenDistance(cx, cy, projected);
+        const radiusAU = milkyWayStarBuffer[o + 3]!;
+        const alpha = milkyWayStarBuffer[o + 7]!;
+        const apparentRadiusPx = starApparentRadiusPx(radiusAU, projected, alpha);
+        const edgeDistancePx = hitAreaEdgeDistancePx(cx, cy, projected, apparentRadiusPx);
+        if (!targetLockAreaTouches(cx, cy, projected, apparentRadiusPx)) return;
+        const color: [number, number, number] = [
+          milkyWayStarBuffer[o + 4]!,
+          milkyWayStarBuffer[o + 5]!,
+          milkyWayStarBuffer[o + 6]!,
+        ];
+        const distanceKpc = Math.hypot(x, y, z) / 8_000;
+        const radiusSolar = radiusAU / SOLAR_RADIUS_AU;
+        const hit: StarSearchResult = {
+          id: `mw-star:${i}`,
+          label: "Milky Way star",
+          subtitle: `${distanceKpc.toFixed(distanceKpc < 10 ? 2 : 1)} kpc from Sun`,
+          x, y, z,
+          focusDistance: starFocusDistance(radiusAU),
+          color,
+          objectType: "star",
+          radiusAU,
+          radiusSolar,
+          starType: classifyStarModelType({ radiusSolar, color }),
+        };
+        const candidate: MapObjectHit = {
+          screenDistance: dist,
+          cameraDistance: cameraDistanceTo(x, y, z),
+          apparentRadiusPx,
+          edgeDistancePx,
+          select: (mode) => selectMapCatalogObject(hit, mode, () => setExoplanetBodies(null)),
+        };
+        if (!bestMilkyWayStar || compareMapObjectHits(candidate, bestMilkyWayStar) < 0) {
+          bestMilkyWayStar = candidate;
+        }
+      };
+      if (milkyWayStarOctants && mwDrawnStarCount < mwFullStarCount) {
+        const ratio = mwFullStarCount > 0 ? mwDrawnStarCount / mwFullStarCount : 1;
+        for (const oct of milkyWayStarOctants) {
+          const count = Math.max(1, Math.round(oct.count * ratio));
+          const end = Math.min(oct.first + count, oct.first + oct.count);
+          for (let i = oct.first; i < end; i++) visitMilkyWayStar(i);
+        }
+      } else {
+        for (let i = 0; i < mwDrawnStarCount; i++) visitMilkyWayStar(i);
+      }
+    }
+    addCandidate(bestMilkyWayStar);
 
     if (showGalaxies && !isCameraInsideMilkyWay()) {
       let bestGalaxy: MapObjectHit | null = null;
