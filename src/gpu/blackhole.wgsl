@@ -357,11 +357,13 @@ fn raymarch_black_hole(rayPos0: vec3<f32>, rayDir0: vec3<f32>, time: f32, visual
     captureShadow = 1.0;
   }
   let shadowInterior = max(smoothstep(1.46, 1.04, minR), captureShadow);
+  let hardCoreShadow = max(smoothstep(1.34, 1.08, minR), captureShadow);
   let foregroundDiskProtection = smoothstep(0.015, 0.18, foregroundDiskAlpha) * 0.92;
-  let visibleShadowInterior = shadowInterior * (1.0 - foregroundDiskProtection);
-  color *= 1.0 - visibleShadowInterior * 0.985;
-  alpha = max(alpha, visibleShadowInterior * 0.92);
-  occlusion = max(occlusion, visibleShadowInterior * 0.98);
+  let protectedOuterShadow = shadowInterior * (1.0 - foregroundDiskProtection * (1.0 - hardCoreShadow));
+  let visibleShadowInterior = max(hardCoreShadow, protectedOuterShadow);
+  color *= 1.0 - visibleShadowInterior * 0.995;
+  alpha = max(alpha, visibleShadowInterior * 0.96);
+  occlusion = max(occlusion, visibleShadowInterior);
 
   let ringColor = vec3<f32>(1.0, 0.66, 0.20) * photonRing * 3.1 +
     vec3<f32>(1.0, 0.88, 0.62) * secondaryRing * 0.24;
