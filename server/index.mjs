@@ -16,6 +16,9 @@ const HOST = process.env.HOST || "127.0.0.1";
 const MIME_TYPES = new Map([
   [".css", "text/css; charset=utf-8"],
   [".gif", "image/gif"],
+  [".bin", "application/octet-stream"],
+  [".geojson", "application/geo+json; charset=utf-8"],
+  [".glb", "model/gltf-binary"],
   [".html", "text/html; charset=utf-8"],
   [".ico", "image/x-icon"],
   [".jpg", "image/jpeg"],
@@ -28,6 +31,8 @@ const MIME_TYPES = new Map([
   [".webp", "image/webp"],
   [".wgsl", "text/plain; charset=utf-8"],
 ]);
+
+const SPA_ASSET_PREFIXES = ["/assets/", "/cache/", "/data/", "/draco/", "/models/", "/textures/"];
 
 function setIsolationHeaders(res) {
   res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
@@ -46,6 +51,17 @@ function safeStaticPath(urlPath) {
   return resolved.startsWith(`${DIST_ROOT}${path.sep}`) || resolved === DIST_ROOT ? resolved : null;
 }
 
+function isSpaAssetRequest(urlPath) {
+  let decoded;
+  try {
+    decoded = decodeURIComponent(urlPath);
+  } catch {
+    return true;
+  }
+  if (SPA_ASSET_PREFIXES.some(prefix => decoded.startsWith(prefix))) return true;
+  return path.extname(decoded) !== "";
+}
+
 async function resolveStaticFile(urlPath) {
   const requested = safeStaticPath(urlPath);
   if (!requested) return null;
@@ -62,6 +78,7 @@ async function resolveStaticFile(urlPath) {
     // SPA fallback below.
   }
 
+  if (isSpaAssetRequest(urlPath)) return null;
   return path.join(DIST_ROOT, "index.html");
 }
 
@@ -75,8 +92,8 @@ async function serveStatic(req, res) {
   const url = new URL(req.url ?? "/", "http://localhost");
   const filePath = await resolveStaticFile(url.pathname);
   if (!filePath) {
-    res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
-    res.end("Bad request");
+    res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+    res.end("Not found");
     return;
   }
 

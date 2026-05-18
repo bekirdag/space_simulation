@@ -281,17 +281,29 @@ function labelRadius(center: [number, number, number], featureStars: SnappedStar
 async function loadJson<T>(url: string): Promise<T> {
   const resp = await fetch(url, { cache: "force-cache" });
   if (!resp.ok) throw new Error(`${url} returned HTTP ${resp.status}`);
+  const contentType = resp.headers.get("content-type")?.toLowerCase() ?? "";
+  if (contentType.includes("text/html")) {
+    throw new Error(`${url} returned HTML instead of JSON`);
+  }
   return await resp.json() as T;
 }
 
-async function loadConstellationStarNameCache(): Promise<Map<string, ConstellationStarName>> {
+async function loadOptionalJson<T>(url: string): Promise<T | null> {
   try {
-    const json = await loadJson<ConstellationStarNameCache>(CONSTELLATION_STAR_NAMES_URL);
-    return new Map(Object.entries(json.stars ?? {}));
-  } catch (err) {
-    console.warn("Constellation star-name cache unavailable:", err);
-    return new Map();
+    const resp = await fetch(url, { cache: "force-cache" });
+    if (resp.status === 404) return null;
+    if (!resp.ok) throw new Error(`${url} returned HTTP ${resp.status}`);
+    const contentType = resp.headers.get("content-type")?.toLowerCase() ?? "";
+    if (contentType.includes("text/html")) return null;
+    return await resp.json() as T;
+  } catch {
+    return null;
   }
+}
+
+async function loadConstellationStarNameCache(): Promise<Map<string, ConstellationStarName>> {
+  const json = await loadOptionalJson<ConstellationStarNameCache>(CONSTELLATION_STAR_NAMES_URL);
+  return new Map(Object.entries(json?.stars ?? {}));
 }
 
 async function loadVisibleStarSnapshot(): Promise<Float32Array> {

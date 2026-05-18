@@ -67,6 +67,16 @@ function isBrowserCacheablePublicPath(pathname) {
     pathname === "/apple-touch-icon.png";
 }
 
+function sendPublicAssetNotFound(res) {
+  res.writeHead(404, {
+    "Content-Type": "text/plain; charset=utf-8",
+    "Cross-Origin-Opener-Policy": "same-origin",
+    "Cross-Origin-Embedder-Policy": "require-corp",
+    "Cross-Origin-Resource-Policy": "same-origin",
+  });
+  res.end("Not found");
+}
+
 function safePublicPath(urlPath) {
   let decoded;
   try {
@@ -136,6 +146,11 @@ function makeServer() {
     if (await handleModelAssetRequest(req, res)) return;
     if (await handleObjectInfoRequest(req, res)) return;
     if (await serveBrowserCachedPublicAsset(req, res)) return;
+    const url = new URL(req.url ?? "/", "http://localhost");
+    if (isBrowserCacheablePublicPath(url.pathname)) {
+      sendPublicAssetNotFound(res);
+      return;
+    }
     if (!vite) {
       res.statusCode = 503;
       res.end("CosmosMap dev server is starting");
