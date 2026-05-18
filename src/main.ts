@@ -1966,6 +1966,16 @@ async function main(): Promise<void> {
     return Math.hypot(x - eye[0], y - eye[1], z - eye[2]);
   }
 
+  function isCameraInsideMilkyWay(): boolean {
+    const eye = lastCameraEye;
+    if (!eye) return false;
+    return Math.hypot(
+      eye[0] - SGR_A_STAR_POS[0],
+      eye[1] - SGR_A_STAR_POS[1],
+      eye[2] - SGR_A_STAR_POS[2],
+    ) <= MILKY_WAY_RADIUS_AU;
+  }
+
   function projectedRadiusPx(radiusAU: number, projected: ProjectedMapPoint): number {
     const focalY = 1 / Math.tan(CAMERA_FOV_Y / 2);
     return Math.max(0, radiusAU) * focalY / Math.max(projected.w, 1e-9) * window.innerHeight * 0.5;
@@ -2209,7 +2219,7 @@ async function main(): Promise<void> {
     }
     addCandidate(bestVisibleStar);
 
-    if (showGalaxies) {
+    if (showGalaxies && !isCameraInsideMilkyWay()) {
       let bestGalaxy: MapObjectHit | null = null;
       for (let o = 0, i = 0; o < galaxyBuffer.length; o += GALAXY_FLOATS, i++) {
         const x = galaxyBuffer[o]!;
