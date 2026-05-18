@@ -16,9 +16,10 @@ help from Claude and Codex 5.5.
   time controls.
 - NASA/JPL Horizons starting vectors cached for 33 simulated bodies: the Sun,
   planets, major moons, Pluto/Charon, and selected dwarf planets.
-- NASA Science 3D Resources meshes for Mercury through Neptune are loaded
-  through the backend cache and rendered in place of procedural planet
-  billboards once available.
+- Solar-system planet meshes are loaded through the backend cache and rendered
+  in place of procedural planet billboards once available. Earth uses a local
+  credited GLB model by
+  [Matteo Pascale](https://www.artstation.com/matteopascale).
 - Solar-system-barycentric state data, so the Sun has a real starting position
   and velocity instead of being treated as fixed at the origin.
 - Local circular galactic-frame model that adds a small external tidal
@@ -127,6 +128,9 @@ after install:
 - `public/cache/nasa/constellation_figures_4k.tif` and
   `public/cache/nasa/constellations.meta.json`: NASA SVS Deep Star Maps 2020
   source reference for the constellation layer.
+- `src/models/earth.glb`: local Earth 3D model by
+  [Matteo Pascale](https://www.artstation.com/matteopascale), served through
+  `/api/model-assets/solar-earth`.
 Horizons data is loaded through the local backend at `/api/horizons`. The
 backend serves `cache/nasa/horizons/<date>.json` first, seeds that runtime cache
 from committed `public/cache/horizons/<date>.json` files when available, and
@@ -151,7 +155,8 @@ astrophysical solver.
   through the local backend and cached under `cache/nasa/models/`.
 - Solar-system planet meshes are render-only visual models. The Sun currently
   uses an emissive generated sphere because NASA's downloadable Sun package is
-  USDZ with a binary USDC scene, while the planets use official NASA GLB files.
+  USDZ with a binary USDC scene. Earth uses Matteo Pascale's local credited
+  GLB model; the other available planet meshes use NASA GLB files.
 - Large star and galaxy catalogs are mapped visually and do not exert gravity.
 - Galaxy distances are scaled with a Local Group linear range and a logarithmic
   deep-field range so large structures remain navigable in one scene.

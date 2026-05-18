@@ -26,6 +26,10 @@ function glbUrl(filename, upstream) {
   return { filename, contentType: GLB_CONTENT_TYPE, upstream };
 }
 
+function localGlb(filename, relativePath) {
+  return { filename, contentType: GLB_CONTENT_TYPE, localPath: path.join(REPO_ROOT, relativePath) };
+}
+
 function usdzUrl(filename, upstream) {
   return { filename, contentType: USDZ_CONTENT_TYPE, upstream };
 }
@@ -34,7 +38,7 @@ const MODEL_ASSETS = new Map([
   ["solar-sun", usdzUrl("solar-sun.usdz", "https://assets.science.nasa.gov/content/dam/science/psd/solar/2023/09/s/Sun_1_1391000.usdz")],
   ["solar-mercury", glbUrl("solar-mercury.glb", "https://assets.science.nasa.gov/content/dam/science/psd/solar/2023/09/m/Mercury_1_4878.glb")],
   ["solar-venus", glbUrl("solar-venus.glb", "https://assets.science.nasa.gov/content/dam/science/psd/solar/2023/09/v/Venus_1_12103.glb")],
-  ["solar-earth", glbUrl("solar-earth.glb", "https://assets.science.nasa.gov/content/dam/science/psd/solar/2023/09/e/Earth_1_12756.glb")],
+  ["solar-earth", localGlb("solar-earth-matteo-pascale.glb", "src/models/earth.glb")],
   ["solar-mars", glbUrl("solar-mars.glb", "https://assets.science.nasa.gov/content/dam/science/psd/mars/resources/gltf_files/24881_Mars_1_6792.glb")],
   ["solar-jupiter", glbUrl("solar-jupiter.glb", "https://assets.science.nasa.gov/content/dam/science/psd/solar/2023/09/j/Jupiter_1_142984.glb")],
   ["solar-saturn", glbUrl("solar-saturn.glb", "https://assets.science.nasa.gov/content/dam/science/psd/solar/2023/09/s/Saturn_1_120536.glb")],
@@ -170,6 +174,14 @@ async function downloadToCache(asset, cachePath) {
 }
 
 async function ensureCached(asset) {
+  if (asset.localPath) {
+    const info = await stat(asset.localPath);
+    if (!info.isFile() || info.size <= 0 || !(await isValidModelFile(asset, asset.localPath))) {
+      throw new Error("local model failed format validation");
+    }
+    return { cachePath: asset.localPath, size: info.size, cacheState: "local" };
+  }
+
   const cachePath = path.join(CACHE_ROOT, asset.filename);
   try {
     const info = await stat(cachePath);

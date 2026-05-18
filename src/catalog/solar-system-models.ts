@@ -12,6 +12,7 @@ export interface SolarSystemModelAsset {
 }
 
 const NASA_SCIENCE = "NASA Science 3D Resources";
+const MATTEO_PASCALE = "Matteo Pascale";
 
 export const SOLAR_SYSTEM_MODEL_ASSETS: readonly SolarSystemModelAsset[] = [
   {
@@ -46,9 +47,9 @@ export const SOLAR_SYSTEM_MODEL_ASSETS: readonly SolarSystemModelAsset[] = [
     id: "solar-earth",
     bodyName: "Earth",
     format: "glb",
-    source: NASA_SCIENCE,
-    sourceUrl: "https://science.nasa.gov/resource/earth-3d-model/",
-    assetUrl: "/api/model-assets/solar-earth",
+    source: MATTEO_PASCALE,
+    sourceUrl: "https://www.artstation.com/matteopascale",
+    assetUrl: "/api/model-assets/solar-earth?v=matteo-pascale",
     fallbackColor: [0.36, 0.56, 0.96],
   },
   {
