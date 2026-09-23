@@ -35,13 +35,18 @@ const MIME_TYPES = new Map([
 // Only Vite's content-hashed build output under /assets/ may be cached as
 // immutable. Everything else (/data, /textures, /cache, /draco, /models, public
 // root files) keeps a stable URL across regenerations, so it revalidates.
+// Files named with a content hash (e.g. textures/bodies/earth.20cbdc721e.jpg,
+// written by scripts/build-body-textures.mjs) are immutable too.
 const IMMUTABLE_CACHE_CONTROL = "public, max-age=31536000, immutable";
-const REVALIDATE_CACHE_CONTROL = "no-cache";
+// Browsers revalidate; a shared cache (Cloudflare) may serve it for an hour.
+const REVALIDATE_CACHE_CONTROL = "public, no-cache, s-maxage=3600";
+const CONTENT_HASHED_NAME = /\.[0-9a-f]{10}\.[a-z0-9]+$/;
 
 function cacheControlFor(urlPath, filePath) {
   if (path.basename(filePath) === "index.html") return "no-store";
   const hashedAssetsRoot = path.join(DIST_ROOT, "assets") + path.sep;
   if (urlPath.startsWith("/assets/") && filePath.startsWith(hashedAssetsRoot)) return IMMUTABLE_CACHE_CONTROL;
+  if (urlPath.startsWith("/textures/") && CONTENT_HASHED_NAME.test(urlPath)) return IMMUTABLE_CACHE_CONTROL;
   return REVALIDATE_CACHE_CONTROL;
 }
 
