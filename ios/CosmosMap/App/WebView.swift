@@ -177,9 +177,15 @@ struct WebView: UIViewRepresentable {
             return JSON.stringify(r);
             """
             webView.callAsyncJavaScript(script, arguments: [:], in: nil, in: .page) { result in
+                let line: String
                 switch result {
-                case .success(let value): print("[CosmosMap] SELFTEST \(value ?? "nil")")
-                case .failure(let error): print("[CosmosMap] SELFTEST {\"scriptError\":\"\(error.localizedDescription)\"}")
+                case .success(let value): line = "\(value ?? "null")"
+                case .failure(let error): line = "{\"scriptError\":\"\(error.localizedDescription)\"}"
+                }
+                NSLog("[CosmosMap] SELFTEST %@", line)
+                // CI reads this from the simulator data container (stdout is buffered there).
+                if let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+                    try? line.write(to: docs.appendingPathComponent("selftest.json"), atomically: true, encoding: .utf8)
                 }
             }
         }
