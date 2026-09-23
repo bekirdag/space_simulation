@@ -16,3 +16,6 @@ ios/CosmosMap/Web/
 ios/build/
 ios/DerivedData/
 ios/**/xcuserdata/
+# Firebase config for the iPad app: never commit (public repo). CI writes it from the
+# COSMOSMAP_GOOGLE_SERVICE_INFO secret.
+ios/CosmosMap/Resources/GoogleService-Info.plist

@@ -98,6 +98,7 @@ import { BackendUnavailableError, backendAssetUrl, backendFetch, readBackendJson
 import sagaBlackHoleUrl from "./img/saga.jpg?url";
 import { attachTouchControls } from "./scene/touch-controls";
 import { AdaptiveQuality, loadQualityMode, saveQualityMode, type QualityMode } from "./gpu/quality";
+import { logNativeEvent } from "./ui/native-analytics";
 import {
   DOUBLE_TAP_MS, DOUBLE_TAP_SLOP_PX, hasTouchInput, isCoarsePointer, isEmbeddedNativeApp, isSyntheticMouseEvent,
 } from "./ui/input-mode";
@@ -741,6 +742,7 @@ async function main(): Promise<void> {
   async function openObjectInfo(): Promise<void> {
     const focus = currentFocusInfo;
     if (!focus) return;
+    logNativeEvent("open_info", { target: focus.title, type: focus.objectType });
 
     const seq = ++objectInfoRequestSeq;
     setObjectInfoLoading(true);
@@ -1361,6 +1363,7 @@ async function main(): Promise<void> {
         const mode = input.value as QualityMode;
         quality.setMode(mode);
         saveQualityMode(mode);
+        logNativeEvent("quality_change", { level: mode });
         if (qualityStatus) qualityStatus.textContent = mode === "auto" ? quality.level : "";
       });
     }

@@ -7,69 +7,79 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		0B3F23A41BCB33FC88A6DB190A071CFF /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EFC0601CD4FEA3A9E21D612C6DBE43CE /* Foundation.framework */; };
-		1BB8DE1C98DB30E9F86940502F3CA093 /* MIMETypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 860ACD50A211552A4B47336C70439D1A /* MIMETypes.swift */; };
-		2D50492109E9AA9958C9375D0746F7A9 /* LocalServerController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9035D8D1383EADBF3F064974F219F6FE /* LocalServerController.swift */; };
-		3907AC4F62CA53B03149A149E44CE4AB /* LocalHTTPServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E47CB28E7F447EB70FF1801EC6535CA /* LocalHTTPServer.swift */; };
-		6677067A97F9366DB5F8D0CE855FB041 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = CC79E307D119E0B74752F6BCB37ADC5B /* Assets.xcassets */; };
-		6AD79D8B9AF70A934F14FC01D0387CAF /* ByteRange.swift in Sources */ = {isa = PBXBuildFile; fileRef = B164B407DE238B38D5A47D4B79F70696 /* ByteRange.swift */; };
-		9842B9F2C35691B31D88CC24F128635F /* Web in Resources */ = {isa = PBXBuildFile; fileRef = F760CF85852A557EFA0DF7835130B6E4 /* Web */; };
-		BD3CDFD09636CCD0B2A40C3DE425C9B2 /* StaticFileResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E8AC8965121EF2EADF1445461106D0D /* StaticFileResolver.swift */; };
-		D712BCF4F5EFA0F20A10E9653D83FC5D /* HTTPMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B0C9E920706FEDFDF86AEB55E3823DD /* HTTPMessage.swift */; };
-		D7F4FB32E3060079FE4C7BD21189EA1D /* CosmosMapApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 586A0570C4145172F1A811CD9B67DFDB /* CosmosMapApp.swift */; };
-		E0336AF983679F2B26D8710B65D3B97C /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EFC0601CD4FEA3A9E21D612C6DBE43CE /* Foundation.framework */; };
-		E3DF9AFE61488B084DA35160886C4585 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = AE98394E1ED63AAEFED6CB8936342C6D /* PrivacyInfo.xcprivacy */; };
-		EEEFC1FC4EA63883C715A08C2B13B207 /* APIProxy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F9F585DF4AD11856F414148E8966D08 /* APIProxy.swift */; };
-		F26F41D57CE889DF6D2F5B2C7204F326 /* LocalServerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6015A6D9EA5B679CBC805E470CF485C /* LocalServerTests.swift */; };
-		F91F92E8C23901F0472618516A189FC4 /* WebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 198D62A96ACEBA8321E56F349779860F /* WebView.swift */; };
-		FCA92837C1C0FB8342B52E584D51804F /* HTTPConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E4F42B30FFDE5D70D1121CE9C44D721 /* HTTPConnection.swift */; };
+		07FF519BA1DBEC0F8B0B240F0BC13903 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = C61B6D09D0F1A4AC3C8BFBEB8E9B376A /* PrivacyInfo.xcprivacy */; };
+		09693DB357C1AED5219DEC41E621CDB8 /* FirebaseAnalyticsCore in Frameworks */ = {isa = PBXBuildFile; productRef = 79E97F54A7E0FF4C87DE0145661108E1 /* FirebaseAnalyticsCore */; };
+		0BAE1B127294AD9683F18272A71667E1 /* NativeAnalyticsEventTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6107CD94890A6D86ED39694E3F663F3 /* NativeAnalyticsEventTests.swift */; };
+		0C1B5AAF8B4CA656D4944570D041D754 /* Web in Resources */ = {isa = PBXBuildFile; fileRef = E961503A11BD23A2C9EE21C355AD55D3 /* Web */; };
+		35D399B3C933649ADB45C4F09AFF4613 /* NativeAnalyticsEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AFCF50C4C12134440B3F291B45B61CE /* NativeAnalyticsEvent.swift */; };
+		49679D1197D80B651BBB7369886B9FDD /* MIMETypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8391B27412FE4B7714C4AA3DB6C40CC2 /* MIMETypes.swift */; };
+		7CB99CDC30286FAACF482072331266DD /* ByteRange.swift in Sources */ = {isa = PBXBuildFile; fileRef = C758F06001CEB1F6515B55F25EC9B653 /* ByteRange.swift */; };
+		867780EBB8DFBA1B9382AB5FC71ED2B7 /* FirebaseCrashlytics in Frameworks */ = {isa = PBXBuildFile; productRef = D3D50AA8515EFF9E69F3605DF3827FC7 /* FirebaseCrashlytics */; };
+		89C5AD0E99594AE24D2BF7869698DB42 /* LocalServerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F00DB4A90FA88E1A1EC435E7977FA9D /* LocalServerTests.swift */; };
+		9C198807C39E2CA029A996FF142E37EB /* Telemetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = D46806901A9470C4CD2AC13B8717F618 /* Telemetry.swift */; };
+		A953EBB1B13607076830F5FC347A67B0 /* APIProxy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01BA446FCE6288A7F36B9DCFB3E93777 /* APIProxy.swift */; };
+		A97E307074C37A0CDAA470130615E4A5 /* HTTPConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACEB5134F8C4FFD334AC606142C821B0 /* HTTPConnection.swift */; };
+		AA50EEC654A1336FC878A5C642256858 /* CosmosMapApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FAA32DFB1403CC78918257C9B0299E5 /* CosmosMapApp.swift */; };
+		AF62CDD0C3B10DF9E42CAB0E87B2F38E /* WebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66E56A9C622CAEAE66D4A478BDE8A262 /* WebView.swift */; };
+		BCFCCC9BD5DE72898458667EA3091128 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EFC0601CD4FEA3A9E21D612C6DBE43CE /* Foundation.framework */; };
+		D61BCA35655CF3BD91297DE9EFE22DB6 /* StaticFileResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA72726C0E44AD0FF50CD5CB51E4D4A8 /* StaticFileResolver.swift */; };
+		D8A02F284B7455F5B8EB44C1098985C1 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 7BE4980413E30DEEC961323D58E48A1C /* Assets.xcassets */; };
+		DC839F154C2DA19E516343D5E5B8646E /* LocalHTTPServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AA5C70E06831A8947621BC17D808317 /* LocalHTTPServer.swift */; };
+		EB02B7879B43B61E7551E421EB2AB611 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EFC0601CD4FEA3A9E21D612C6DBE43CE /* Foundation.framework */; };
+		FECB9D6349B31B99025DBA4924C26098 /* HTTPMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC0EB128BFCF68ECCDD8EB0CDADD59A4 /* HTTPMessage.swift */; };
+		FF35D9AFBA1842AF797C5ABC73D931C8 /* LocalServerController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6D125EFF5256437609091FAA918903E /* LocalServerController.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
-		7E24415AB048794153338F73F360B075 /* PBXContainerItemProxy */ = {
+		81E7FCBC2BA7BC38D1B7137C953E70A0 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = A212DBEA538CCF5C2D3BB9AD4CB0AED1 /* Project object */;
 			proxyType = 1;
-			remoteGlobalIDString = 30005CABFD10E07D13A2BF410EAA4F24;
+			remoteGlobalIDString = 23A9258C2A6AAF44EB9D33CB8C780605;
 			remoteInfo = CosmosMap;
 		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		0E47CB28E7F447EB70FF1801EC6535CA /* LocalHTTPServer.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = LocalHTTPServer.swift; path = Server/LocalHTTPServer.swift; sourceTree = "<group>"; };
-		198D62A96ACEBA8321E56F349779860F /* WebView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = WebView.swift; path = App/WebView.swift; sourceTree = "<group>"; };
+		01BA446FCE6288A7F36B9DCFB3E93777 /* APIProxy.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = APIProxy.swift; path = Server/APIProxy.swift; sourceTree = "<group>"; };
 		2602935464D3C6AF28719C8DC441D904 /* CosmosMapTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CosmosMapTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		4B0C9E920706FEDFDF86AEB55E3823DD /* HTTPMessage.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = HTTPMessage.swift; path = Server/HTTPMessage.swift; sourceTree = "<group>"; };
-		586A0570C4145172F1A811CD9B67DFDB /* CosmosMapApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CosmosMapApp.swift; path = App/CosmosMapApp.swift; sourceTree = "<group>"; };
-		860ACD50A211552A4B47336C70439D1A /* MIMETypes.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MIMETypes.swift; path = Server/MIMETypes.swift; sourceTree = "<group>"; };
+		2AA5C70E06831A8947621BC17D808317 /* LocalHTTPServer.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = LocalHTTPServer.swift; path = Server/LocalHTTPServer.swift; sourceTree = "<group>"; };
+		3AFCF50C4C12134440B3F291B45B61CE /* NativeAnalyticsEvent.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NativeAnalyticsEvent.swift; path = App/NativeAnalyticsEvent.swift; sourceTree = "<group>"; };
+		3FAA32DFB1403CC78918257C9B0299E5 /* CosmosMapApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CosmosMapApp.swift; path = App/CosmosMapApp.swift; sourceTree = "<group>"; };
+		66E56A9C622CAEAE66D4A478BDE8A262 /* WebView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = WebView.swift; path = App/WebView.swift; sourceTree = "<group>"; };
+		73744210A4D5A802798D6D89FCC58B4F /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; name = Info.plist; path = Resources/Info.plist; sourceTree = "<group>"; };
+		7BE4980413E30DEEC961323D58E48A1C /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		7F00DB4A90FA88E1A1EC435E7977FA9D /* LocalServerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LocalServerTests.swift; sourceTree = "<group>"; };
+		8391B27412FE4B7714C4AA3DB6C40CC2 /* MIMETypes.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MIMETypes.swift; path = Server/MIMETypes.swift; sourceTree = "<group>"; };
 		8A9B6A46DB34D7BF1D5587EA4203D01D /* CosmosMap.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CosmosMap.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		8E4F42B30FFDE5D70D1121CE9C44D721 /* HTTPConnection.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = HTTPConnection.swift; path = Server/HTTPConnection.swift; sourceTree = "<group>"; };
-		8E8AC8965121EF2EADF1445461106D0D /* StaticFileResolver.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = StaticFileResolver.swift; path = Server/StaticFileResolver.swift; sourceTree = "<group>"; };
-		8F9F585DF4AD11856F414148E8966D08 /* APIProxy.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = APIProxy.swift; path = Server/APIProxy.swift; sourceTree = "<group>"; };
-		9035D8D1383EADBF3F064974F219F6FE /* LocalServerController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = LocalServerController.swift; path = App/LocalServerController.swift; sourceTree = "<group>"; };
-		AE98394E1ED63AAEFED6CB8936342C6D /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = Resources/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
-		B164B407DE238B38D5A47D4B79F70696 /* ByteRange.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ByteRange.swift; path = Server/ByteRange.swift; sourceTree = "<group>"; };
-		CC79E307D119E0B74752F6BCB37ADC5B /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		D6015A6D9EA5B679CBC805E470CF485C /* LocalServerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LocalServerTests.swift; sourceTree = "<group>"; };
-		D9661AA4EC0856CA7A2900BE3BEFB4A0 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; name = Info.plist; path = Resources/Info.plist; sourceTree = "<group>"; };
+		A6D125EFF5256437609091FAA918903E /* LocalServerController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = LocalServerController.swift; path = App/LocalServerController.swift; sourceTree = "<group>"; };
+		ACEB5134F8C4FFD334AC606142C821B0 /* HTTPConnection.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = HTTPConnection.swift; path = Server/HTTPConnection.swift; sourceTree = "<group>"; };
+		C61B6D09D0F1A4AC3C8BFBEB8E9B376A /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = Resources/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		C758F06001CEB1F6515B55F25EC9B653 /* ByteRange.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ByteRange.swift; path = Server/ByteRange.swift; sourceTree = "<group>"; };
+		CA72726C0E44AD0FF50CD5CB51E4D4A8 /* StaticFileResolver.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = StaticFileResolver.swift; path = Server/StaticFileResolver.swift; sourceTree = "<group>"; };
+		D46806901A9470C4CD2AC13B8717F618 /* Telemetry.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = Telemetry.swift; path = App/Telemetry.swift; sourceTree = "<group>"; };
+		E961503A11BD23A2C9EE21C355AD55D3 /* Web */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder; path = Web; sourceTree = "<group>"; };
+		EC0EB128BFCF68ECCDD8EB0CDADD59A4 /* HTTPMessage.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = HTTPMessage.swift; path = Server/HTTPMessage.swift; sourceTree = "<group>"; };
 		EFC0601CD4FEA3A9E21D612C6DBE43CE /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS14.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
-		F760CF85852A557EFA0DF7835130B6E4 /* Web */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder; path = Web; sourceTree = "<group>"; };
+		F6107CD94890A6D86ED39694E3F663F3 /* NativeAnalyticsEventTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NativeAnalyticsEventTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		0AD53D711BEC9C03335085E2FAD5D07D /* Frameworks */ = {
+		8BDD06BED65BCF0508DA44F0875B9257 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				0B3F23A41BCB33FC88A6DB190A071CFF /* Foundation.framework in Frameworks */,
+				EB02B7879B43B61E7551E421EB2AB611 /* Foundation.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		6D22B804CD53021996B9694CB650EB6F /* Frameworks */ = {
+		E4F160066F2F6CB08CFDDD8C6E98016B /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				E0336AF983679F2B26D8710B65D3B97C /* Foundation.framework in Frameworks */,
+				BCFCCC9BD5DE72898458667EA3091128 /* Foundation.framework in Frameworks */,
+				867780EBB8DFBA1B9382AB5FC71ED2B7 /* FirebaseCrashlytics in Frameworks */,
+				09693DB357C1AED5219DEC41E621CDB8 /* FirebaseAnalyticsCore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -81,18 +91,9 @@
 			children = (
 				F7BA114408976D6EEA061DC94DA7DE6A /* Products */,
 				7E46847F3401196A2146F3FB95B002B3 /* Frameworks */,
-				D33CBCE5CE572B4EE0C7612E0644309B /* CosmosMap */,
-				5162F7B462A1B11565ED4E2A864EC0A4 /* CosmosMapTests */,
+				BE8DCFAF669A06553FC2F47EAEC30B40 /* CosmosMap */,
+				E70C2D6C945B5A1D60A5CAF08699D6B6 /* CosmosMapTests */,
 			);
-			sourceTree = "<group>";
-		};
-		5162F7B462A1B11565ED4E2A864EC0A4 /* CosmosMapTests */ = {
-			isa = PBXGroup;
-			children = (
-				D6015A6D9EA5B679CBC805E470CF485C /* LocalServerTests.swift */,
-			);
-			name = CosmosMapTests;
-			path = CosmosMapTests;
 			sourceTree = "<group>";
 		};
 		7E46847F3401196A2146F3FB95B002B3 /* Frameworks */ = {
@@ -111,26 +112,38 @@
 			name = iOS;
 			sourceTree = "<group>";
 		};
-		D33CBCE5CE572B4EE0C7612E0644309B /* CosmosMap */ = {
+		BE8DCFAF669A06553FC2F47EAEC30B40 /* CosmosMap */ = {
 			isa = PBXGroup;
 			children = (
-				586A0570C4145172F1A811CD9B67DFDB /* CosmosMapApp.swift */,
-				9035D8D1383EADBF3F064974F219F6FE /* LocalServerController.swift */,
-				198D62A96ACEBA8321E56F349779860F /* WebView.swift */,
-				8F9F585DF4AD11856F414148E8966D08 /* APIProxy.swift */,
-				B164B407DE238B38D5A47D4B79F70696 /* ByteRange.swift */,
-				8E4F42B30FFDE5D70D1121CE9C44D721 /* HTTPConnection.swift */,
-				4B0C9E920706FEDFDF86AEB55E3823DD /* HTTPMessage.swift */,
-				0E47CB28E7F447EB70FF1801EC6535CA /* LocalHTTPServer.swift */,
-				860ACD50A211552A4B47336C70439D1A /* MIMETypes.swift */,
-				8E8AC8965121EF2EADF1445461106D0D /* StaticFileResolver.swift */,
-				D9661AA4EC0856CA7A2900BE3BEFB4A0 /* Info.plist */,
-				AE98394E1ED63AAEFED6CB8936342C6D /* PrivacyInfo.xcprivacy */,
-				CC79E307D119E0B74752F6BCB37ADC5B /* Assets.xcassets */,
-				F760CF85852A557EFA0DF7835130B6E4 /* Web */,
+				3FAA32DFB1403CC78918257C9B0299E5 /* CosmosMapApp.swift */,
+				A6D125EFF5256437609091FAA918903E /* LocalServerController.swift */,
+				3AFCF50C4C12134440B3F291B45B61CE /* NativeAnalyticsEvent.swift */,
+				D46806901A9470C4CD2AC13B8717F618 /* Telemetry.swift */,
+				66E56A9C622CAEAE66D4A478BDE8A262 /* WebView.swift */,
+				01BA446FCE6288A7F36B9DCFB3E93777 /* APIProxy.swift */,
+				C758F06001CEB1F6515B55F25EC9B653 /* ByteRange.swift */,
+				ACEB5134F8C4FFD334AC606142C821B0 /* HTTPConnection.swift */,
+				EC0EB128BFCF68ECCDD8EB0CDADD59A4 /* HTTPMessage.swift */,
+				2AA5C70E06831A8947621BC17D808317 /* LocalHTTPServer.swift */,
+				8391B27412FE4B7714C4AA3DB6C40CC2 /* MIMETypes.swift */,
+				CA72726C0E44AD0FF50CD5CB51E4D4A8 /* StaticFileResolver.swift */,
+				73744210A4D5A802798D6D89FCC58B4F /* Info.plist */,
+				C61B6D09D0F1A4AC3C8BFBEB8E9B376A /* PrivacyInfo.xcprivacy */,
+				7BE4980413E30DEEC961323D58E48A1C /* Assets.xcassets */,
+				E961503A11BD23A2C9EE21C355AD55D3 /* Web */,
 			);
 			name = CosmosMap;
 			path = CosmosMap;
+			sourceTree = "<group>";
+		};
+		E70C2D6C945B5A1D60A5CAF08699D6B6 /* CosmosMapTests */ = {
+			isa = PBXGroup;
+			children = (
+				7F00DB4A90FA88E1A1EC435E7977FA9D /* LocalServerTests.swift */,
+				F6107CD94890A6D86ED39694E3F663F3 /* NativeAnalyticsEventTests.swift */,
+			);
+			name = CosmosMapTests;
+			path = CosmosMapTests;
 			sourceTree = "<group>";
 		};
 		F7BA114408976D6EEA061DC94DA7DE6A /* Products */ = {
@@ -145,41 +158,47 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		16072E49CF0DE64D43F51A3114264D05 /* CosmosMapTests */ = {
+		23A9258C2A6AAF44EB9D33CB8C780605 /* CosmosMap */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 01FBFB02AC5F42A112C8C39D288C009E /* Build configuration list for PBXNativeTarget "CosmosMapTests" */;
+			buildConfigurationList = 0C370A780423AB514CAA61BAF50D9A64 /* Build configuration list for PBXNativeTarget "CosmosMap" */;
 			buildPhases = (
-				45DFA37C5AC4C51EE3669DF99657CD3B /* Sources */,
-				6D22B804CD53021996B9694CB650EB6F /* Frameworks */,
-				30F008852E62817F577136A38E157260 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				0F6677CB0A58702EE6ACDD290D580E74 /* PBXTargetDependency */,
-			);
-			name = CosmosMapTests;
-			productName = CosmosMapTests;
-			productReference = 2602935464D3C6AF28719C8DC441D904 /* CosmosMapTests.xctest */;
-			productType = "com.apple.product-type.bundle.unit-test";
-		};
-		30005CABFD10E07D13A2BF410EAA4F24 /* CosmosMap */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = A5B8291CC22BEC51E56C26397E4AACBD /* Build configuration list for PBXNativeTarget "CosmosMap" */;
-			buildPhases = (
-				306EAC71859D560B658D3E6FA8FF0207 /* Check bundled web build */,
-				16AF84DFAE9A1E6A9FDB725F7DD7A3C0 /* Sources */,
-				0AD53D711BEC9C03335085E2FAD5D07D /* Frameworks */,
-				3702257704BC5122A4A82149643DC53D /* Resources */,
+				C052E50C905DFCEB68AD34494F88F59D /* Check bundled web build */,
+				AA7186D012513DA27642D011784C579D /* Sources */,
+				E4F160066F2F6CB08CFDDD8C6E98016B /* Frameworks */,
+				35CFC5D7A67BB6C1827C36F2AB6D559B /* Resources */,
+				D3F9DAF6AA1BC169A670EBB0AA50323B /* Copy GoogleService-Info.plist */,
+				8E87F73F87697E4217D38C043797D655 /* Upload Crashlytics symbols */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 			);
 			name = CosmosMap;
+			packageProductDependencies = (
+				D3D50AA8515EFF9E69F3605DF3827FC7 /* FirebaseCrashlytics */,
+				79E97F54A7E0FF4C87DE0145661108E1 /* FirebaseAnalyticsCore */,
+			);
 			productName = CosmosMap;
 			productReference = 8A9B6A46DB34D7BF1D5587EA4203D01D /* CosmosMap.app */;
 			productType = "com.apple.product-type.application";
+		};
+		57C1E1F75A14B7949F64C32ABDC4266F /* CosmosMapTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 9C8226724A738A28FA9838089B24A9A8 /* Build configuration list for PBXNativeTarget "CosmosMapTests" */;
+			buildPhases = (
+				A21449E2F5DB82C5A57B37F76D350C18 /* Sources */,
+				8BDD06BED65BCF0508DA44F0875B9257 /* Frameworks */,
+				7E95CFDAB6750C3BAC26813B84D08654 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				2187B88821CBFB454E426C22C9BB4293 /* PBXTargetDependency */,
+			);
+			name = CosmosMapTests;
+			productName = CosmosMapTests;
+			productReference = 2602935464D3C6AF28719C8DC441D904 /* CosmosMapTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
 
@@ -199,38 +218,65 @@
 				Base,
 			);
 			mainGroup = 1CFE260CB8FC05FC7E60F9629729EF9F;
+			packageReferences = (
+				6065F4513216B2F38266BA7D80DEB71D /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+			);
 			productRefGroup = F7BA114408976D6EEA061DC94DA7DE6A /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				30005CABFD10E07D13A2BF410EAA4F24 /* CosmosMap */,
-				16072E49CF0DE64D43F51A3114264D05 /* CosmosMapTests */,
+				23A9258C2A6AAF44EB9D33CB8C780605 /* CosmosMap */,
+				57C1E1F75A14B7949F64C32ABDC4266F /* CosmosMapTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		30F008852E62817F577136A38E157260 /* Resources */ = {
+		35CFC5D7A67BB6C1827C36F2AB6D559B /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				07FF519BA1DBEC0F8B0B240F0BC13903 /* PrivacyInfo.xcprivacy in Resources */,
+				D8A02F284B7455F5B8EB44C1098985C1 /* Assets.xcassets in Resources */,
+				0C1B5AAF8B4CA656D4944570D041D754 /* Web in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		3702257704BC5122A4A82149643DC53D /* Resources */ = {
+		7E95CFDAB6750C3BAC26813B84D08654 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				E3DF9AFE61488B084DA35160886C4585 /* PrivacyInfo.xcprivacy in Resources */,
-				6677067A97F9366DB5F8D0CE855FB041 /* Assets.xcassets in Resources */,
-				9842B9F2C35691B31D88CC24F128635F /* Web in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
-		306EAC71859D560B658D3E6FA8FF0207 /* Check bundled web build */ = {
+		8E87F73F87697E4217D38C043797D655 /* Upload Crashlytics symbols */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}",
+				"${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}/Contents/Resources/DWARF/${PRODUCT_NAME}",
+				"${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}/Contents/Info.plist",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/GoogleService-Info.plist",
+				"$(TARGET_BUILD_DIR)/$(EXECUTABLE_PATH)",
+			);
+			name = "Upload Crashlytics symbols";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "if [ \"$CONFIGURATION\" != \"Release\" ]; then\n  echo \"Skipping Crashlytics symbol upload for $CONFIGURATION.\"\n  exit 0\nfi\nif [ ! -f \"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/GoogleService-Info.plist\" ]; then\n  echo \"warning: Skipping Crashlytics symbol upload: GoogleService-Info.plist is not in the app bundle.\"\n  exit 0\nfi\nCRASHLYTICS_RUN=\"${BUILD_DIR%/Build/*}/SourcePackages/checkouts/firebase-ios-sdk/Crashlytics/run\"\nif [ ! -x \"$CRASHLYTICS_RUN\" ]; then\n  echo \"warning: Skipping Crashlytics symbol upload: $CRASHLYTICS_RUN not found.\"\n  exit 0\nfi\n\"$CRASHLYTICS_RUN\"\n";
+		};
+		C052E50C905DFCEB68AD34494F88F59D /* Check bundled web build */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
@@ -250,77 +296,83 @@
 			shellPath = /bin/sh;
 			shellScript = "if [ ! -f \"${SRCROOT}/CosmosMap/Web/index.html\" ]; then\n  echo \"error: ios/CosmosMap/Web/index.html is missing. Run 'npm run build && ios/scripts/sync-web.sh' from the repo root.\"\n  exit 1\nfi\n";
 		};
+		D3F9DAF6AA1BC169A670EBB0AA50323B /* Copy GoogleService-Info.plist */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Copy GoogleService-Info.plist";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "SOURCE=\"${SRCROOT}/CosmosMap/Resources/GoogleService-Info.plist\"\nDESTINATION=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/GoogleService-Info.plist\"\nif [ -f \"$SOURCE\" ]; then\n  cp -f \"$SOURCE\" \"$DESTINATION\"\n  echo \"Copied GoogleService-Info.plist into the app bundle.\"\nelif [ \"$CONFIGURATION\" = \"Release\" ]; then\n  echo \"error: ios/CosmosMap/Resources/GoogleService-Info.plist is missing. Release builds need it (CI decodes the COSMOSMAP_GOOGLE_SERVICE_INFO secret into that path).\"\n  exit 1\nelse\n  rm -f \"$DESTINATION\"\n  echo \"note: GoogleService-Info.plist not found; Firebase stays disabled in this build.\"\nfi\n";
+		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		16AF84DFAE9A1E6A9FDB725F7DD7A3C0 /* Sources */ = {
+		A21449E2F5DB82C5A57B37F76D350C18 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				D7F4FB32E3060079FE4C7BD21189EA1D /* CosmosMapApp.swift in Sources */,
-				2D50492109E9AA9958C9375D0746F7A9 /* LocalServerController.swift in Sources */,
-				F91F92E8C23901F0472618516A189FC4 /* WebView.swift in Sources */,
-				EEEFC1FC4EA63883C715A08C2B13B207 /* APIProxy.swift in Sources */,
-				6AD79D8B9AF70A934F14FC01D0387CAF /* ByteRange.swift in Sources */,
-				FCA92837C1C0FB8342B52E584D51804F /* HTTPConnection.swift in Sources */,
-				D712BCF4F5EFA0F20A10E9653D83FC5D /* HTTPMessage.swift in Sources */,
-				3907AC4F62CA53B03149A149E44CE4AB /* LocalHTTPServer.swift in Sources */,
-				1BB8DE1C98DB30E9F86940502F3CA093 /* MIMETypes.swift in Sources */,
-				BD3CDFD09636CCD0B2A40C3DE425C9B2 /* StaticFileResolver.swift in Sources */,
+				89C5AD0E99594AE24D2BF7869698DB42 /* LocalServerTests.swift in Sources */,
+				0BAE1B127294AD9683F18272A71667E1 /* NativeAnalyticsEventTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		45DFA37C5AC4C51EE3669DF99657CD3B /* Sources */ = {
+		AA7186D012513DA27642D011784C579D /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				F26F41D57CE889DF6D2F5B2C7204F326 /* LocalServerTests.swift in Sources */,
+				AA50EEC654A1336FC878A5C642256858 /* CosmosMapApp.swift in Sources */,
+				FF35D9AFBA1842AF797C5ABC73D931C8 /* LocalServerController.swift in Sources */,
+				35D399B3C933649ADB45C4F09AFF4613 /* NativeAnalyticsEvent.swift in Sources */,
+				9C198807C39E2CA029A996FF142E37EB /* Telemetry.swift in Sources */,
+				AF62CDD0C3B10DF9E42CAB0E87B2F38E /* WebView.swift in Sources */,
+				A953EBB1B13607076830F5FC347A67B0 /* APIProxy.swift in Sources */,
+				7CB99CDC30286FAACF482072331266DD /* ByteRange.swift in Sources */,
+				A97E307074C37A0CDAA470130615E4A5 /* HTTPConnection.swift in Sources */,
+				FECB9D6349B31B99025DBA4924C26098 /* HTTPMessage.swift in Sources */,
+				DC839F154C2DA19E516343D5E5B8646E /* LocalHTTPServer.swift in Sources */,
+				49679D1197D80B651BBB7369886B9FDD /* MIMETypes.swift in Sources */,
+				D61BCA35655CF3BD91297DE9EFE22DB6 /* StaticFileResolver.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		0F6677CB0A58702EE6ACDD290D580E74 /* PBXTargetDependency */ = {
+		2187B88821CBFB454E426C22C9BB4293 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			name = CosmosMap;
-			target = 30005CABFD10E07D13A2BF410EAA4F24 /* CosmosMap */;
-			targetProxy = 7E24415AB048794153338F73F360B075 /* PBXContainerItemProxy */;
+			target = 23A9258C2A6AAF44EB9D33CB8C780605 /* CosmosMap */;
+			targetProxy = 81E7FCBC2BA7BC38D1B7137C953E70A0 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
-		2BF6C25784B446015E3BE5B6B4E0FFB5 /* Release */ = {
+		3992A61040329D81966F468AB4A8F96F /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = "";
-				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
+				BUNDLE_LOADER = "$(TEST_HOST)";
 				CLANG_ENABLE_OBJC_WEAK = NO;
-				CODE_SIGN_IDENTITY = "Apple Distribution";
-				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 1;
-				DEAD_CODE_STRIPPING = YES;
-				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = AH277897AV;
-				ENABLE_PREVIEWS = NO;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
-				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = CosmosMap/Resources/Info.plist;
+				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.wodo.cosmosmap;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				PROVISIONING_PROFILE_SPECIFIER = "CosmosMap App Store";
+				PRODUCT_BUNDLE_IDENTIFIER = com.wodo.cosmosmap.tests;
 				SDKROOT = iphoneos;
-				SUPPORTS_MACCATALYST = NO;
-				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
-				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
-				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_STRICT_CONCURRENCY = minimal;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 2;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/CosmosMap.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/CosmosMap";
 				VALIDATE_PRODUCT = YES;
 			};
 			name = Release;
@@ -386,39 +438,7 @@
 			};
 			name = Debug;
 		};
-		693B397F58BBE2FE3D13B4C6057708F2 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = "";
-				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
-				CLANG_ENABLE_OBJC_WEAK = NO;
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = AH277897AV;
-				ENABLE_PREVIEWS = NO;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
-				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = CosmosMap/Resources/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.wodo.cosmosmap;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphoneos;
-				SUPPORTS_MACCATALYST = NO;
-				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
-				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_STRICT_CONCURRENCY = minimal;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 2;
-			};
-			name = Debug;
-		};
-		6E52DD8456641BDE7F08A8AA7BD1AB0E /* Debug */ = {
+		63915A1BB412E9A35266BC80FB617EB4 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
@@ -490,21 +510,70 @@
 			};
 			name = Release;
 		};
-		B8719BEAE06C4E7EE761CF271B40F928 /* Release */ = {
+		891684399E2905D180D445F776532977 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = "";
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = AH277897AV;
-				GENERATE_INFOPLIST_FILE = YES;
+				ENABLE_PREVIEWS = NO;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = CosmosMap/Resources/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.wodo.cosmosmap.tests;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.wodo.cosmosmap;
+				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_STRICT_CONCURRENCY = minimal;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 2;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/CosmosMap.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/CosmosMap";
+			};
+			name = Debug;
+		};
+		A52BF1B93487FF1515F5443C65A05665 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = "";
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_IDENTITY = "Apple Distribution";
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = AH277897AV;
+				ENABLE_PREVIEWS = NO;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = CosmosMap/Resources/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.wodo.cosmosmap;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "CosmosMap App Store";
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_STRICT_CONCURRENCY = minimal;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 2;
 				VALIDATE_PRODUCT = YES;
 			};
 			name = Release;
@@ -512,11 +581,11 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		01FBFB02AC5F42A112C8C39D288C009E /* Build configuration list for PBXNativeTarget "CosmosMapTests" */ = {
+		0C370A780423AB514CAA61BAF50D9A64 /* Build configuration list for PBXNativeTarget "CosmosMap" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				B8719BEAE06C4E7EE761CF271B40F928 /* Release */,
-				6E52DD8456641BDE7F08A8AA7BD1AB0E /* Debug */,
+				A52BF1B93487FF1515F5443C65A05665 /* Release */,
+				891684399E2905D180D445F776532977 /* Debug */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
@@ -530,16 +599,40 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		A5B8291CC22BEC51E56C26397E4AACBD /* Build configuration list for PBXNativeTarget "CosmosMap" */ = {
+		9C8226724A738A28FA9838089B24A9A8 /* Build configuration list for PBXNativeTarget "CosmosMapTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				2BF6C25784B446015E3BE5B6B4E0FFB5 /* Release */,
-				693B397F58BBE2FE3D13B4C6057708F2 /* Debug */,
+				3992A61040329D81966F468AB4A8F96F /* Release */,
+				63915A1BB412E9A35266BC80FB617EB4 /* Debug */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		6065F4513216B2F38266BA7D80DEB71D /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
+			requirement = {
+				kind = exactVersion;
+				version = 12.14.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		79E97F54A7E0FF4C87DE0145661108E1 /* FirebaseAnalyticsCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 6065F4513216B2F38266BA7D80DEB71D /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAnalyticsCore;
+		};
+		D3D50AA8515EFF9E69F3605DF3827FC7 /* FirebaseCrashlytics */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 6065F4513216B2F38266BA7D80DEB71D /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseCrashlytics;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = A212DBEA538CCF5C2D3BB9AD4CB0AED1 /* Project object */;
 }

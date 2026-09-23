@@ -9,6 +9,7 @@ import {
 import { BodyType } from "../physics/constants";
 import { addDoubleActivateListener } from "./input-mode";
 import { type StarSearchResult } from "../catalog/stars";
+import { bodyTypeName, logNativeEvent } from "./native-analytics";
 
 const DEFAULT_TRAVEL_DIST = 0.5;
 const MOON_SYSTEM_PADDING = 1.15;
@@ -176,6 +177,7 @@ export class NavPanel {
       el.addEventListener("click", () => {
         this.clearFocusedBody();
         this.onPreset(el.dataset["preset"]!);
+        logNativeEvent("preset_change", { preset: el.dataset["preset"]! });
       });
     });
   }
@@ -365,6 +367,8 @@ export class NavPanel {
     if (!body) return;
     const dist = this.distanceFor(name, body, mode);
     this.setFocusedBody(name);
+    // litView = false marks automatic re-framing, not a user's travel choice.
+    if (litView) logNativeEvent("travel_to", { target: name, type: bodyTypeName(body.type) });
     this.camera.travelTo(
       body.x, body.y, body.z,
       dist,
@@ -766,6 +770,11 @@ export class NavPanel {
       btn.append(swatch, copy);
       btn.addEventListener("click", () => {
         const isConstellation = hit.id.startsWith("constellation:");
+        logNativeEvent("search", { query_length: this.search.value.trim().length });
+        // Bodies ("body:" ids) are logged by travelTo() when main.ts flies there.
+        if (!hit.id.startsWith("body:")) {
+          logNativeEvent("travel_to", { target: hit.label, type: this.catalogObjectType(hit) });
+        }
         if (isConstellation) this.selectCatalogItem(hit);
         else this.selectCatalogStar(hit);
         this.search.value = hit.label;

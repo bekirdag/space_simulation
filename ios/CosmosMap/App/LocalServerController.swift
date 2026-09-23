@@ -48,6 +48,7 @@ final class LocalServerController: ObservableObject {
     private func start() {
         guard let webRoot, FileManager.default.fileExists(atPath: webRoot.appendingPathComponent("index.html").path) else {
             state = .failed("The bundled web content is missing. Rebuild the app after running ios/scripts/sync-web.sh.")
+            Telemetry.recordNonFatal(.webBundleMissing)
             return
         }
         attemptedFallback = false
@@ -96,6 +97,7 @@ final class LocalServerController: ObservableObject {
                 launch(on: 0, webRoot: webRoot)
             } else {
                 state = .failed("CosmosMap couldn't start its local content server.\n\(error.localizedDescription)")
+                Telemetry.recordNonFatal(.localServerStartFailed, underlying: error)
             }
         }
     }

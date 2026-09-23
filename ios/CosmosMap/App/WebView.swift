@@ -20,6 +20,9 @@ struct WebView: UIViewRepresentable {
         configuration.userContentController.addUserScript(
             WKUserScript(source: Self.nativeBridgeScript, injectionTime: .atDocumentStart, forMainFrameOnly: true)
         )
+        // Analytics events from the page (window.CosmosMapNative.logEvent). The handler holds
+        // no reference back to the web view, so the controller's strong reference is no cycle.
+        configuration.userContentController.add(AnalyticsMessageHandler(), name: AnalyticsMessageHandler.name)
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
@@ -62,14 +65,37 @@ struct WebView: UIViewRepresentable {
         webView.uiDelegate = nil
     }
 
-    /// `window.CosmosMapNative`, available before any page script runs.
+    /// `window.CosmosMapNative` (platform, version, logEvent), available before any page script runs.
     static var nativeBridgeScript: String {
-        let info = Bundle.main.infoDictionary
-        let version = "\(info?["CFBundleShortVersionString"] as? String ?? "0") (\(info?["CFBundleVersion"] as? String ?? "0"))"
-        let payload: [String: String] = ["platform": "ipad", "version": version]
+        let payload: [String: String] = ["platform": "ipad", "version": Telemetry.appVersion]
         let json = (try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]))
             .flatMap { String(data: $0, encoding: .utf8) } ?? #"{"platform":"ipad"}"#
-        return "window.CosmosMapNative = Object.freeze(\(json));"
+        return """
+        window.CosmosMapNative = Object.freeze(Object.assign(\(json), {
+          logEvent: function (name, params) {
+            try {
+              window.webkit.messageHandlers.\(AnalyticsMessageHandler.name).postMessage({ name: String(name), params: params || {} });
+            } catch (e) {}
+          }
+        }));
+        """
+    }
+
+    /// Receives `{name, params}` from the page and forwards valid events to Firebase Analytics.
+    final class AnalyticsMessageHandler: NSObject, WKScriptMessageHandler {
+        static let name = "cosmosmapAnalytics"
+
+        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            // Only the bundled page (main frame, loopback origin) may log events.
+            guard message.frameInfo.isMainFrame, message.frameInfo.securityOrigin.host == "127.0.0.1" else { return }
+            guard let event = NativeAnalyticsEvent(messageBody: message.body) else {
+                #if DEBUG
+                print("[CosmosMap] rejected analytics event: \(message.body)")
+                #endif
+                return
+            }
+            MainActor.assumeIsolated { Telemetry.log(event) }
+        }
     }
 
     final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
@@ -134,6 +160,7 @@ struct WebView: UIViewRepresentable {
 
         func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
             // The WebContent process was killed (usually memory pressure from GPU buffers).
+            Telemetry.recordNonFatal(.webContentProcessTerminated)
             if let homeURL { webView.load(URLRequest(url: homeURL)) } else { webView.reload() }
         }
 

@@ -1,7 +1,17 @@
 import SwiftUI
+import UIKit
+
+final class AppDelegate: NSObject, UIApplicationDelegate {
+    func application(_ application: UIApplication,
+                     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        Telemetry.configure()
+        return true
+    }
+}
 
 @main
 struct CosmosMapApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var server = LocalServerController()
 
     var body: some Scene {

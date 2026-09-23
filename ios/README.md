@@ -2,6 +2,7 @@
 
 A native iPad app (iPadOS 26.0 or later) that wraps the CosmosMap web build in a full-screen `WKWebView`.
 It is free, has no login or in-app purchases, and does no tracking.
+Crash reports and anonymous usage events go to Firebase Crashlytics and Analytics (see [Firebase](#firebase)).
 
 - Bundle ID `com.wodo.cosmosmap`, team `AH277897AV`, display name **CosmosMap**
 - iPad only (`TARGETED_DEVICE_FAMILY=2`); no Mac Catalyst, no "Designed for iPad" on Mac or visionOS
@@ -17,6 +18,7 @@ ios/
     Server/                      loopback HTTP/1.1 server + /api proxy (Network.framework)
     Resources/Info.plist
     Resources/PrivacyInfo.xcprivacy
+    Resources/GoogleService-Info.plist   Firebase config (gitignored, written by CI from a secret)
     Assets.xcassets              AppIcon (single 1024 px) + LaunchBackground colour
     Web/                         copy of dist/ (gitignored, made by scripts/sync-web.sh)
   CosmosMapTests/                unit + loopback integration tests for the server
@@ -36,6 +38,9 @@ ios/scripts/sync-web.sh                 # rsync --delete dist/ into ios/CosmosMa
 ruby ios/scripts/generate_xcode_project.rb   # only after adding/removing Swift files or changing settings
 open ios/CosmosMap.xcodeproj
 ```
+
+The first build resolves the Firebase Swift packages (network needed); the pinned revisions are in
+`CosmosMap.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved`, which is committed.
 
 `Web/` is added to the app as a folder reference, so the `dist/` directory tree lands unchanged at `CosmosMap.app/Web/`.
 If `Web/index.html` is missing, the "Check bundled web build" build phase fails the build.
@@ -75,6 +80,12 @@ xcodebuild -exportArchive -archivePath build/CosmosMap.xcarchive \
   -exportOptionsPlist ios/ExportOptions.plist -exportPath build/export
 ```
 
+CI must write the Firebase config before building, or the Release build fails:
+
+```sh
+echo "$COSMOSMAP_GOOGLE_SERVICE_INFO" | base64 --decode > ios/CosmosMap/Resources/GoogleService-Info.plist
+```
+
 `ExportOptions.plist` settings: `method app-store-connect`, `destination upload`, `manageAppVersionAndBuildNumber false`, `uploadSymbols true` and `stripSwiftSymbols true`.
 
 ## How it works
@@ -108,14 +119,60 @@ xcodebuild -exportArchive -archivePath build/CosmosMap.xcarchive \
 ### Web view
 
 - The page loads from `http://127.0.0.1:<port>/`. Loopback is a secure context, and the page is cross-origin isolated (both checked at runtime in Debug).
-- `window.CosmosMapNative = { platform: "ipad", version: "1.0 (N)" }` is injected at document start.
+- `window.CosmosMapNative = { platform: "ipad", version: "1.0 (N)", logEvent(name, params) }` is injected at document start (see [Web analytics bridge](#web-analytics-bridge)).
 - Navigation to anything other than the local origin opens in Safari. This covers `target=_blank`, `window.open` and `mailto:`.
-- If the WebContent process is killed, the page reloads.
+- If the WebContent process is killed, the page reloads and a Crashlytics non-fatal is recorded.
 - Back/forward swipe gestures, link previews and bounce are off, and there are no automatic content insets.
 - `isInspectable` is enabled in Debug only.
 - The status bar is hidden and the home indicator auto-hides. The dark `LaunchBackground` colour (#06060F) sits behind everything, so the screen never flashes white.
 
+### Firebase
+
+- Firebase Apple SDK **12.14.0** via Swift Package Manager (exact version, set in `generate_xcode_project.rb`). It is the newest release whose `Package.swift` uses swift-tools 6.0, so it builds with Xcode 16.2 and Xcode 26. 12.15.0 and later need Xcode 16.3 or later.
+- Products: `FirebaseCrashlytics` and `FirebaseAnalyticsCore`. `FirebaseAnalyticsCore` is Analytics without `GoogleAppMeasurementIdentitySupport` (the IDFA/AdSupport part) and without the Google Ads on-device-conversion SDK. The app never links AdSupport or AppTrackingTransparency and never shows the tracking prompt.
+- `Info.plist` turns off IDFV collection, ad storage, ad user data, ad personalization signals, ad-network registration and automatic screen reporting.
+- `GoogleService-Info.plist` is **not committed**, because the repo is public. It is gitignored at `ios/CosmosMap/Resources/GoogleService-Info.plist`.
+  - CI base64-decodes the secret `COSMOSMAP_GOOGLE_SERVICE_INFO` into that path before building (see [Release](#release)).
+  - The "Copy GoogleService-Info.plist" build phase copies the file into the app when it is present.
+  - Without the file, Release builds fail. Debug builds continue and Firebase stays off: `Telemetry.configure()` calls `FirebaseApp.configure()` only when the bundle contains the plist.
+- The last build phase, "Upload Crashlytics symbols", runs Crashlytics' `run` script from the SPM checkout. It runs only for Release builds and archives that contain the plist, and skips otherwise.
+  - `DEBUG_INFORMATION_FORMAT` is `dwarf-with-dsym` in both configurations.
+  - `ENABLE_USER_SCRIPT_SANDBOXING` is `NO` for the app target, because the script reads the SPM checkout and the dSYM.
+- Non-fatal Crashlytics records:
+  - the WebContent process was terminated
+  - the local server could not start, even on an ephemeral port
+  - the web bundle is missing
+- Crashlytics custom keys: `app_version` and `web_bundle_present`. No user identifier is ever set.
+- Analytics logs `screen_view` (`screen_name` "cosmosmap") at launch.
+
+#### Web analytics bridge
+
+- The document-start script adds `window.CosmosMapNative.logEvent(name, params)`. It posts `{name, params}` to the `cosmosmapAnalytics` script message handler.
+- On the web side, `src/ui/native-analytics.ts` exposes `logNativeEvent()`, which does nothing on the website. The web app logs these events:
+  - `travel_to` {target, type}
+  - `open_info` {target, type}
+  - `search` {query_length}
+  - `quality_change` {level}
+  - `preset_change` {preset}
+- The native side (`NativeAnalyticsEvent`) accepts messages only from the main frame on the loopback origin, and validates them:
+  - The event name must match `^[a-zA-Z][a-zA-Z0-9_]{0,39}$`. Names with the reserved prefixes `firebase_`, `google_` and `ga_` are rejected.
+  - An event may have at most 25 parameters.
+  - Only string and number values are kept. Strings are cut to 100 characters, and booleans become 0/1.
+  - Parameters with invalid keys or other value types are dropped.
+
 ### Privacy
 
-- `PrivacyInfo.xcprivacy` declares no tracking, no collected data and no required-reason APIs.
+- `PrivacyInfo.xcprivacy` declares no tracking (`NSPrivacyTracking` false, no tracking domains). All of the collected data types below are not linked to the user and not used for tracking:
+
+  | Data type | Purposes | Source |
+  | --- | --- | --- |
+  | Product Interaction | Analytics | Rybbit, Firebase Analytics |
+  | Coarse Location | Analytics | Rybbit, Firebase Analytics |
+  | Device ID | Analytics, App Functionality | Firebase instance/installation ID |
+  | Crash Data | App Functionality, Analytics | Crashlytics |
+  | Performance Data | App Functionality, Analytics | Crashlytics |
+  | Other Diagnostic Data | App Functionality, Analytics | Crashlytics |
+
+- It also declares UserDefaults (`CA92.1`) because the statically linked Analytics binary ships no privacy manifest of its own. The Firebase source SDKs bring their own manifests.
 - The server avoids file-timestamp and UserDefaults APIs: file size comes from `FileHandle.seekToEnd()`, and ETags are built from size plus build number.
+- App Store Connect "App Privacy" answers must match the table above. Use: Data Not Linked to You, no tracking.

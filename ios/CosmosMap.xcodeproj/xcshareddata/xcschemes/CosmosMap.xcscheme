@@ -14,7 +14,7 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "30005CABFD10E07D13A2BF410EAA4F24"
+               BlueprintIdentifier = "23A9258C2A6AAF44EB9D33CB8C780605"
                BuildableName = "CosmosMap.app"
                BlueprintName = "CosmosMap"
                ReferencedContainer = "container:CosmosMap.xcodeproj">
@@ -28,7 +28,7 @@
             buildForAnalyzing = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "16072E49CF0DE64D43F51A3114264D05"
+               BlueprintIdentifier = "57C1E1F75A14B7949F64C32ABDC4266F"
                BuildableName = "CosmosMapTests.xctest"
                BlueprintName = "CosmosMapTests"
                ReferencedContainer = "container:CosmosMap.xcodeproj">
@@ -44,7 +44,7 @@
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "30005CABFD10E07D13A2BF410EAA4F24"
+            BlueprintIdentifier = "23A9258C2A6AAF44EB9D33CB8C780605"
             BuildableName = "CosmosMap.app"
             BlueprintName = "CosmosMap"
             ReferencedContainer = "container:CosmosMap.xcodeproj">
@@ -55,7 +55,7 @@
             skipped = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "16072E49CF0DE64D43F51A3114264D05"
+               BlueprintIdentifier = "57C1E1F75A14B7949F64C32ABDC4266F"
                BuildableName = "CosmosMapTests.xctest"
                BlueprintName = "CosmosMapTests"
                ReferencedContainer = "container:CosmosMap.xcodeproj">
@@ -77,7 +77,7 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "30005CABFD10E07D13A2BF410EAA4F24"
+            BlueprintIdentifier = "23A9258C2A6AAF44EB9D33CB8C780605"
             BuildableName = "CosmosMap.app"
             BlueprintName = "CosmosMap"
             ReferencedContainer = "container:CosmosMap.xcodeproj">
@@ -94,7 +94,7 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "30005CABFD10E07D13A2BF410EAA4F24"
+            BlueprintIdentifier = "23A9258C2A6AAF44EB9D33CB8C780605"
             BuildableName = "CosmosMap.app"
             BlueprintName = "CosmosMap"
             ReferencedContainer = "container:CosmosMap.xcodeproj">
