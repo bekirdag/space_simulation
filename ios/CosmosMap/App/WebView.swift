@@ -151,8 +151,39 @@ struct WebView: UIViewRepresentable {
             webView.evaluateJavaScript(probe) { result, _ in
                 print("[CosmosMap] page loaded: \(result ?? "nil")")
             }
+            runSelfTest(in: webView)
             #endif
         }
+
+        #if DEBUG
+        /// CI smoke test: waits for the web app to finish loading, then reports whether
+        /// WebGPU really works (adapter + device) and whether the "WebGPU Not Available"
+        /// overlay is showing. CI greps the single `[CosmosMap] SELFTEST` line.
+        private func runSelfTest(in webView: WKWebView) {
+            let script = """
+            const deadline = Date.now() + 90000;
+            const loading = () => document.getElementById('loading-overlay');
+            while (Date.now() < deadline && loading() && !loading().classList.contains('gone')) {
+              await new Promise(r => setTimeout(r, 500));
+            }
+            const r = { secure: window.isSecureContext, gpu: 'gpu' in navigator, adapter: false, device: false };
+            try {
+              const adapter = navigator.gpu ? await navigator.gpu.requestAdapter() : null;
+              r.adapter = !!adapter;
+              if (adapter) r.device = !!(await adapter.requestDevice());
+            } catch (e) { r.error = String(e); }
+            r.loaded = !!loading() && loading().classList.contains('gone');
+            r.errorOverlay = !!document.querySelector('#error-overlay.visible');
+            return JSON.stringify(r);
+            """
+            webView.callAsyncJavaScript(script, arguments: [:], in: nil, in: .page) { result in
+                switch result {
+                case .success(let value): print("[CosmosMap] SELFTEST \(value ?? "nil")")
+                case .failure(let error): print("[CosmosMap] SELFTEST {\"scriptError\":\"\(error.localizedDescription)\"}")
+                }
+            }
+        }
+        #endif
 
         private func logNavigationError(_ error: Error) {
             #if DEBUG
