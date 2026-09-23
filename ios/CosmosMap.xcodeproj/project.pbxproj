@@ -1,0 +1,545 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 46;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		0B3F23A41BCB33FC88A6DB190A071CFF /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EFC0601CD4FEA3A9E21D612C6DBE43CE /* Foundation.framework */; };
+		1BB8DE1C98DB30E9F86940502F3CA093 /* MIMETypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 860ACD50A211552A4B47336C70439D1A /* MIMETypes.swift */; };
+		2D50492109E9AA9958C9375D0746F7A9 /* LocalServerController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9035D8D1383EADBF3F064974F219F6FE /* LocalServerController.swift */; };
+		3907AC4F62CA53B03149A149E44CE4AB /* LocalHTTPServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E47CB28E7F447EB70FF1801EC6535CA /* LocalHTTPServer.swift */; };
+		6677067A97F9366DB5F8D0CE855FB041 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = CC79E307D119E0B74752F6BCB37ADC5B /* Assets.xcassets */; };
+		6AD79D8B9AF70A934F14FC01D0387CAF /* ByteRange.swift in Sources */ = {isa = PBXBuildFile; fileRef = B164B407DE238B38D5A47D4B79F70696 /* ByteRange.swift */; };
+		9842B9F2C35691B31D88CC24F128635F /* Web in Resources */ = {isa = PBXBuildFile; fileRef = F760CF85852A557EFA0DF7835130B6E4 /* Web */; };
+		BD3CDFD09636CCD0B2A40C3DE425C9B2 /* StaticFileResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E8AC8965121EF2EADF1445461106D0D /* StaticFileResolver.swift */; };
+		D712BCF4F5EFA0F20A10E9653D83FC5D /* HTTPMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B0C9E920706FEDFDF86AEB55E3823DD /* HTTPMessage.swift */; };
+		D7F4FB32E3060079FE4C7BD21189EA1D /* CosmosMapApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 586A0570C4145172F1A811CD9B67DFDB /* CosmosMapApp.swift */; };
+		E0336AF983679F2B26D8710B65D3B97C /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EFC0601CD4FEA3A9E21D612C6DBE43CE /* Foundation.framework */; };
+		E3DF9AFE61488B084DA35160886C4585 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = AE98394E1ED63AAEFED6CB8936342C6D /* PrivacyInfo.xcprivacy */; };
+		EEEFC1FC4EA63883C715A08C2B13B207 /* APIProxy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F9F585DF4AD11856F414148E8966D08 /* APIProxy.swift */; };
+		F26F41D57CE889DF6D2F5B2C7204F326 /* LocalServerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6015A6D9EA5B679CBC805E470CF485C /* LocalServerTests.swift */; };
+		F91F92E8C23901F0472618516A189FC4 /* WebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 198D62A96ACEBA8321E56F349779860F /* WebView.swift */; };
+		FCA92837C1C0FB8342B52E584D51804F /* HTTPConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E4F42B30FFDE5D70D1121CE9C44D721 /* HTTPConnection.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		7E24415AB048794153338F73F360B075 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A212DBEA538CCF5C2D3BB9AD4CB0AED1 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 30005CABFD10E07D13A2BF410EAA4F24;
+			remoteInfo = CosmosMap;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		0E47CB28E7F447EB70FF1801EC6535CA /* LocalHTTPServer.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = LocalHTTPServer.swift; path = Server/LocalHTTPServer.swift; sourceTree = "<group>"; };
+		198D62A96ACEBA8321E56F349779860F /* WebView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = WebView.swift; path = App/WebView.swift; sourceTree = "<group>"; };
+		2602935464D3C6AF28719C8DC441D904 /* CosmosMapTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CosmosMapTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		4B0C9E920706FEDFDF86AEB55E3823DD /* HTTPMessage.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = HTTPMessage.swift; path = Server/HTTPMessage.swift; sourceTree = "<group>"; };
+		586A0570C4145172F1A811CD9B67DFDB /* CosmosMapApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CosmosMapApp.swift; path = App/CosmosMapApp.swift; sourceTree = "<group>"; };
+		860ACD50A211552A4B47336C70439D1A /* MIMETypes.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MIMETypes.swift; path = Server/MIMETypes.swift; sourceTree = "<group>"; };
+		8A9B6A46DB34D7BF1D5587EA4203D01D /* CosmosMap.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CosmosMap.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		8E4F42B30FFDE5D70D1121CE9C44D721 /* HTTPConnection.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = HTTPConnection.swift; path = Server/HTTPConnection.swift; sourceTree = "<group>"; };
+		8E8AC8965121EF2EADF1445461106D0D /* StaticFileResolver.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = StaticFileResolver.swift; path = Server/StaticFileResolver.swift; sourceTree = "<group>"; };
+		8F9F585DF4AD11856F414148E8966D08 /* APIProxy.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = APIProxy.swift; path = Server/APIProxy.swift; sourceTree = "<group>"; };
+		9035D8D1383EADBF3F064974F219F6FE /* LocalServerController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = LocalServerController.swift; path = App/LocalServerController.swift; sourceTree = "<group>"; };
+		AE98394E1ED63AAEFED6CB8936342C6D /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = Resources/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		B164B407DE238B38D5A47D4B79F70696 /* ByteRange.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ByteRange.swift; path = Server/ByteRange.swift; sourceTree = "<group>"; };
+		CC79E307D119E0B74752F6BCB37ADC5B /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		D6015A6D9EA5B679CBC805E470CF485C /* LocalServerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LocalServerTests.swift; sourceTree = "<group>"; };
+		D9661AA4EC0856CA7A2900BE3BEFB4A0 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; name = Info.plist; path = Resources/Info.plist; sourceTree = "<group>"; };
+		EFC0601CD4FEA3A9E21D612C6DBE43CE /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS14.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		F760CF85852A557EFA0DF7835130B6E4 /* Web */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder; path = Web; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		0AD53D711BEC9C03335085E2FAD5D07D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0B3F23A41BCB33FC88A6DB190A071CFF /* Foundation.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		6D22B804CD53021996B9694CB650EB6F /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E0336AF983679F2B26D8710B65D3B97C /* Foundation.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		1CFE260CB8FC05FC7E60F9629729EF9F = {
+			isa = PBXGroup;
+			children = (
+				F7BA114408976D6EEA061DC94DA7DE6A /* Products */,
+				7E46847F3401196A2146F3FB95B002B3 /* Frameworks */,
+				D33CBCE5CE572B4EE0C7612E0644309B /* CosmosMap */,
+				5162F7B462A1B11565ED4E2A864EC0A4 /* CosmosMapTests */,
+			);
+			sourceTree = "<group>";
+		};
+		5162F7B462A1B11565ED4E2A864EC0A4 /* CosmosMapTests */ = {
+			isa = PBXGroup;
+			children = (
+				D6015A6D9EA5B679CBC805E470CF485C /* LocalServerTests.swift */,
+			);
+			name = CosmosMapTests;
+			path = CosmosMapTests;
+			sourceTree = "<group>";
+		};
+		7E46847F3401196A2146F3FB95B002B3 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				98624413A05D410CAA7B3C121642C4D9 /* iOS */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		98624413A05D410CAA7B3C121642C4D9 /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				EFC0601CD4FEA3A9E21D612C6DBE43CE /* Foundation.framework */,
+			);
+			name = iOS;
+			sourceTree = "<group>";
+		};
+		D33CBCE5CE572B4EE0C7612E0644309B /* CosmosMap */ = {
+			isa = PBXGroup;
+			children = (
+				586A0570C4145172F1A811CD9B67DFDB /* CosmosMapApp.swift */,
+				9035D8D1383EADBF3F064974F219F6FE /* LocalServerController.swift */,
+				198D62A96ACEBA8321E56F349779860F /* WebView.swift */,
+				8F9F585DF4AD11856F414148E8966D08 /* APIProxy.swift */,
+				B164B407DE238B38D5A47D4B79F70696 /* ByteRange.swift */,
+				8E4F42B30FFDE5D70D1121CE9C44D721 /* HTTPConnection.swift */,
+				4B0C9E920706FEDFDF86AEB55E3823DD /* HTTPMessage.swift */,
+				0E47CB28E7F447EB70FF1801EC6535CA /* LocalHTTPServer.swift */,
+				860ACD50A211552A4B47336C70439D1A /* MIMETypes.swift */,
+				8E8AC8965121EF2EADF1445461106D0D /* StaticFileResolver.swift */,
+				D9661AA4EC0856CA7A2900BE3BEFB4A0 /* Info.plist */,
+				AE98394E1ED63AAEFED6CB8936342C6D /* PrivacyInfo.xcprivacy */,
+				CC79E307D119E0B74752F6BCB37ADC5B /* Assets.xcassets */,
+				F760CF85852A557EFA0DF7835130B6E4 /* Web */,
+			);
+			name = CosmosMap;
+			path = CosmosMap;
+			sourceTree = "<group>";
+		};
+		F7BA114408976D6EEA061DC94DA7DE6A /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				8A9B6A46DB34D7BF1D5587EA4203D01D /* CosmosMap.app */,
+				2602935464D3C6AF28719C8DC441D904 /* CosmosMapTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		16072E49CF0DE64D43F51A3114264D05 /* CosmosMapTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 01FBFB02AC5F42A112C8C39D288C009E /* Build configuration list for PBXNativeTarget "CosmosMapTests" */;
+			buildPhases = (
+				45DFA37C5AC4C51EE3669DF99657CD3B /* Sources */,
+				6D22B804CD53021996B9694CB650EB6F /* Frameworks */,
+				30F008852E62817F577136A38E157260 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				0F6677CB0A58702EE6ACDD290D580E74 /* PBXTargetDependency */,
+			);
+			name = CosmosMapTests;
+			productName = CosmosMapTests;
+			productReference = 2602935464D3C6AF28719C8DC441D904 /* CosmosMapTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		30005CABFD10E07D13A2BF410EAA4F24 /* CosmosMap */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A5B8291CC22BEC51E56C26397E4AACBD /* Build configuration list for PBXNativeTarget "CosmosMap" */;
+			buildPhases = (
+				306EAC71859D560B658D3E6FA8FF0207 /* Check bundled web build */,
+				16AF84DFAE9A1E6A9FDB725F7DD7A3C0 /* Sources */,
+				0AD53D711BEC9C03335085E2FAD5D07D /* Frameworks */,
+				3702257704BC5122A4A82149643DC53D /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = CosmosMap;
+			productName = CosmosMap;
+			productReference = 8A9B6A46DB34D7BF1D5587EA4203D01D /* CosmosMap.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A212DBEA538CCF5C2D3BB9AD4CB0AED1 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				LastSwiftUpdateCheck = 1620;
+				LastUpgradeCheck = 1620;
+			};
+			buildConfigurationList = 2D3C262F693F4856A85625F6381588E0 /* Build configuration list for PBXProject "CosmosMap" */;
+			compatibilityVersion = "Xcode 3.2";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 1CFE260CB8FC05FC7E60F9629729EF9F;
+			productRefGroup = F7BA114408976D6EEA061DC94DA7DE6A /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				30005CABFD10E07D13A2BF410EAA4F24 /* CosmosMap */,
+				16072E49CF0DE64D43F51A3114264D05 /* CosmosMapTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		30F008852E62817F577136A38E157260 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		3702257704BC5122A4A82149643DC53D /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E3DF9AFE61488B084DA35160886C4585 /* PrivacyInfo.xcprivacy in Resources */,
+				6677067A97F9366DB5F8D0CE855FB041 /* Assets.xcassets in Resources */,
+				9842B9F2C35691B31D88CC24F128635F /* Web in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		306EAC71859D560B658D3E6FA8FF0207 /* Check bundled web build */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/CosmosMap/Web/index.html",
+			);
+			name = "Check bundled web build";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "if [ ! -f \"${SRCROOT}/CosmosMap/Web/index.html\" ]; then\n  echo \"error: ios/CosmosMap/Web/index.html is missing. Run 'npm run build && ios/scripts/sync-web.sh' from the repo root.\"\n  exit 1\nfi\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		16AF84DFAE9A1E6A9FDB725F7DD7A3C0 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D7F4FB32E3060079FE4C7BD21189EA1D /* CosmosMapApp.swift in Sources */,
+				2D50492109E9AA9958C9375D0746F7A9 /* LocalServerController.swift in Sources */,
+				F91F92E8C23901F0472618516A189FC4 /* WebView.swift in Sources */,
+				EEEFC1FC4EA63883C715A08C2B13B207 /* APIProxy.swift in Sources */,
+				6AD79D8B9AF70A934F14FC01D0387CAF /* ByteRange.swift in Sources */,
+				FCA92837C1C0FB8342B52E584D51804F /* HTTPConnection.swift in Sources */,
+				D712BCF4F5EFA0F20A10E9653D83FC5D /* HTTPMessage.swift in Sources */,
+				3907AC4F62CA53B03149A149E44CE4AB /* LocalHTTPServer.swift in Sources */,
+				1BB8DE1C98DB30E9F86940502F3CA093 /* MIMETypes.swift in Sources */,
+				BD3CDFD09636CCD0B2A40C3DE425C9B2 /* StaticFileResolver.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		45DFA37C5AC4C51EE3669DF99657CD3B /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F26F41D57CE889DF6D2F5B2C7204F326 /* LocalServerTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		0F6677CB0A58702EE6ACDD290D580E74 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = CosmosMap;
+			target = 30005CABFD10E07D13A2BF410EAA4F24 /* CosmosMap */;
+			targetProxy = 7E24415AB048794153338F73F360B075 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		2BF6C25784B446015E3BE5B6B4E0FFB5 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = "";
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_IDENTITY = "Apple Distribution";
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = AH277897AV;
+				ENABLE_PREVIEWS = NO;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = CosmosMap/Resources/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.wodo.cosmosmap;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "CosmosMap App Store";
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_STRICT_CONCURRENCY = minimal;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 2;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		4E351D2C254F8D901E45F546908AAC78 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		693B397F58BBE2FE3D13B4C6057708F2 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = "";
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = AH277897AV;
+				ENABLE_PREVIEWS = NO;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = CosmosMap/Resources/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.wodo.cosmosmap;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_STRICT_CONCURRENCY = minimal;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 2;
+			};
+			name = Debug;
+		};
+		6E52DD8456641BDE7F08A8AA7BD1AB0E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = AH277897AV;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.wodo.cosmosmap.tests;
+				SDKROOT = iphoneos;
+				SWIFT_STRICT_CONCURRENCY = minimal;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 2;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/CosmosMap.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/CosmosMap";
+			};
+			name = Debug;
+		};
+		72C95E66CCEDBE15F6F984AA6D6E2FB9 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		B8719BEAE06C4E7EE761CF271B40F928 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = AH277897AV;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.wodo.cosmosmap.tests;
+				SDKROOT = iphoneos;
+				SWIFT_STRICT_CONCURRENCY = minimal;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 2;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/CosmosMap.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/CosmosMap";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		01FBFB02AC5F42A112C8C39D288C009E /* Build configuration list for PBXNativeTarget "CosmosMapTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B8719BEAE06C4E7EE761CF271B40F928 /* Release */,
+				6E52DD8456641BDE7F08A8AA7BD1AB0E /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		2D3C262F693F4856A85625F6381588E0 /* Build configuration list for PBXProject "CosmosMap" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4E351D2C254F8D901E45F546908AAC78 /* Debug */,
+				72C95E66CCEDBE15F6F984AA6D6E2FB9 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A5B8291CC22BEC51E56C26397E4AACBD /* Build configuration list for PBXNativeTarget "CosmosMap" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				2BF6C25784B446015E3BE5B6B4E0FFB5 /* Release */,
+				693B397F58BBE2FE3D13B4C6057708F2 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = A212DBEA538CCF5C2D3BB9AD4CB0AED1 /* Project object */;
+}
