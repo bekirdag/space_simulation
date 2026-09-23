@@ -79,12 +79,39 @@ function compressionStream(encoding) {
   return createGzip({ level: 6 });
 }
 
+// Unhashed assets (/data, /textures, /cache, model downloads...) are served
+// with `Cache-Control: no-cache` plus these validators, so browsers revalidate
+// every use and get a cheap 304 until the file actually changes.
+function assetEtag(size, mtimeMs) {
+  // Weak: the same validator covers the identity, gzip and br representations.
+  return `W/"${Number(size).toString(16)}-${Math.floor(mtimeMs).toString(16)}"`;
+}
+
+function requestHeader(req, name) {
+  const raw = req.headers[name];
+  return Array.isArray(raw) ? raw.join(",") : raw ?? "";
+}
+
+function isNotModified(req, etag, mtimeMs) {
+  const ifNoneMatch = requestHeader(req, "if-none-match");
+  if (ifNoneMatch) {
+    const opaque = etag.replace(/^W\//, "");
+    return ifNoneMatch
+      .split(",")
+      .map(tag => tag.trim())
+      .some(tag => tag === "*" || tag.replace(/^W\//, "") === opaque);
+  }
+  const since = Date.parse(requestHeader(req, "if-modified-since"));
+  return Number.isFinite(since) && Math.floor(mtimeMs / 1000) * 1000 <= since;
+}
+
 export function sendAssetFile(req, res, {
   filePath,
   size,
   contentType,
   headers = {},
   statusCode = 200,
+  mtimeMs,
 }) {
   const encoding = compressionEncoding(req, filePath, contentType, size);
   const responseHeaders = {
@@ -92,6 +119,18 @@ export function sendAssetFile(req, res, {
     "Content-Type": contentType,
     "Vary": appendVary(headers["Vary"], "Accept-Encoding"),
   };
+
+  if (Number.isFinite(mtimeMs)) {
+    const etag = assetEtag(size, mtimeMs);
+    responseHeaders["ETag"] = etag;
+    responseHeaders["Last-Modified"] = new Date(mtimeMs).toUTCString();
+    if (statusCode === 200 && (req.method === "GET" || req.method === "HEAD") && isNotModified(req, etag, mtimeMs)) {
+      delete responseHeaders["Content-Type"];
+      res.writeHead(304, responseHeaders);
+      res.end();
+      return;
+    }
+  }
 
   if (encoding) {
     responseHeaders["Content-Encoding"] = encoding;

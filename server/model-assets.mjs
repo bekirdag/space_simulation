@@ -12,7 +12,12 @@ const FETCH_TIMEOUT_MS = 45_000;
 const NASA_3D_RAW_BASE = "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/master";
 const GLB_CONTENT_TYPE = "model/gltf-binary";
 const USDZ_CONTENT_TYPE = "model/vnd.usdz+zip";
-const MODEL_ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable";
+// Model URLs are stable ids, not content hashes: when an entry's upstream or
+// local file changes, browsers must pick it up, so they revalidate (ETag/304).
+const MODEL_ASSET_CACHE_CONTROL = "no-cache";
+// cachePath -> in-flight download promise, so concurrent requests for the same
+// model share one upstream download instead of racing N copies.
+const inflightDownloads = new Map();
 
 function nasa3d(pathname) {
   return `${NASA_3D_RAW_BASE}/${pathname.split("/").map(encodeURIComponent).join("/")}`;
@@ -22,35 +27,13 @@ function glb(filename, pathname) {
   return { filename, contentType: GLB_CONTENT_TYPE, upstream: nasa3d(pathname) };
 }
 
-function glbUrl(filename, upstream) {
-  return { filename, contentType: GLB_CONTENT_TYPE, upstream };
-}
-
-function localGlb(filename, relativePath) {
-  return { filename, contentType: GLB_CONTENT_TYPE, localPath: path.join(REPO_ROOT, relativePath) };
-}
-
-function usdzUrl(filename, upstream) {
-  return { filename, contentType: USDZ_CONTENT_TYPE, upstream };
-}
-
 const MODEL_ASSETS = new Map([
-  ["solar-sun", usdzUrl("solar-sun.usdz", "https://assets.science.nasa.gov/content/dam/science/psd/solar/2023/09/s/Sun_1_1391000.usdz")],
-  ["solar-mercury", glbUrl("solar-mercury.glb", "https://assets.science.nasa.gov/content/dam/science/psd/solar/2023/09/m/Mercury_1_4878.glb")],
-  ["solar-venus", glbUrl("solar-venus.glb", "https://assets.science.nasa.gov/content/dam/science/psd/solar/2023/09/v/Venus_1_12103.glb")],
-  ["solar-earth", localGlb("solar-earth-matteo-pascale.glb", "src/models/earth.glb")],
-  ["solar-mars", glbUrl("solar-mars.glb", "https://assets.science.nasa.gov/content/dam/science/psd/mars/resources/gltf_files/24881_Mars_1_6792.glb")],
-  ["solar-jupiter", glbUrl("solar-jupiter.glb", "https://assets.science.nasa.gov/content/dam/science/psd/solar/2023/09/j/Jupiter_1_142984.glb")],
-  ["solar-saturn", glbUrl("solar-saturn.glb", "https://assets.science.nasa.gov/content/dam/science/psd/solar/2023/09/s/Saturn_1_120536.glb")],
-  ["solar-uranus", glbUrl("solar-uranus.glb", "https://assets.science.nasa.gov/content/dam/science/psd/solar/2023/09/u/Uranus_1_51118.glb")],
-  ["solar-neptune", glbUrl("solar-neptune.glb", "https://assets.science.nasa.gov/content/dam/science/psd/solar/2023/09/n/Neptune_1_49528.glb")],
   ["crab-nebula", glb("crab-nebula.glb", "3D Printing/Crab Nebula/Crab Nebula.glb")],
   ["cassiopeia-a", glb("cassiopeia-a.glb", "3D Models/Cassiopeia A Supernova/Cassiopeia A Supernova.glb")],
   ["cassiopeia-a-green-monster-2023", glb("cassiopeia-a-green-monster-2023.glb", "3D Models/Cassiopeia A Supernova (B) (2023)/Cassiopeia A Supernova (B) (2023).glb")],
   ["cassiopeia-a-iron-2025", glb("cassiopeia-a-iron-2025.glb", "3D Models/Cassiopeia A Supernova (C) (2025)/Cassiopeia A Supernova (C) (2025).glb")],
   ["g292-supernova-remnant", glb("g292-supernova-remnant.glb", "3D Models/G292.0+1.8 Supernova Remnant/G292.0+1.8 Supernova Remnant.glb")],
   ["cygnus-loop-supernova", glb("cygnus-loop-supernova.glb", "3D Models/Cygnus Loop Supernova/Cygnus Loop Supernova.glb")],
-  ["bp-tauri", glb("bp-tauri.glb", "3D Models/BP Tauri/BP Tauri.glb")],
 ]);
 
 function sendJson(res, statusCode, payload) {
@@ -174,34 +157,35 @@ async function downloadToCache(asset, cachePath) {
 }
 
 async function ensureCached(asset) {
-  if (asset.localPath) {
-    const info = await stat(asset.localPath);
-    if (!info.isFile() || info.size <= 0 || !(await isValidModelFile(asset, asset.localPath))) {
-      throw new Error("local model failed format validation");
-    }
-    return { cachePath: asset.localPath, size: info.size, cacheState: "local" };
-  }
-
   const cachePath = path.join(CACHE_ROOT, asset.filename);
   try {
     const info = await stat(cachePath);
     if (info.isFile() && info.size > 0 && await isValidModelFile(asset, cachePath)) {
-      return { cachePath, size: info.size, cacheState: "hit" };
+      return { cachePath, size: info.size, mtimeMs: info.mtimeMs, cacheState: "hit" };
     }
     await unlink(cachePath).catch(() => {});
   } catch (err) {
     if (!err || err.code !== "ENOENT") throw err;
   }
 
-  await downloadToCache(asset, cachePath);
+  let download = inflightDownloads.get(cachePath);
+  if (!download) {
+    download = downloadToCache(asset, cachePath).finally(() => inflightDownloads.delete(cachePath));
+    inflightDownloads.set(cachePath, download);
+  }
+  await download;
   const info = await stat(cachePath);
-  return { cachePath, size: info.size, cacheState: "miss" };
+  return { cachePath, size: info.size, mtimeMs: info.mtimeMs, cacheState: "miss" };
 }
 
 function modelIdFromPath(urlPath) {
   const prefix = "/api/model-assets/";
   if (!urlPath.startsWith(prefix)) return null;
-  return decodeURIComponent(urlPath.slice(prefix.length).replace(/\/+$/, ""));
+  try {
+    return decodeURIComponent(urlPath.slice(prefix.length).replace(/\/+$/, ""));
+  } catch {
+    return ""; // malformed percent-encoding: treated as an unknown model id
+  }
 }
 
 export async function handleModelAssetRequest(req, res) {
@@ -231,10 +215,11 @@ export async function handleModelAssetRequest(req, res) {
   }
 
   try {
-    const { cachePath, size, cacheState } = await ensureCached(asset);
+    const { cachePath, size, mtimeMs, cacheState } = await ensureCached(asset);
     sendAssetFile(req, res, {
       filePath: cachePath,
       size,
+      mtimeMs,
       contentType: asset.contentType,
       headers: {
         "Access-Control-Allow-Origin": "*",

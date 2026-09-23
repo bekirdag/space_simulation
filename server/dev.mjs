@@ -13,7 +13,9 @@ const REPO_ROOT = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const PUBLIC_ROOT = path.join(REPO_ROOT, "public");
 const DEFAULT_PORT = 5173;
 const HOST = process.env.HOST || "127.0.0.1";
-const ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable";
+// These public files are not content-hashed: regenerated data/textures/models
+// must reach browsers, so they revalidate (ETag/Last-Modified -> 304).
+const ASSET_CACHE_CONTROL = "no-cache";
 let vite = null;
 
 const MIME_TYPES = new Map([
@@ -110,6 +112,7 @@ async function serveBrowserCachedPublicAsset(req, res) {
   sendAssetFile(req, res, {
     filePath,
     size: info.size,
+    mtimeMs: info.mtimeMs,
     contentType,
     headers: {
       "Cache-Control": ASSET_CACHE_CONTROL,
@@ -138,29 +141,44 @@ function listen(server, port, host) {
 }
 
 function makeServer() {
-  return createHttpServer(async (req, res) => {
-    setIsolationHeaders(res);
-    if (handleVitePing(req, res)) return;
-    if (handleHealthRequest(req, res)) return;
-    if (await handleHorizonsRequest(req, res)) return;
-    if (await handleModelAssetRequest(req, res)) return;
-    if (await handleObjectInfoRequest(req, res)) return;
-    if (await serveBrowserCachedPublicAsset(req, res)) return;
-    const url = new URL(req.url ?? "/", "http://localhost");
-    if (isBrowserCacheablePublicPath(url.pathname)) {
-      sendPublicAssetNotFound(res);
-      return;
-    }
-    if (!vite) {
-      res.statusCode = 503;
-      res.end("CosmosMap dev server is starting");
-      return;
-    }
-    vite.middlewares(req, res, () => {
-      res.statusCode = 404;
-      res.end("Not found");
-    });
+  return createHttpServer((req, res) => {
+    handleRequest(req, res).catch(error => sendInternalError(res, error));
   });
+}
+
+async function handleRequest(req, res) {
+  setIsolationHeaders(res);
+  if (handleVitePing(req, res)) return;
+  if (handleHealthRequest(req, res)) return;
+  if (await handleHorizonsRequest(req, res)) return;
+  if (await handleModelAssetRequest(req, res)) return;
+  if (await handleObjectInfoRequest(req, res)) return;
+  if (await serveBrowserCachedPublicAsset(req, res)) return;
+  const url = new URL(req.url ?? "/", "http://localhost");
+  if (isBrowserCacheablePublicPath(url.pathname)) {
+    sendPublicAssetNotFound(res);
+    return;
+  }
+  if (!vite) {
+    res.statusCode = 503;
+    res.end("CosmosMap dev server is starting");
+    return;
+  }
+  vite.middlewares(req, res, () => {
+    res.statusCode = 404;
+    res.end("Not found");
+  });
+}
+
+function sendInternalError(res, error) {
+  console.error("Request failed:", error);
+  if (res.headersSent) {
+    res.destroy();
+    return;
+  }
+  res.statusCode = 500;
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.end("Internal server error");
 }
 
 async function createViteForServer(server, port, host) {

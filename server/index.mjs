@@ -32,6 +32,19 @@ const MIME_TYPES = new Map([
   [".wgsl", "text/plain; charset=utf-8"],
 ]);
 
+// Only Vite's content-hashed build output under /assets/ may be cached as
+// immutable. Everything else (/data, /textures, /cache, /draco, /models, public
+// root files) keeps a stable URL across regenerations, so it revalidates.
+const IMMUTABLE_CACHE_CONTROL = "public, max-age=31536000, immutable";
+const REVALIDATE_CACHE_CONTROL = "no-cache";
+
+function cacheControlFor(urlPath, filePath) {
+  if (path.basename(filePath) === "index.html") return "no-store";
+  const hashedAssetsRoot = path.join(DIST_ROOT, "assets") + path.sep;
+  if (urlPath.startsWith("/assets/") && filePath.startsWith(hashedAssetsRoot)) return IMMUTABLE_CACHE_CONTROL;
+  return REVALIDATE_CACHE_CONTROL;
+}
+
 const SPA_ASSET_PREFIXES = ["/assets/", "/cache/", "/data/", "/draco/", "/models/", "/textures/"];
 
 function setIsolationHeaders(res) {
@@ -110,9 +123,10 @@ async function serveStatic(req, res) {
   sendAssetFile(req, res, {
     filePath,
     size: fileInfo.size,
+    mtimeMs: path.basename(filePath) === "index.html" ? undefined : fileInfo.mtimeMs,
     contentType,
     headers: {
-      "Cache-Control": path.basename(filePath) === "index.html" ? "no-store" : "public, max-age=31536000, immutable",
+      "Cache-Control": cacheControlFor(url.pathname, filePath),
       "Cross-Origin-Opener-Policy": "same-origin",
       "Cross-Origin-Embedder-Policy": "require-corp",
     },
@@ -150,15 +164,31 @@ async function listenOnAvailablePort(makeServer, preferredPort, host) {
 }
 
 function makeServer() {
-  return createHttpServer(async (req, res) => {
-    setIsolationHeaders(res);
-    if (handleHealthRequest(req, res)) return;
-    if (await handleHorizonsRequest(req, res)) return;
-    if (await handleModelAssetRequest(req, res)) return;
-    if (await handleObjectInfoRequest(req, res)) return;
-    await serveStatic(req, res);
+  return createHttpServer((req, res) => {
+    handleRequest(req, res).catch(error => sendInternalError(res, error));
   });
 }
+
+async function handleRequest(req, res) {
+  setIsolationHeaders(res);
+  if (handleHealthRequest(req, res)) return;
+  if (await handleHorizonsRequest(req, res)) return;
+  if (await handleModelAssetRequest(req, res)) return;
+  if (await handleObjectInfoRequest(req, res)) return;
+  await serveStatic(req, res);
+}
+
+function sendInternalError(res, error) {
+  console.error("Request failed:", error);
+  if (res.headersSent) {
+    res.destroy();
+    return;
+  }
+  res.statusCode = 500;
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.end("Internal server error");
+}
+
 
 const { server, port } = await listenOnAvailablePort(makeServer, DEFAULT_PORT, HOST);
 const publicHost = HOST === "0.0.0.0" ? "localhost" : HOST;

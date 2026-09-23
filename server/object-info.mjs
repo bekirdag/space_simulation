@@ -4,28 +4,49 @@ import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+// Object info box backend.
+//
+// Resolution order (every step validates before accepting a page):
+//   1. Generic hits ("Mapped star", "Milky Way star", "Galaxy", ...) never query
+//      Wikipedia: they get a local, catalog-only record.
+//   2. Curated page titles (WIKIPEDIA_OBJECT_PAGES) for names that are ambiguous
+//      or do not match their article title (moons, 3D-model variants, Sgr A*...).
+//   3. A client-supplied page hint (derived from the catalog, e.g. a 3D model's
+//      base object) and deterministic title variants of the name / aliases /
+//      catalog designations ("X (moon)", "X (star)", "M42" -> "Messier 42", ...).
+//      These must resolve to a non-disambiguation page about an astronomical
+//      object (short description or Wikidata instance-of check).
+//   4. Wikipedia full-text search, accepting a hit only when its title (or the
+//      redirect it matched) equals the object name / an alias / a designation,
+//      and the page is an astronomical object. Word overlap is never enough.
+//   5. Otherwise a local description with no external summary.
+// Images come only from the validated article's own lead image (or a curated
+// NASA facts page for solar-system bodies), never from free-text image search.
+
 const REPO_ROOT = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CACHE_ROOT = process.env.COSMOSMAP_OBJECT_INFO_CACHE_DIR
   ? path.resolve(process.env.COSMOSMAP_OBJECT_INFO_CACHE_DIR)
   : path.join(REPO_ROOT, "cache", "wikimedia", "object-info");
 const IMAGE_CACHE_DIR = path.join(CACHE_ROOT, "images");
-const NASA_IMAGES_API = "https://images-api.nasa.gov";
-const NASA_IMAGES_WEB = "https://images.nasa.gov";
-const NASA_SCIENCE_WEB = "https://science.nasa.gov";
-const NASA_SCIENCE_SEARCH_API = `${NASA_SCIENCE_WEB}/wp-json/wp/v2/search`;
 const WIKIPEDIA_SUMMARY_API = "https://en.wikipedia.org/api/rest_v1/page/summary";
-const WIKIPEDIA_SEARCH_API = "https://en.wikipedia.org/w/api.php";
+const WIKIPEDIA_API = "https://en.wikipedia.org/w/api.php";
 const WIKIPEDIA_WEB = "https://en.wikipedia.org/wiki";
-const WIKIMEDIA_COMMONS_API = "https://commons.wikimedia.org/w/api.php";
+const WIKIDATA_API = "https://www.wikidata.org/w/api.php";
 const WIKIMEDIA_COMMONS_WEB = "https://commons.wikimedia.org/wiki";
-const OBJECT_INFO_CACHE_VERSION = 9;
+// v10: deterministic/validated resolution; drops every record produced by the
+// old word-overlap search + free-text Commons image search (e.g. "Cassiopeia A
+// Green Monster" -> "Milky Way" with a Stargate screenshot).
+const OBJECT_INFO_CACHE_VERSION = 10;
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
 const DEFAULT_CACHE_TTL_DAYS = 30;
 const GENERAL_DESCRIPTION_MAX_LENGTH = 1400;
-const WIKIPEDIA_PRIMARY_SCORE_THRESHOLD = 25;
-const WIKIPEDIA_SIMILAR_SCORE_THRESHOLD = 10;
-const WIKIPEDIA_MAX_CANDIDATES = 8;
 const JSON_FETCH_TIMEOUT_MS = 10_000;
+const HTML_FETCH_TIMEOUT_MS = 10_000;
+const IMAGE_FETCH_TIMEOUT_MS = 20_000;
+const MAX_TITLE_CANDIDATES = 10;
+const MAX_ALIASES = 8;
+const USER_AGENT = "CosmosMap object-info cache (https://github.com/bekirdag/space_simulation)";
+
 const NASA_SCIENCE_OBJECT_PAGES = new Map([
   ["sun", "https://science.nasa.gov/sun/facts/"],
   ["mercury", "https://science.nasa.gov/mercury/facts/"],
@@ -41,12 +62,24 @@ const NASA_SCIENCE_OBJECT_PAGES = new Map([
   ["pluto", "https://science.nasa.gov/dwarf-planets/pluto/facts/"],
   ["ceres", "https://science.nasa.gov/dwarf-planets/ceres/facts/"],
 ]);
+
+// Curated titles. Keys are normalizeForMatch() of an object name or alias.
+// Moons with mythological / literary namesakes always use their "(moon)" page.
+const MOON_PAGE_NAMES = [
+  "Io", "Europa", "Ganymede", "Callisto", "Amalthea", "Himalia", "Thebe", "Metis", "Adrastea",
+  "Mimas", "Enceladus", "Tethys", "Dione", "Rhea", "Titan", "Hyperion", "Iapetus", "Phoebe",
+  "Janus", "Epimetheus", "Pandora", "Prometheus", "Atlas", "Pan", "Helene", "Calypso", "Telesto",
+  "Miranda", "Ariel", "Umbriel", "Titania", "Oberon", "Puck", "Caliban", "Sycorax",
+  "Triton", "Nereid", "Proteus", "Larissa", "Galatea", "Despina", "Thalassa", "Naiad",
+  "Charon", "Nix", "Hydra", "Kerberos", "Styx", "Phobos", "Deimos", "Dysnomia", "Hiʻiaka", "Namaka",
+];
 const WIKIPEDIA_OBJECT_PAGES = new Map([
   ["sun", "Sun"],
   ["mercury", "Mercury (planet)"],
   ["venus", "Venus"],
   ["earth", "Earth"],
   ["moon", "Moon"],
+  ["luna", "Moon"],
   ["mars", "Mars"],
   ["jupiter", "Jupiter"],
   ["saturn", "Saturn"],
@@ -57,29 +90,129 @@ const WIKIPEDIA_OBJECT_PAGES = new Map([
   ["eris", "Eris (dwarf planet)"],
   ["haumea", "Haumea"],
   ["makemake", "Makemake"],
-  ["io", "Io (moon)"],
-  ["europa", "Europa (moon)"],
-  ["ganymede", "Ganymede (moon)"],
-  ["callisto", "Callisto (moon)"],
-  ["titan", "Titan (moon)"],
-  ["enceladus", "Enceladus"],
-  ["triton", "Triton (moon)"],
-  ["charon", "Charon (moon)"],
+  ["sedna", "Sedna (dwarf planet)"],
+  ["quaoar", "Quaoar"],
+  ["gonggong", "Gonggong (dwarf planet)"],
+  ["orcus", "Orcus (dwarf planet)"],
+  ["vesta", "4 Vesta"],
+  ["pallas", "2 Pallas"],
   ["milky way", "Milky Way"],
+  ["milky way galaxy", "Milky Way"],
   ["andromeda galaxy", "Andromeda Galaxy"],
+  ["m31", "Andromeda Galaxy"],
+  ["triangulum galaxy", "Triangulum Galaxy"],
   ["large magellanic cloud", "Large Magellanic Cloud"],
+  ["lmc", "Large Magellanic Cloud"],
   ["small magellanic cloud", "Small Magellanic Cloud"],
+  ["smc", "Small Magellanic Cloud"],
   ["sgr a", "Sagittarius A*"],
   ["sagittarius a", "Sagittarius A*"],
   ["proxima centauri", "Proxima Centauri"],
   ["alpha centauri", "Alpha Centauri"],
+  ["alpha centauri a", "Alpha Centauri"],
+  ["alpha centauri b", "Alpha Centauri"],
+  ["rigil kentaurus", "Alpha Centauri"],
+  ["toliman", "Alpha Centauri"],
   ["barnard s star", "Barnard's Star"],
+  ["sirius", "Sirius"],
+  ["sirius a", "Sirius"],
+  ["sirius b", "Sirius"],
+  ["castor", "Castor (star)"],
+  ["pollux", "Pollux (star)"],
+  ["vega", "Vega"],
+  ["polaris", "Polaris"],
+  ["mira", "Mira"],
   ["sh2 298", "NGC 2359"],
   ["sh 2 298", "NGC 2359"],
   ["sharpless 2 298", "NGC 2359"],
   ["thor s helmet", "NGC 2359"],
+  // 3D structure models (src/catalog/milkyway-models.ts): every variant maps to
+  // the article about the physical object. The client also sends the base
+  // model name as a `page` hint derived from the catalog's modelGroup.
+  ["crab nebula", "Crab Nebula"],
+  ["m1", "Crab Nebula"],
+  ["taurus a", "Crab Nebula"],
+  ["cassiopeia a", "Cassiopeia A"],
+  ["cas a", "Cassiopeia A"],
+  ["cassiopeia a green monster", "Cassiopeia A"],
+  ["cas a 2023", "Cassiopeia A"],
+  ["green monster", "Cassiopeia A"],
+  ["cassiopeia a iron", "Cassiopeia A"],
+  ["cassiopeia a iron 2025", "Cassiopeia A"],
+  ["cas a 2025", "Cassiopeia A"],
+  ["cas a iron", "Cassiopeia A"],
+  ["cygnus loop", "Cygnus Loop"],
+  ["veil nebula", "Veil Nebula"],
+  ["bp tauri", "BP Tauri"],
+  ["bp tau", "BP Tauri"],
 ]);
-const HTML_FETCH_TIMEOUT_MS = 10_000;
+
+// Curated titles that only apply to one object kind (a constellation called
+// "Hydra" or "Andromeda" must not resolve to a moon or a galaxy).
+const WIKIPEDIA_OBJECT_PAGES_BY_KIND = {
+  moon: new Map(MOON_PAGE_NAMES.map(name => [normalizeForMatch(name), `${name} (moon)`])),
+  galaxy: new Map([
+    ["andromeda", "Andromeda Galaxy"],
+    ["triangulum", "Triangulum Galaxy"],
+  ]),
+};
+
+// Labels the app uses for unnamed catalog entries. These are never looked up.
+const GENERIC_OBJECT_NAMES = new Set([
+  "mapped star",
+  "milky way star",
+  "visible star",
+  "catalog star",
+  "unnamed star",
+  "star",
+  "stars",
+  "star a",
+  "star b",
+  "galaxy",
+  "unnamed galaxy",
+  "nebula",
+  "object",
+  "exoplanet host star",
+  "exoplanet",
+  "planet",
+  "3d model",
+]);
+
+// Wikidata classes that count as "astronomical object" roots. The instance-of
+// (P31) classes of a page's item are walked up subclass-of (P279) a few levels.
+const ASTRONOMICAL_ROOT_CLASSES = new Set([
+  "Q6999", // astronomical object
+  "Q523", // star
+  "Q318", // galaxy
+  "Q42372", // nebula
+  "Q207436", // supernova remnant
+  "Q634", // planet
+  "Q44559", // exoplanet
+  "Q2199", // dwarf planet
+  "Q2537", // natural satellite
+  "Q8928", // constellation
+  "Q589", // black hole
+  "Q40392", // supermassive black hole
+  "Q3863", // asteroid
+  "Q168845", // star cluster
+  "Q204107", // galaxy cluster
+  "Q3937", // supernova
+  "Q11282", // H II region
+  "Q1931185", // astronomical radio source
+  "Q83373", // quasar
+  "Q5871", // white dwarf
+  "Q13890", // double star
+  "Q595871", // multiple star / star system
+  "Q1457376", // eclipsing binary
+  "Q206717", // planetary system
+  "Q1054444", // interstellar cloud
+]);
+const WIKIDATA_WALK_DEPTH = 3;
+const WIKIDATA_MAX_FRONTIER = 16;
+
+const ASTRO_DESCRIPTION_RE = /\b(?:stars?|stellar|galaxy|galaxies|galactic|nebulae?|planets?|planetary|exoplanets?|moons?|natural satellites?|satellite (?:galaxy|of)|constellations?|supernovae?|remnant|clusters? of (?:stars|galaxies)|star cluster|globular|black holes?|pulsar|magnetar|quasar|neutron star|dwarf|asteroids?|comets?|kuiper|trans-neptunian|h ii region|molecular cloud|interstellar|protostar|protoplanetary|asterism|binary system|variable star|astronomical)\b/i;
+const NON_ASTRO_DESCRIPTION_RE = /\b(?:film|movie|album|song|single|band|musician|singer|rapper|actor|actress|video game|board game|game|novel|book|comic|manga|anime|character|fictional|mythology|mythological|goddess|god|deity|opera|ballet|play by|television|tv series|episode|ship|vessel|company|brand|software|footballer|politician|village|town|city|river|mountain|genus|species|plant|moth|beetle|racehorse|automobile|car model|locomotive|aircraft|missile|rocket|spacecraft|space probe|mission|given name|surname|disambiguation|artificial satellite|communications satellite)\b/i;
+const REJECTED_IMAGE_RE = /\b(?:stargate|video games?|computer games?|game screenshots?|screenshots?|second life|minecraft|star trek|star wars|fan ?art|fictional|fiction|cosplay|lego|toys?|album covers?|posters?|logos?|insignias?|mission patch|mytholog(?:y|ical)|temple of|paintings?|statues?|sculptures?|frescos?|tarot|astrolog(?:y|ical)|coats? of arms|flags?)\b/i;
 
 function cacheTtlMs() {
   const raw = Number.parseFloat(process.env.COSMOSMAP_OBJECT_INFO_CACHE_TTL_DAYS ?? "");
@@ -115,76 +248,34 @@ function decodeHtmlEntities(value) {
 
 function cleanExcerpt(value, maxLength = GENERAL_DESCRIPTION_MAX_LENGTH) {
   return cleanText(value, maxLength)
-    .replace(/\s*\[\s*(?:\.{3}|\u2026)\s*\]\s*$/u, "")
-    .replace(/\s*(?:\.{3}|\u2026)\s*$/u, "")
+    .replace(/\s*\[\s*(?:\.{3}|…)\s*\]\s*$/u, "")
+    .replace(/\s*(?:\.{3}|…)\s*$/u, "")
     .trim();
-}
-
-function objectLookupKey(value) {
-  return normalizeForMatch(value)
-    .slice(0, 120);
 }
 
 function normalizeForMatch(value) {
   return cleanText(value, 240)
+    .normalize("NFKD")
+    .replace(/[̀-ͯ]/g, "")
     .toLowerCase()
     .replace(/\*/g, "")
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
 }
 
-function addCatalogDesignationGroup(groups, canonical, variants) {
-  const cleanedVariants = [...new Set(variants.map(normalizeForMatch).filter(Boolean))];
-  if (cleanedVariants.length === 0) return;
-  const key = normalizeForMatch(canonical || cleanedVariants[0]);
-  if (!key || groups.some(group => group.key === key)) return;
-  groups.push({ key, variants: cleanedVariants });
+function objectLookupKey(value) {
+  return normalizeForMatch(value).slice(0, 120);
 }
 
-function catalogDesignationGroups(...values) {
-  const text = cleanText(values.filter(Boolean).join(" "), 500).toLowerCase();
-  const groups = [];
-
-  for (const match of text.matchAll(/\b(?:sh\s*2|sh2|sharpless\s*2)\s*[-–—]?\s*(\d{1,4}[a-z]?)\b/gi)) {
-    const number = match[1];
-    addCatalogDesignationGroup(groups, `sh2 ${number}`, [
-      `sh2 ${number}`,
-      `sh 2 ${number}`,
-      `sharpless 2 ${number}`,
-    ]);
-  }
-
-  const catalogPatterns = [
-    { prefix: "ngc", regex: /\bngc\s*[-–—]?\s*(\d{1,5}[a-z]?)\b/gi },
-    { prefix: "ic", regex: /\bic\s*[-–—]?\s*(\d{1,5}[a-z]?)\b/gi },
-    { prefix: "gum", regex: /\bgum\s*[-–—]?\s*(\d{1,4}[a-z]?)\b/gi },
-    { prefix: "abell", regex: /\babell\s*[-–—]?\s*(\d{1,4}[a-z]?)\b/gi },
-    { prefix: "ldn", regex: /\bldn\s*[-–—]?\s*(\d{1,5}[a-z]?)\b/gi },
-    { prefix: "vdB", regex: /\bvdb\s*[-–—]?\s*(\d{1,4}[a-z]?)\b/gi },
-    { prefix: "barnard", regex: /\bbarnard\s*[-–—]?\s*(\d{1,4}[a-z]?)\b/gi },
-  ];
-
-  for (const { prefix, regex } of catalogPatterns) {
-    for (const match of text.matchAll(regex)) {
-      const number = match[1];
-      addCatalogDesignationGroup(groups, `${prefix} ${number}`, [`${prefix} ${number}`]);
-    }
-  }
-
-  for (const match of text.matchAll(/\b(?:messier|m)\s*[-–—]?\s*(\d{1,3}[a-z]?)\b/gi)) {
-    const number = match[1];
-    addCatalogDesignationGroup(groups, `messier ${number}`, [
-      `messier ${number}`,
-      `m ${number}`,
-    ]);
-  }
-
-  return groups;
+function stripParenthetical(value) {
+  return cleanText(String(value ?? "").replace(/\s*\([^)]*\)\s*$/, ""), 180);
 }
 
-function catalogDesignationMatchesBlob(blob, groups) {
-  if (!groups.length) return true;
-  return groups.some(group => group.variants.some(variant => blob.includes(variant)));
+export function isGenericObjectName(title) {
+  const key = normalizeForMatch(title);
+  if (!key) return true;
+  if (GENERIC_OBJECT_NAMES.has(key)) return true;
+  return /^(?:galaxy|star|nebula|object|mapped star|milky way star)\s*\d+$/.test(key);
 }
 
 function slugify(value, fallback = "object") {
@@ -195,9 +286,12 @@ function slugify(value, fallback = "object") {
   return slug || fallback;
 }
 
-function cacheFileFor(title, objectType) {
+function cacheFileFor(title, objectType, pageHint = "") {
   const base = slugify(`${objectType}-${title}`);
-  const hash = createHash("sha256").update(`${objectType}\n${title}`).digest("hex").slice(0, 14);
+  const hash = createHash("sha256")
+    .update(`${OBJECT_INFO_CACHE_VERSION}\n${objectType}\n${title}\n${pageHint}`)
+    .digest("hex")
+    .slice(0, 14);
   return path.join(CACHE_ROOT, `${base}-${hash}.json`);
 }
 
@@ -255,16 +349,20 @@ async function readCache(filePath) {
     const raw = await readFile(filePath, "utf8");
     return JSON.parse(raw);
   } catch (err) {
-    if (err && err.code === "ENOENT") return null;
+    if (err && (err.code === "ENOENT" || err instanceof SyntaxError)) return null;
     throw err;
   }
 }
 
 async function writeCache(filePath, payload) {
   await mkdir(path.dirname(filePath), { recursive: true });
-  const tempFile = `${filePath}.${process.pid}.tmp`;
+  const tempFile = `${filePath}.${process.pid}.${Date.now()}.tmp`;
   await writeFile(tempFile, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
   await rename(tempFile, filePath);
+}
+
+function cacheVersionIsCurrent(payload) {
+  return payload?.cacheVersion === OBJECT_INFO_CACHE_VERSION;
 }
 
 function cacheIsFresh(payload) {
@@ -276,105 +374,109 @@ function cacheIsFresh(payload) {
   return Number.isFinite(cachedMs) && Date.now() - cachedMs <= ttl;
 }
 
-function cacheVersionIsCurrent(payload) {
-  return payload?.cacheVersion === OBJECT_INFO_CACHE_VERSION;
-}
+// ---------------------------------------------------------------------------
+// Fetch helpers: the timeout covers headers *and* body reading.
 
-function sourceDetailsUrl(nasaId) {
-  return nasaId ? `${NASA_IMAGES_WEB}/details/${encodeURIComponent(nasaId)}` : NASA_IMAGES_WEB;
-}
-
-function fallbackDescription(title, objectType) {
-  return `No encyclopedic object record was returned for ${title}. The object is still selectable in CosmosMap as a ${objectType}.`;
-}
-
-function cleanMediaDescription(value, title, objectType) {
-  const text = cleanText(value, GENERAL_DESCRIPTION_MAX_LENGTH)
-    .replace(/^NASA image release\s+[A-Za-z]+ \d{1,2}, \d{4}\s*/i, "")
-    .replace(/\s*NASA image use policy\..*$/i, "")
-    .replace(/\s*To read more go to:.*$/i, "")
-    .trim();
-  return text || fallbackDescription(title, objectType);
-}
-
-async function tryInfoSource(label, producer) {
-  try {
-    return await producer();
-  } catch (err) {
-    console.warn(`CosmosMap ${label} lookup failed:`, err);
-    return null;
+class RemoteHttpError extends Error {
+  constructor(status, statusText, url) {
+    super(`Remote request failed: ${status} ${statusText} (${url})`);
+    this.status = status;
   }
 }
 
-function normalizedSearchTerms(title, objectType, subtitle) {
-  const lowerTitle = title.toLowerCase();
-  const lowerType = objectType.toLowerCase();
-  const queries = [];
-
-  if (lowerTitle === "sgr a*" || lowerTitle.includes("sagittarius a")) {
-    queries.push("Sagittarius A* black hole", "Milky Way center black hole", "galactic center black hole");
-  } else if (lowerTitle === "milky way") {
-    queries.push("Milky Way galaxy", "Milky Way center");
-  } else if (lowerTitle === "sun") {
-    queries.push("Sun star", "Solar Dynamics Observatory Sun");
-  } else if (lowerTitle === "moon") {
-    queries.push("Moon lunar surface", "Moon");
-  } else if (lowerType.includes("black hole")) {
-    queries.push(`${title} black hole`, title);
-  } else if (lowerType.includes("galaxy")) {
-    queries.push(`${title} galaxy`, title);
-  } else if (lowerType.includes("nebula")) {
-    queries.push(`${title} nebula`, title);
-  } else if (lowerType.includes("moon")) {
-    queries.push(`${title} moon`, title);
-  } else if (lowerType.includes("planet") || lowerType.includes("dwarf")) {
-    queries.push(`${title} planet`, title);
-  } else if (lowerType.includes("star")) {
-    queries.push(`${title} star`, title);
-  } else {
-    queries.push(`${title} ${objectType}`.trim(), title);
-  }
-
-  if (subtitle) queries.push(`${title} ${subtitle}`.replace(/[\u00b7;:,()[\]]+/g, " "));
-  return [...new Set(queries.map(q => cleanText(q, 120)).filter(Boolean))];
-}
-
-async function fetchJson(url) {
+async function fetchWithTimeout(url, { accept, timeoutMs, read, maxBytes = Infinity }) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), JSON_FETCH_TIMEOUT_MS);
-  try {
-    const response = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        "Accept": "application/json",
-        "User-Agent": "CosmosMap object-info cache (https://github.com/bekirdag/space_simulation)",
-      },
-    });
-    if (!response.ok) throw new Error(`Remote JSON request failed: ${response.status} ${response.statusText}`);
-    return response.json();
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-async function fetchText(url) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), HTML_FETCH_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(url, {
       redirect: "follow",
       signal: controller.signal,
-      headers: {
-        "Accept": "text/html,application/xhtml+xml",
-        "User-Agent": "CosmosMap object-info cache (https://github.com/bekirdag/space_simulation)",
-      },
+      headers: { "Accept": accept, "User-Agent": USER_AGENT },
     });
-    if (!response.ok) throw new Error(`NASA Science request failed: ${response.status} ${response.statusText}`);
-    return { html: await response.text(), url: response.url };
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => {});
+      throw new RemoteHttpError(response.status, response.statusText, String(url));
+    }
+    return await read(response, maxBytes);
   } finally {
     clearTimeout(timeout);
   }
 }
+
+async function fetchJson(url) {
+  return fetchWithTimeout(url, {
+    accept: "application/json",
+    timeoutMs: JSON_FETCH_TIMEOUT_MS,
+    read: response => response.json(),
+  });
+}
+
+async function fetchText(url) {
+  return fetchWithTimeout(url, {
+    accept: "text/html,application/xhtml+xml",
+    timeoutMs: HTML_FETCH_TIMEOUT_MS,
+    read: async response => ({ html: await response.text(), url: response.url }),
+  });
+}
+
+async function readLimitedBody(response, maxBytes) {
+  const length = Number.parseInt(response.headers.get("content-length") ?? "", 10);
+  if (Number.isFinite(length) && length > maxBytes) {
+    await response.body?.cancel().catch(() => {});
+    throw new Error(`Remote image is too large to cache (${length} bytes)`);
+  }
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("Remote image body unavailable");
+  const chunks = [];
+  let total = 0;
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    if (!value) continue;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => {});
+      throw new Error(`Remote image is too large to cache (>${maxBytes} bytes)`);
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks.map(chunk => Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength)), total);
+}
+
+function isNetworkFailure(err) {
+  if (err instanceof RemoteHttpError) return err.status === 429 || err.status >= 500;
+  return true; // abort / DNS / socket errors
+}
+
+// ---------------------------------------------------------------------------
+// Image cache
+
+async function cachedRemoteImage(imageUrl, title, objectType, sourceId) {
+  if (!imageUrl) return null;
+  await mkdir(IMAGE_CACHE_DIR, { recursive: true });
+
+  const { buffer, contentType } = await fetchWithTimeout(imageUrl, {
+    accept: "image/*",
+    timeoutMs: IMAGE_FETCH_TIMEOUT_MS,
+    maxBytes: MAX_IMAGE_BYTES,
+    read: async (response, maxBytes) => {
+      const type = response.headers.get("content-type") ?? "";
+      if (!type.toLowerCase().startsWith("image/")) {
+        await response.body?.cancel().catch(() => {});
+        throw new Error(`Remote image response is not an image (${type || "unknown content type"})`);
+      }
+      return { buffer: await readLimitedBody(response, maxBytes), contentType: type };
+    },
+  });
+
+  const hash = createHash("sha256").update(`${sourceId ?? ""}\n${imageUrl}`).digest("hex").slice(0, 14);
+  const filename = `${slugify(`${objectType}-${title}`)}-${hash}${extFromMime(contentType, imageUrl)}`;
+  await writeFile(path.join(IMAGE_CACHE_DIR, filename), buffer);
+  return { filename, url: imageRouteFor(filename) };
+}
+
+// ---------------------------------------------------------------------------
+// NASA Science curated facts pages (image fallback for solar-system bodies)
 
 function htmlAttr(tag, name) {
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -394,269 +496,30 @@ function metaContent(html, names, maxLength = 1800) {
   return "";
 }
 
-function pageTitle(html, fallback) {
-  const title = cleanText(html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? "", 240)
-    .replace(/\s*-\s*NASA Science$/i, "")
-    .replace(/\s*\|\s*NASA$/i, "");
-  return title || fallback;
+async function curatedNasaImage({ title, objectType, resolvedPage }) {
+  const sourcePage = NASA_SCIENCE_OBJECT_PAGES.get(objectLookupKey(title)) ||
+    NASA_SCIENCE_OBJECT_PAGES.get(objectLookupKey(stripParenthetical(resolvedPage)));
+  if (!sourcePage) return null;
+  const { html, url } = await fetchText(sourcePage);
+  const remoteImageUrl = decodeHtmlEntities(metaContent(html, ["og:image"], 1000));
+  if (!remoteImageUrl) return null;
+  const image = await cachedRemoteImage(remoteImageUrl, title, objectType, url);
+  if (!image) return null;
+  return {
+    imageUrl: image.url,
+    cachedImage: image.filename,
+    remoteImageUrl,
+    imageProvider: "NASA Science",
+    imageSourceTitle: "NASA Science",
+    imageSourceUrl: url,
+    imageCredit: "NASA",
+    imageLicense: null,
+    imageLicenseUrl: null,
+  };
 }
 
-function articleHtml(html) {
-  return html.match(/<article\b[\s\S]*?<\/article>/i)?.[0] ??
-    html.match(/<main\b[\s\S]*?<\/main>/i)?.[0] ??
-    html;
-}
-
-function removeNonContentHtml(html) {
-  return String(html ?? "")
-    .replace(/<script\b[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style\b[\s\S]*?<\/style>/gi, " ")
-    .replace(/<svg\b[\s\S]*?<\/svg>/gi, " ")
-    .replace(/<nav\b[\s\S]*?<\/nav>/gi, " ")
-    .replace(/<button\b[\s\S]*?<\/button>/gi, " ")
-    .replace(/<form\b[\s\S]*?<\/form>/gi, " ")
-    .replace(/<figure\b[\s\S]*?<\/figure>/gi, " ")
-    .replace(/<figcaption\b[\s\S]*?<\/figcaption>/gi, " ");
-}
-
-function htmlSectionByHeadingId(html, headingId) {
-  const escapedId = headingId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const heading = new RegExp(`<h[1-6]\\b[^>]*\\bid\\s*=\\s*["']${escapedId}["'][^>]*>[\\s\\S]*?<\\/h[1-6]>`, "i").exec(html);
-  if (!heading) return "";
-
-  const start = heading.index + heading[0].length;
-  const rest = html.slice(start);
-  const nextHeading = /<h[1-6]\b/i.exec(rest);
-  return nextHeading ? rest.slice(0, nextHeading.index) : rest;
-}
-
-function isUsefulInfoParagraph(text) {
-  if (text.length < 45) return false;
-  if (/^(?:explore this section|facts|resources|related|credits?)\b/i.test(text)) return false;
-  if (/\b(?:subscribe|newsletter|cookie|privacy policy|terms of use)\b/i.test(text)) return false;
-  if (/^(?:NASA|ESA|JPL|Caltech|STScI)(?:[\/\-\s]|$)/i.test(text) && text.length < 120) return false;
-  return true;
-}
-
-function paragraphTextsFromHtml(html) {
-  const cleanedHtml = removeNonContentHtml(html);
-  return [...cleanedHtml.matchAll(/<p\b[^>]*>([\s\S]*?)<\/p>/gi)]
-    .map(match => cleanText(match[1], 1000))
-    .filter(isUsefulInfoParagraph);
-}
-
-function joinDescriptionParagraphs(paragraphs, maxLength = GENERAL_DESCRIPTION_MAX_LENGTH) {
-  const selected = [];
-  const seen = new Set();
-  let length = 0;
-
-  for (const paragraph of paragraphs) {
-    const key = normalizeForMatch(paragraph);
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
-
-    const separatorLength = selected.length > 0 ? 2 : 0;
-    if (length + separatorLength + paragraph.length > maxLength) {
-      if (selected.length === 0) selected.push(paragraph.slice(0, maxLength).replace(/\s+\S*$/, "").trim());
-      break;
-    }
-    selected.push(paragraph);
-    length += separatorLength + paragraph.length;
-    if (selected.length >= 3) break;
-  }
-
-  return selected.join("\n\n").trim();
-}
-
-function scienceDescriptionFromHtml(html, fallback = "") {
-  const sourceHtml = articleHtml(html);
-  const sectionIds = ["h-introduction", "h-overview", "h-about", "h-in-depth"];
-  for (const sectionId of sectionIds) {
-    const sectionHtml = htmlSectionByHeadingId(sourceHtml, sectionId);
-    const description = joinDescriptionParagraphs(paragraphTextsFromHtml(sectionHtml));
-    if (description) return description;
-  }
-
-  const articleDescription = joinDescriptionParagraphs(paragraphTextsFromHtml(sourceHtml));
-  return articleDescription || cleanExcerpt(fallback);
-}
-
-function firstImageFromHtml(html) {
-  const tag = String(html ?? "").match(/<img\b[^>]*>/i)?.[0];
-  const src = tag ? htmlAttr(tag, "src") : "";
-  return src ? decodeHtmlEntities(src) : "";
-}
-
-function dataForItem(item) {
-  return Array.isArray(item?.data) ? item.data[0] ?? {} : {};
-}
-
-function previewImageForItem(item) {
-  const links = Array.isArray(item?.links) ? item.links : [];
-  const imageLink = links.find(link => link?.render === "image" && typeof link?.href === "string");
-  return imageLink?.href ?? null;
-}
-
-function itemSearchBlob(item) {
-  const data = dataForItem(item);
-  return [
-    data.title,
-    data.description,
-    Array.isArray(data.keywords) ? data.keywords.join(" ") : "",
-  ].join(" ").toLowerCase();
-}
-
-function scoreItem(item, title, objectType) {
-  const data = dataForItem(item);
-  if (data.media_type !== "image") return -1000;
-  const blob = itemSearchBlob(item);
-  const itemTitle = String(data.title ?? "");
-  const normalizedTitle = title.toLowerCase().replace(/\*/g, "").trim();
-  const words = normalizedTitle.split(/[^a-z0-9]+/).filter(w => w.length > 1);
-  let score = previewImageForItem(item) ? 10 : 0;
-
-  if (blob.includes(normalizedTitle)) score += 60;
-  for (const word of words) {
-    if (blob.includes(word)) score += 12;
-  }
-  for (const word of objectType.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)) {
-    if (blob.includes(word)) score += 8;
-  }
-  if (cleanText(data.description, 500).length > 80) score += 8;
-  if (/\b(logo|insignia|patch|poster)\b/i.test(itemTitle)) score -= 18;
-  if (/\blaunch vehicles?\b/i.test(itemTitle)) score -= 90;
-  if (/\b(?:launch|spacecraft|mission|probe|rover|astronaut)\b/i.test(blob)) {
-    if (/\b(?:planet|dwarf|moon)\b/i.test(objectType)) score -= 35;
-    else score -= 12;
-  }
-  return score;
-}
-
-function chooseSearchItem(items, title, objectType) {
-  const imageItems = (Array.isArray(items) ? items : []).filter(item => dataForItem(item).media_type === "image");
-  if (imageItems.length === 0) return null;
-  return imageItems
-    .map(item => ({ item, score: scoreItem(item, title, objectType) }))
-    .sort((a, b) => b.score - a.score)[0]?.item ?? null;
-}
-
-function selectAssetImage(assetJson, fallbackUrl) {
-  const items = Array.isArray(assetJson?.collection?.items) ? assetJson.collection.items : [];
-  const hrefs = items
-    .map(item => typeof item?.href === "string" ? item.href : "")
-    .filter(href => /^https?:\/\//.test(href))
-    .filter(href => /\.(jpe?g|png|webp|gif)(\?|$)/i.test(new URL(href).pathname));
-
-  if (hrefs.length === 0) return fallbackUrl;
-  return hrefs
-    .map(href => {
-      const lower = href.toLowerCase();
-      let rank = 30;
-      if (lower.includes("~medium")) rank = 90;
-      else if (lower.includes("~small")) rank = 80;
-      else if (lower.includes("~large")) rank = 70;
-      else if (lower.includes("~orig")) rank = 55;
-      else if (lower.includes("~thumb")) rank = 20;
-      return { href, rank };
-    })
-    .sort((a, b) => b.rank - a.rank)[0]?.href ?? fallbackUrl;
-}
-
-async function cachedRemoteImage(imageUrl, title, objectType, sourceId) {
-  if (!imageUrl) return null;
-  await mkdir(IMAGE_CACHE_DIR, { recursive: true });
-
-  const probe = await fetch(imageUrl, {
-    headers: { "User-Agent": "CosmosMap object-info cache" },
-  });
-  if (!probe.ok) throw new Error(`Remote image request failed: ${probe.status} ${probe.statusText}`);
-
-  const length = Number.parseInt(probe.headers.get("content-length") ?? "", 10);
-  if (Number.isFinite(length) && length > MAX_IMAGE_BYTES) {
-    throw new Error(`Remote image is too large to cache (${length} bytes)`);
-  }
-
-  const contentType = probe.headers.get("content-type") ?? "";
-  if (!contentType.toLowerCase().startsWith("image/")) {
-    throw new Error(`Remote image response is not an image (${contentType || "unknown content type"})`);
-  }
-
-  const buffer = Buffer.from(await probe.arrayBuffer());
-  if (buffer.byteLength > MAX_IMAGE_BYTES) {
-    throw new Error(`Remote image is too large to cache (${buffer.byteLength} bytes)`);
-  }
-
-  const hash = createHash("sha256").update(`${sourceId ?? ""}\n${imageUrl}`).digest("hex").slice(0, 14);
-  const filename = `${slugify(`${objectType}-${title}`)}-${hash}${extFromMime(contentType, imageUrl)}`;
-  await writeFile(path.join(IMAGE_CACHE_DIR, filename), buffer);
-  return { filename, url: imageRouteFor(filename) };
-}
-
-function scienceSearchTerms(title, objectType, subtitle) {
-  const lowerTitle = title.toLowerCase();
-  const baseTitle = cleanText(title.replace(/\*/g, " "), 100);
-  const queries = [];
-
-  if (lowerTitle === "sgr a*" || lowerTitle.includes("sagittarius a")) {
-    queries.push("Sagittarius A black hole");
-  } else {
-    queries.push(baseTitle);
-  }
-
-  return [...new Set(queries
-    .map(query => cleanText(query, 120).replace(/[^\w\s-]/g, " ").replace(/\s+/g, " ").trim())
-    .filter(query => query.length >= 2))];
-}
-
-function scienceSearchHref(item) {
-  return item?._links?.self?.find(link => typeof link?.href === "string")?.href ?? "";
-}
-
-function scienceSearchItemScore(item, title, objectType) {
-  const href = scienceSearchHref(item);
-  if (!href) return -1000;
-
-  const normalizedTitle = normalizeForMatch(title);
-  const titleWords = normalizedTitle.split(" ").filter(word => word.length > 1);
-  const objectWords = normalizeForMatch(objectType).split(" ").filter(word => word.length > 2);
-  const itemTitle = normalizeForMatch(item?.title ?? "");
-  const itemUrl = String(item?.url ?? "").toLowerCase();
-  const blob = normalizeForMatch(`${item?.title ?? ""} ${item?.url ?? ""} ${item?.subtype ?? ""}`);
-  let score = 0;
-
-  if (item?.subtype === "topic") score += 35;
-  else if (item?.subtype === "page") score += 22;
-  else if (item?.subtype === "post") score += 12;
-  else if (["stma", "attachment", "page-ext"].includes(item?.subtype)) score -= 45;
-
-  if (itemTitle === normalizedTitle || itemTitle === `${normalizedTitle} facts`) score += 70;
-  if (normalizedTitle && blob.includes(normalizedTitle)) score += 45;
-  for (const word of titleWords) {
-    if (blob.includes(word)) score += 10;
-  }
-  for (const word of objectWords) {
-    if (blob.includes(word)) score += 5;
-  }
-  if (/\bfacts?\b/.test(itemTitle)) score += 12;
-  if (/\/(?:photojournal|asset)\//.test(itemUrl) || /\b(?:image|imaged|photo|gallery)\b/.test(itemTitle)) score -= 28;
-  return score;
-}
-
-function chooseScienceSearchItem(items, title, objectType) {
-  const ranked = (Array.isArray(items) ? items : [])
-    .map(item => ({ item, score: scienceSearchItemScore(item, title, objectType) }))
-    .sort((a, b) => b.score - a.score);
-  const best = ranked[0];
-  return best && best.score >= 20 ? best.item : null;
-}
-
-function scienceRecordImageUrl(record, contentHtml) {
-  return record?.featured_image?.file ||
-    record?.parsely?.meta?.image?.url ||
-    record?.parsely?.meta?.thumbnailUrl ||
-    firstImageFromHtml(contentHtml) ||
-    null;
-}
+// ---------------------------------------------------------------------------
+// Wikipedia / Wikidata resolution
 
 function wikipediaPageUrl(title) {
   return `${WIKIPEDIA_WEB}/${encodeURIComponent(title.replace(/\s+/g, "_"))}`;
@@ -666,317 +529,315 @@ function commonsFilePageUrl(title) {
   return `${WIKIMEDIA_COMMONS_WEB}/${encodeURIComponent(String(title ?? "").replace(/\s+/g, "_"))}`;
 }
 
-function knownWikipediaPageTitle(title) {
-  return WIKIPEDIA_OBJECT_PAGES.get(objectLookupKey(title)) || "";
+function curatedPageFor(name, kind) {
+  const keys = [objectLookupKey(name), objectLookupKey(stripParenthetical(name))];
+  const byKind = WIKIPEDIA_OBJECT_PAGES_BY_KIND[kind || "moon"];
+  for (const key of keys) {
+    const page = byKind?.get(key);
+    if (page) return page;
+  }
+  // Constellation names collide with other objects (Hydra, Andromeda, ...):
+  // they only use the "(constellation)" rule below.
+  if (kind === "constellation") return "";
+  for (const key of keys) {
+    const page = WIKIPEDIA_OBJECT_PAGES.get(key);
+    if (page) return page;
+  }
+  return "";
 }
 
-function wikipediaTypeSearchLabels(objectType) {
-  const normalized = normalizeForMatch(objectType);
-  const labels = [];
-
-  if (normalized.includes("black hole")) labels.push("black hole");
-  if (normalized.includes("dwarf") && normalized.includes("planet")) labels.push("dwarf planet", "planet");
-  else if (normalized.includes("exoplanet")) labels.push("exoplanet", "planet");
-  else if (normalized.includes("planet")) labels.push("planet");
-  if (normalized.includes("moon")) labels.push("moon", "natural satellite");
-  if (normalized.includes("galaxy")) labels.push("galaxy");
-  if (normalized.includes("nebula")) labels.push("nebula");
-  if (normalized.includes("star")) labels.push("star");
-  if (labels.length === 0 && normalized && normalized !== "object") labels.push(normalized);
-
-  return [...new Set(labels)];
+function typeKind(objectType) {
+  const type = normalizeForMatch(objectType);
+  if (/\bblack hole\b/.test(type)) return "black hole";
+  if (/\bconstellation\b/.test(type)) return "constellation";
+  if (/\bdwarf planet\b/.test(type)) return "dwarf planet";
+  if (/\bexoplanet\b/.test(type) && !/\bhost\b/.test(type)) return "exoplanet";
+  if (/\bmoon\b|\bsatellite\b/.test(type)) return "moon";
+  if (/\bplanet\b/.test(type) && !/\bnebula\b/.test(type)) return "planet";
+  if (/\bgalax/.test(type)) return "galaxy";
+  if (/\bnebula\b|\bremnant\b|\bh ii\b/.test(type)) return "nebula";
+  if (/\bstar\b/.test(type)) return "star";
+  if (/\basteroid\b/.test(type)) return "asteroid";
+  return "";
 }
 
-function wikipediaSearchTerms(title, objectType, subtitle) {
-  const baseTitle = cleanText(title, 120);
-  const searchableTitle = cleanText(title.replace(/\*/g, " "), 120);
-  const knownTitle = knownWikipediaPageTitle(title);
-  const labels = wikipediaTypeSearchLabels(objectType);
-  const primaryLabel = labels[0] || cleanText(objectType, 60);
-  const titleCandidates = [baseTitle, searchableTitle, knownTitle].filter(Boolean);
-  const queries = [];
+const TYPE_DISAMBIGUATORS = {
+  "moon": ["moon"],
+  "planet": ["planet"],
+  "dwarf planet": ["dwarf planet"],
+  "star": ["star"],
+  "constellation": ["constellation"],
+  "galaxy": ["galaxy", "dwarf galaxy"],
+  "nebula": ["nebula"],
+  "asteroid": ["asteroid"],
+};
 
-  for (const candidate of titleCandidates) {
-    queries.push(`${candidate} ${primaryLabel}`.trim());
-  }
-  for (const label of labels.slice(1, 3)) {
-    queries.push(`${baseTitle} ${label}`.trim());
-  }
-  if (subtitle) queries.push(`${baseTitle} ${subtitle} ${primaryLabel}`.trim());
-  if (knownTitle) queries.push(knownTitle);
-  else if (!primaryLabel || primaryLabel === "object") queries.push(baseTitle);
+const DESIGNATION_RE = /^(?:m|messier|ngc|ic|ugc|pgc|abell|barnard|gum|ldn|lbn|vdb|rcw|sh\s*2|sh2|sharpless\s*2|hd|hip|hr|gj|gliese|wolf|ross|lhs|lp|kepler|k2|koi|toi|tic|kic|wasp|hat-p|hats|xo|tres|corot|ogle|2mass|wise|g\d)\s*-?\s*\d/i;
 
-  return [...new Set(queries.map(query => cleanText(query, 180)).filter(Boolean))];
+function isDesignation(value) {
+  return DESIGNATION_RE.test(cleanText(value, 180));
 }
 
-function wikipediaSearchBlob(item) {
-  return normalizeForMatch([
-    item?.title,
-    item?.snippet,
-    item?.redirecttitle,
-    item?.categorysnippet,
-  ].filter(Boolean).join(" "));
+function designationVariants(name) {
+  const text = cleanText(name, 180);
+  const variants = [];
+  const messier = text.match(/^(?:m|messier)\s*-?\s*(\d{1,3})$/i);
+  if (messier) variants.push(`Messier ${messier[1]}`);
+  const catalog = text.match(/^(ngc|ic|ugc|pgc|abell|barnard|gum|ldn|lbn|vdb|rcw|sh\s*2|sh2|sharpless\s*2)\s*-?\s*(\d{1,6}[a-z]?)$/i);
+  if (catalog) {
+    const prefix = catalog[1].toLowerCase().replace(/\s+/g, "");
+    const number = catalog[2];
+    if (prefix === "sh2" || prefix === "sharpless2") variants.push(`Sh2-${number}`, `Sharpless 2-${number}`);
+    else if (prefix === "vdb") variants.push(`vdB ${number}`);
+    else if (prefix === "barnard") variants.push(`Barnard ${number}`);
+    else if (prefix === "abell") variants.push(`Abell ${number}`);
+    else variants.push(`${prefix.toUpperCase()} ${number}`);
+  }
+  const westerhout = text.match(/^w\s*(\d{1,2})(?:\s+complex)?$/i);
+  if (westerhout) variants.push(`Westerhout ${westerhout[1]}`);
+  // Exoplanets: "Kepler-22 b" -> "Kepler-22b".
+  const planet = text.match(/^(.+?\d)\s+([b-i])$/);
+  if (planet) variants.push(`${planet[1]}${planet[2]}`);
+  return variants;
 }
 
-function scoreWikipediaSearchItem(item, title, objectType) {
-  const pageTitle = normalizeForMatch(item?.title ?? "");
-  if (!pageTitle) return -1000;
-
-  const titleKey = normalizeForMatch(title);
-  const knownTitle = normalizeForMatch(knownWikipediaPageTitle(title));
-  const titleWords = titleKey.split(" ").filter(word => word.length > 1);
-  const labels = wikipediaTypeSearchLabels(objectType);
-  const labelWords = [...new Set(labels.join(" ").split(/\s+/).filter(word => word.length > 2))];
-  const blob = wikipediaSearchBlob(item);
-  const designationGroups = catalogDesignationGroups(title);
-  const hasRequiredDesignation = catalogDesignationMatchesBlob(blob, designationGroups);
-  if (!hasRequiredDesignation) return -1000;
-
-  const typeKey = normalizeForMatch(objectType);
-  let score = 0;
-
-  if (designationGroups.length > 0) score += 90;
-  if (pageTitle === titleKey || (knownTitle && pageTitle === knownTitle)) score += 95;
-  if (titleKey && pageTitle.includes(titleKey)) score += 55;
-  if (knownTitle && pageTitle.includes(knownTitle)) score += 55;
-  for (const word of titleWords) {
-    if (blob.includes(word)) score += 10;
+// Every name the object is known by: title, "Name (Designation)" parts,
+// "Designation (Name)" parts, aliases, and designation spellings.
+function objectNameVariants(title, aliases = []) {
+  const names = [];
+  const push = value => {
+    const text = cleanText(value, 180);
+    if (text && !isGenericObjectName(text)) names.push(text);
+  };
+  const pushWithVariants = value => {
+    push(value);
+    for (const variant of designationVariants(value)) push(variant);
+  };
+  for (const value of [title, ...aliases]) {
+    pushWithVariants(value);
+    const paren = String(value ?? "").match(/^(.*?)\s*\(([^)]+)\)\s*$/);
+    if (paren) {
+      // "Orion (M43)": the catalog designation is less ambiguous than a
+      // one-word common name, so try it first.
+      const parts = isDesignation(paren[2]) && !isDesignation(paren[1]) ? [paren[2], paren[1]] : [paren[1], paren[2]];
+      for (const part of parts) pushWithVariants(part);
+    }
   }
-  for (const label of labels) {
-    const normalizedLabel = normalizeForMatch(label);
-    if (normalizedLabel && blob.includes(normalizedLabel)) score += 28;
-  }
-  for (const word of labelWords) {
-    if (blob.includes(word)) score += 8;
-  }
-
-  if (/\bdisambiguation\b/.test(pageTitle)) score -= 120;
-  if (/\b(?:spacecraft|probe|mission|launcher|launch vehicle|astronaut)\b/.test(blob) && /\b(?:planet|moon|dwarf)\b/.test(typeKey)) {
-    score -= 45;
-  }
-
-  if (/\bplanet\b/.test(typeKey)) {
-    if (/\bplanet\b/.test(blob)) score += 35;
-    if (/\bdwarf planet\b/.test(typeKey) && /\bdwarf planet\b/.test(blob)) score += 25;
-    if (/\b(?:mythology|mythological|god|goddess|deity|roman religion|greek mythology)\b/.test(blob)) score -= 85;
-  }
-  if (/\bmoon\b/.test(typeKey)) {
-    if (/\b(?:moon|natural satellite)\b/.test(blob)) score += 35;
-    if (/\b(?:mythology|mythological|god|goddess|deity)\b/.test(blob)) score -= 45;
-  }
-  if (/\bgalaxy\b/.test(typeKey)) {
-    if (/\b(?:galaxy|magellanic cloud)\b/.test(blob)) score += 40;
-  }
-  if (/\bblack hole\b/.test(typeKey)) {
-    if (/\b(?:black hole|galactic center)\b/.test(blob)) score += 45;
-  }
-  if (/\bnebula\b/.test(typeKey)) {
-    if (/\bnebula\b/.test(blob)) score += 40;
-  }
-  if (/\bstar\b/.test(typeKey)) {
-    if (/\b(?:star|stellar|red dwarf|white dwarf|brown dwarf)\b/.test(blob)) score += 35;
-  }
-
-  return score;
-}
-
-function wikipediaSearchItemMatchesCatalogDesignation(item, title) {
-  const groups = catalogDesignationGroups(title);
-  if (!groups.length) return false;
-  return catalogDesignationMatchesBlob(wikipediaSearchBlob(item), groups);
-}
-
-function wikipediaSummaryMatchesCatalogDesignation(summary, title) {
-  const groups = catalogDesignationGroups(title);
-  if (!groups.length) return true;
-  const blob = normalizeForMatch([
-    summary?.title,
-    summary?.description,
-    summary?.extract,
-  ].filter(Boolean).join(" "));
-  return catalogDesignationMatchesBlob(blob, groups);
-}
-
-function rankedWikipediaSearchItems(
-  items,
-  title,
-  objectType,
-  minScore = WIKIPEDIA_PRIMARY_SCORE_THRESHOLD,
-) {
-  return (Array.isArray(items) ? items : [])
-    .map(item => ({
-      item,
-      score: scoreWikipediaSearchItem(item, title, objectType),
-      catalogDesignationMatch: wikipediaSearchItemMatchesCatalogDesignation(item, title),
-    }))
-    .filter(({ item, score }) => cleanText(item?.title, 180) && score >= minScore)
-    .sort((a, b) => b.score - a.score);
-}
-
-function addWikipediaPageCandidate(candidates, { pageTitle, query, score, matchKind, catalogDesignationMatch = false }) {
-  const title = cleanText(pageTitle, 180);
-  if (!title) return;
-
-  const key = normalizeForMatch(title);
-  const existing = candidates.get(key);
-  if (existing && existing.score >= score) return;
-
-  candidates.set(key, {
-    pageTitle: title,
-    query: cleanText(query || title, 180) || title,
-    score,
-    matchKind,
-    catalogDesignationMatch,
+  const seen = new Set();
+  return names.filter(name => {
+    const key = normalizeForMatch(name);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
   });
 }
 
-async function wikipediaSearchPageCandidates({ title, objectType, subtitle }) {
-  const candidates = new Map();
-  const knownTitle = knownWikipediaPageTitle(title);
-  if (knownTitle) {
-    addWikipediaPageCandidate(candidates, {
-      pageTitle: knownTitle,
-      query: knownTitle,
-      score: 120,
-      matchKind: "known",
-      catalogDesignationMatch: catalogDesignationGroups(title).length > 0,
-    });
-  }
-
-  for (const query of wikipediaSearchTerms(title, objectType, subtitle)) {
-    try {
-      const url = new URL(WIKIPEDIA_SEARCH_API);
-      url.searchParams.set("action", "query");
-      url.searchParams.set("format", "json");
-      url.searchParams.set("list", "search");
-      url.searchParams.set("srsearch", query);
-      url.searchParams.set("srlimit", "8");
-
-      const searchJson = await fetchJson(url);
-      const ranked = rankedWikipediaSearchItems(
-        searchJson?.query?.search,
-        title,
-        objectType,
-        WIKIPEDIA_SIMILAR_SCORE_THRESHOLD,
-      );
-      for (const { item, score, catalogDesignationMatch } of ranked.slice(0, 4)) {
-        addWikipediaPageCandidate(candidates, {
-          pageTitle: item?.title,
-          query,
-          score,
-          matchKind: score >= WIKIPEDIA_PRIMARY_SCORE_THRESHOLD ? "search" : "similar",
-          catalogDesignationMatch,
-        });
-      }
-    } catch (err) {
-      console.warn("CosmosMap Wikipedia search failed:", err);
-    }
-  }
-
-  const fallbackTitle = cleanText(title, 120);
-  if (!candidates.size && fallbackTitle) {
-    addWikipediaPageCandidate(candidates, {
-      pageTitle: fallbackTitle,
-      query: fallbackTitle,
-      score: 1,
-      matchKind: "fallback",
-      catalogDesignationMatch: false,
-    });
-  }
-
-  return [...candidates.values()]
-    .sort((a, b) => b.score - a.score)
-    .slice(0, WIKIPEDIA_MAX_CANDIDATES);
-}
-
-function isUsableWikipediaSummary(summary) {
-  const extract = cleanText(summary?.extract, GENERAL_DESCRIPTION_MAX_LENGTH);
-  if (summary?.type === "disambiguation") return false;
-  if (summary?.type === "no-extract") return false;
-  if (extract.length < 80) return false;
-  return true;
-}
-
-function commonsImageSearchTerms({ title, objectType, subtitle, pageTitle }) {
-  const baseTitle = cleanText(title, 120);
-  const resolvedTitle = cleanText(pageTitle || knownWikipediaPageTitle(title), 160);
-  const labels = wikipediaTypeSearchLabels(objectType);
-  const primaryLabel = labels[0] || cleanText(objectType, 60);
+function directTitleCandidates({ title, objectType, pageHint, aliases }) {
   const candidates = [];
+  const add = (pageTitle, kind) => {
+    const clean = cleanText(pageTitle, 180);
+    if (!clean) return;
+    const key = normalizeForMatch(clean);
+    if (candidates.some(candidate => normalizeForMatch(candidate.pageTitle) === key)) return;
+    candidates.push({ pageTitle: clean, kind });
+  };
 
-  if (resolvedTitle) candidates.push(`${resolvedTitle} ${primaryLabel}`.trim(), resolvedTitle);
-  candidates.push(`${baseTitle} ${primaryLabel}`.trim());
-  for (const label of labels.slice(1, 3)) candidates.push(`${baseTitle} ${label}`.trim());
-  if (subtitle) candidates.push(`${baseTitle} ${subtitle} ${primaryLabel}`.trim());
-  if (!primaryLabel || primaryLabel === "object") candidates.push(baseTitle);
-
-  return [...new Set(candidates.map(query => cleanText(query, 180)).filter(Boolean))];
-}
-
-function commonsExtMetadataValue(metadata, key, maxLength = 240) {
-  return cleanText(metadata?.[key]?.value ?? "", maxLength);
-}
-
-function commonsImageSearchBlob(page) {
-  const info = Array.isArray(page?.imageinfo) ? page.imageinfo[0] : null;
-  const metadata = info?.extmetadata ?? {};
-  return normalizeForMatch([
-    page?.title,
-    commonsExtMetadataValue(metadata, "ObjectName", 260),
-    commonsExtMetadataValue(metadata, "ImageDescription", 700),
-    commonsExtMetadataValue(metadata, "Credit", 260),
-    commonsExtMetadataValue(metadata, "Artist", 260),
-  ].filter(Boolean).join(" "));
-}
-
-function scoreCommonsImagePage(page, title, objectType, pageTitle = "") {
-  const info = Array.isArray(page?.imageinfo) ? page.imageinfo[0] : null;
-  const mime = String(info?.mime ?? "").toLowerCase();
-  if (!info || !mime.startsWith("image/")) return -1000;
-
-  const fileTitle = normalizeForMatch(String(page?.title ?? "").replace(/^file:/i, ""));
-  const titleKey = normalizeForMatch(title);
-  const resolvedTitleKey = normalizeForMatch(pageTitle);
-  const typeKey = normalizeForMatch(objectType);
-  const labels = wikipediaTypeSearchLabels(objectType).map(normalizeForMatch).filter(Boolean);
-  const words = [...new Set(`${titleKey} ${resolvedTitleKey}`.split(/\s+/).filter(word => word.length > 1))];
-  const blob = commonsImageSearchBlob(page);
-  let score = 0;
-
-  if (info.thumburl || info.url) score += 20;
-  if (mime === "image/jpeg" || mime === "image/png" || mime === "image/webp") score += 20;
-  if (mime === "image/gif" || mime === "image/svg+xml") score -= 35;
-  if (Number(info.width) >= 700 && Number(info.height) >= 450) score += 16;
-  if (Number(info.width) >= 1200 || Number(info.height) >= 1200) score += 8;
-  if (titleKey && (fileTitle.includes(titleKey) || blob.includes(titleKey))) score += 65;
-  if (resolvedTitleKey && resolvedTitleKey !== titleKey && (fileTitle.includes(resolvedTitleKey) || blob.includes(resolvedTitleKey))) score += 45;
-  for (const word of words) {
-    if (blob.includes(word)) score += 8;
+  const kind = typeKind(objectType);
+  const names = objectNameVariants(title, aliases);
+  for (const name of [title, pageHint, ...names]) {
+    const curated = name ? curatedPageFor(name, kind) : "";
+    if (curated) add(curated, "curated");
   }
-  for (const label of labels) {
-    if (blob.includes(label)) score += 22;
-  }
+  if (pageHint) add(pageHint, "hint");
 
-  if (/\b(?:diagram|chart|graph|map|symbol|icon|logo|insignia|patch|poster|animation)\b/.test(blob)) score -= 35;
-  if (/\b(?:launch|spacecraft|mission|probe|rover|astronaut|vehicle)\b/.test(blob) && /\b(?:planet|moon|dwarf)\b/.test(typeKey)) score -= 45;
-  if (/\b(?:mythology|mythological|god|goddess|deity|statue|painting|mosaic)\b/.test(blob) && /\b(?:planet|moon|star)\b/.test(typeKey)) score -= 75;
-  if (/\bplanet\b/.test(typeKey)) {
-    const focusWords = new Set(titleKey.split(/\s+/).filter(Boolean));
-    for (const word of ["mercury", "venus", "earth", "moon", "mars", "jupiter", "saturn", "uranus", "neptune", "pluto"]) {
-      if (!focusWords.has(word) && blob.includes(word)) score -= 22;
+  const disambiguators = TYPE_DISAMBIGUATORS[kind] ?? [];
+  for (const name of names) {
+    // Catalog designations are unique; only common names need "(moon)" etc.
+    if (!isDesignation(name) && !/\)\s*$/.test(name)) {
+      for (const label of disambiguators) add(`${name} (${label})`, "title");
     }
-    if (/\b(?:align|alignment|conjunction|transit)\b/.test(blob)) score -= 35;
+    add(name, "title");
   }
-  if (/\b(?:planet|moon|star|galaxy|nebula|black hole|supernova|cluster|constellation)\b/.test(blob)) score += 12;
-
-  return score;
+  return candidates.slice(0, MAX_TITLE_CANDIDATES);
 }
 
-function rankedCommonsImagePages(pages, title, objectType, pageTitle) {
-  return (Array.isArray(pages) ? pages : [])
-    .map(page => ({ page, score: scoreCommonsImagePage(page, title, objectType, pageTitle) }))
-    .filter(item => item.score >= 20)
-    .sort((a, b) => b.score - a.score);
+async function wikipediaSummary(pageTitle) {
+  const url = new URL(`${WIKIPEDIA_SUMMARY_API}/${encodeURIComponent(pageTitle.replace(/\s+/g, "_"))}`);
+  url.searchParams.set("redirect", "true");
+  try {
+    return await fetchJson(url);
+  } catch (err) {
+    if (err instanceof RemoteHttpError && err.status === 404) return null;
+    throw err;
+  }
+}
+
+function summaryIsArticle(summary) {
+  if (!summary || summary.type === "disambiguation" || summary.type === "no-extract") return false;
+  if (summary.namespace && summary.namespace.id !== 0) return false;
+  if (/\(disambiguation\)$/i.test(summary.title ?? "")) return false;
+  return cleanText(summary.extract, GENERAL_DESCRIPTION_MAX_LENGTH).length >= 60;
+}
+
+const wikidataParentMemo = new Map();
+
+async function wikidataClaims(qid, property) {
+  const memoKey = `${qid}:${property}`;
+  if (wikidataParentMemo.has(memoKey)) return wikidataParentMemo.get(memoKey);
+  const url = new URL(WIKIDATA_API);
+  url.searchParams.set("action", "wbgetclaims");
+  url.searchParams.set("format", "json");
+  url.searchParams.set("entity", qid);
+  url.searchParams.set("property", property);
+  const json = await fetchJson(url);
+  const values = (json?.claims?.[property] ?? [])
+    .map(claim => claim?.mainsnak?.datavalue?.value?.id)
+    .filter(id => typeof id === "string" && /^Q\d+$/.test(id));
+  wikidataParentMemo.set(memoKey, values);
+  return values;
+}
+
+// True when the item's instance-of classes reach an astronomical root class.
+async function wikidataIsAstronomical(qid) {
+  if (!qid || !/^Q\d+$/.test(qid)) return false;
+  let frontier = await wikidataClaims(qid, "P31");
+  const visited = new Set(frontier);
+  for (let depth = 0; depth <= WIKIDATA_WALK_DEPTH && frontier.length > 0; depth++) {
+    if (frontier.some(cls => ASTRONOMICAL_ROOT_CLASSES.has(cls))) return true;
+    if (depth === WIKIDATA_WALK_DEPTH) break;
+    const parents = await Promise.all(frontier.slice(0, WIKIDATA_MAX_FRONTIER).map(cls => wikidataClaims(cls, "P279")));
+    frontier = parents.flat().filter(cls => {
+      if (visited.has(cls)) return false;
+      visited.add(cls);
+      return true;
+    });
+  }
+  return false;
+}
+
+async function summaryIsAstronomical(summary) {
+  const description = cleanText(summary?.description, 300);
+  if (description && ASTRO_DESCRIPTION_RE.test(description) && !NON_ASTRO_DESCRIPTION_RE.test(description)) {
+    return { ok: true, via: "description" };
+  }
+  try {
+    if (await wikidataIsAstronomical(summary?.wikibase_item)) return { ok: true, via: "wikidata" };
+  } catch (err) {
+    console.warn(`CosmosMap Wikidata class check failed for ${summary?.wikibase_item}:`, err?.message ?? err);
+    throw err;
+  }
+  return { ok: false, via: "" };
+}
+
+async function validatedSummary(pageTitle, { requireAstronomy }) {
+  const summary = await wikipediaSummary(pageTitle);
+  if (!summaryIsArticle(summary)) return null;
+  if (!requireAstronomy) return { summary, via: "curated" };
+  const check = await summaryIsAstronomical(summary);
+  return check.ok ? { summary, via: check.via } : null;
+}
+
+async function searchWikipediaTitles(query) {
+  const url = new URL(WIKIPEDIA_API);
+  url.searchParams.set("action", "query");
+  url.searchParams.set("format", "json");
+  url.searchParams.set("list", "search");
+  url.searchParams.set("srsearch", query);
+  url.searchParams.set("srlimit", "10");
+  url.searchParams.set("srprop", "redirecttitle");
+  const json = await fetchJson(url);
+  return Array.isArray(json?.query?.search) ? json.query.search : [];
+}
+
+function searchLabelFor(objectType) {
+  const kind = typeKind(objectType);
+  if (kind === "moon") return "moon";
+  if (kind === "exoplanet") return "exoplanet";
+  if (kind === "planet" || kind === "dwarf planet") return "planet";
+  return kind || "astronomy";
+}
+
+async function resolveWikipediaPage(params) {
+  const { title, objectType, pageHint, aliases } = params;
+  const state = { networkError: false, tried: [] };
+
+  const attempt = async (pageTitle, kind) => {
+    state.tried.push(pageTitle);
+    try {
+      const result = await validatedSummary(pageTitle, { requireAstronomy: kind !== "curated" });
+      return result ? { ...result, kind } : null;
+    } catch (err) {
+      if (isNetworkFailure(err)) state.networkError = true;
+      console.warn(`CosmosMap Wikipedia lookup failed for ${pageTitle}:`, err?.message ?? err);
+      return null;
+    }
+  };
+
+  for (const candidate of directTitleCandidates({ title, objectType, pageHint, aliases })) {
+    const result = await attempt(candidate.pageTitle, candidate.kind);
+    if (result) return { ...result, state };
+  }
+
+  // Search fallback: only an exact title / redirect match to a known name.
+  const names = objectNameVariants(title, aliases);
+  const nameKeys = new Set(names.map(normalizeForMatch).filter(key => key.length >= 2));
+  const kind = typeKind(objectType);
+  const allowedQualifiers = new Set(
+    (kind ? TYPE_DISAMBIGUATORS[kind] ?? [] : Object.values(TYPE_DISAMBIGUATORS).flat()).map(normalizeForMatch),
+  );
+  // "Titania (moon)" only matches "Titania" when the object is a moon.
+  const qualifiedTitleMatches = hitTitle => {
+    const qualifier = hitTitle.match(/\(([^)]+)\)\s*$/)?.[1];
+    return Boolean(qualifier) &&
+      allowedQualifiers.has(normalizeForMatch(qualifier)) &&
+      nameKeys.has(normalizeForMatch(stripParenthetical(hitTitle)));
+  };
+  const tried = new Set(state.tried.map(normalizeForMatch));
+  for (const name of names.slice(0, 2)) {
+    let hits = [];
+    try {
+      hits = await searchWikipediaTitles(`${name} ${searchLabelFor(objectType)}`);
+    } catch (err) {
+      if (isNetworkFailure(err)) state.networkError = true;
+      console.warn("CosmosMap Wikipedia search failed:", err?.message ?? err);
+      continue;
+    }
+    for (const hit of hits) {
+      const hitTitle = cleanText(hit?.title, 180);
+      if (!hitTitle || tried.has(normalizeForMatch(hitTitle))) continue;
+      const titleMatches = nameKeys.has(normalizeForMatch(hitTitle)) ||
+        qualifiedTitleMatches(hitTitle) ||
+        (hit?.redirecttitle && nameKeys.has(normalizeForMatch(hit.redirecttitle)));
+      if (!titleMatches) continue;
+      tried.add(normalizeForMatch(hitTitle));
+      const result = await attempt(hitTitle, "search");
+      if (result) return { ...result, state };
+    }
+  }
+
+  return { summary: null, kind: "none", state };
+}
+
+async function leadImageFileFor(pageTitle) {
+  const url = new URL(WIKIPEDIA_API);
+  url.searchParams.set("action", "query");
+  url.searchParams.set("format", "json");
+  url.searchParams.set("redirects", "1");
+  url.searchParams.set("prop", "pageimages");
+  url.searchParams.set("piprop", "name|thumbnail|original");
+  url.searchParams.set("pithumbsize", "1200");
+  url.searchParams.set("titles", pageTitle);
+  const json = await fetchJson(url);
+  const page = Object.values(json?.query?.pages ?? {})[0];
+  if (!page?.pageimage) return null;
+  return {
+    fileName: page.pageimage,
+    thumbUrl: page.thumbnail?.source || page.original?.source || null,
+  };
+}
+
+function extMetadataValue(metadata, key, maxLength = 240) {
+  return cleanText(metadata?.[key]?.value ?? "", maxLength);
 }
 
 function cleanMetadataUrl(value) {
@@ -985,327 +846,101 @@ function cleanMetadataUrl(value) {
   return /^https?:\/\//i.test(text) ? text : "";
 }
 
-function commonsImageCredit(page) {
+async function imageFileMetadata(fileName) {
+  const url = new URL(WIKIPEDIA_API);
+  url.searchParams.set("action", "query");
+  url.searchParams.set("format", "json");
+  url.searchParams.set("prop", "imageinfo");
+  url.searchParams.set("titles", `File:${fileName}`);
+  url.searchParams.set("iiprop", "url|mime|size|extmetadata");
+  url.searchParams.set("iiextmetadatalanguage", "en");
+  url.searchParams.set(
+    "iiextmetadatafilter",
+    "ObjectName|ImageDescription|Artist|Credit|LicenseShortName|LicenseUrl|UsageTerms|Categories",
+  );
+  const json = await fetchJson(url);
+  const page = Object.values(json?.query?.pages ?? {})[0];
   const info = Array.isArray(page?.imageinfo) ? page.imageinfo[0] : null;
-  const metadata = info?.extmetadata ?? {};
-  const artist = commonsExtMetadataValue(metadata, "Artist", 260);
-  const credit = commonsExtMetadataValue(metadata, "Credit", 260);
-  const objectName = commonsExtMetadataValue(metadata, "ObjectName", 180) ||
-    cleanText(String(page?.title ?? "").replace(/^File:/i, ""), 180);
-  const license = commonsExtMetadataValue(metadata, "LicenseShortName", 120) ||
-    commonsExtMetadataValue(metadata, "UsageTerms", 120);
-  const licenseUrl = cleanMetadataUrl(metadata?.LicenseUrl?.value);
+  return info ? { page, info, metadata: info.extmetadata ?? {} } : null;
+}
+
+function imageIsRejected(fileName, metadata) {
+  const blob = [
+    fileName,
+    extMetadataValue(metadata, "ObjectName", 300),
+    extMetadataValue(metadata, "ImageDescription", 800),
+    extMetadataValue(metadata, "Categories", 800),
+  ].join(" ").replace(/[_|]+/g, " ");
+  return REJECTED_IMAGE_RE.test(blob);
+}
+
+function imageCredit(fileName, metadata) {
+  const artist = extMetadataValue(metadata, "Artist", 260);
+  const credit = extMetadataValue(metadata, "Credit", 260);
+  const objectName = extMetadataValue(metadata, "ObjectName", 180) ||
+    cleanText(String(fileName ?? "").replace(/\.[a-z0-9]+$/i, "").replace(/_/g, " "), 180);
+  const license = extMetadataValue(metadata, "LicenseShortName", 120) ||
+    extMetadataValue(metadata, "UsageTerms", 120);
   const author = artist || credit;
-  const creditText = author
-    ? `${objectName ? `${objectName} - ` : ""}${author}`
-    : objectName;
-
   return {
-    imageCredit: cleanText(creditText, 360) || null,
+    imageCredit: cleanText(author ? `${objectName ? `${objectName} - ` : ""}${author}` : objectName, 360) || null,
     imageLicense: license || null,
-    imageLicenseUrl: licenseUrl || null,
+    imageLicenseUrl: cleanMetadataUrl(metadata?.LicenseUrl?.value) || null,
   };
 }
 
-async function wikimediaCommonsImageInfo({ title, objectType, subtitle, pageTitle }) {
-  const terms = commonsImageSearchTerms({ title, objectType, subtitle, pageTitle });
-
-  for (const query of terms) {
-    try {
-      const url = new URL(WIKIMEDIA_COMMONS_API);
-      url.searchParams.set("action", "query");
-      url.searchParams.set("format", "json");
-      url.searchParams.set("generator", "search");
-      url.searchParams.set("gsrsearch", query);
-      url.searchParams.set("gsrnamespace", "6");
-      url.searchParams.set("gsrlimit", "6");
-      url.searchParams.set("prop", "imageinfo");
-      url.searchParams.set("iiprop", "url|mime|size|extmetadata");
-      url.searchParams.set("iiurlwidth", "1200");
-      url.searchParams.set("iiextmetadatalanguage", "en");
-      url.searchParams.set(
-        "iiextmetadatafilter",
-        "ObjectName|ImageDescription|Artist|Credit|LicenseShortName|LicenseUrl|UsageTerms",
-      );
-
-      const searchJson = await fetchJson(url);
-      const pages = Object.values(searchJson?.query?.pages ?? {});
-      const ranked = rankedCommonsImagePages(pages, title, objectType, pageTitle);
-      for (const { page } of ranked.slice(0, 4)) {
-        const info = Array.isArray(page?.imageinfo) ? page.imageinfo[0] : null;
-        const remoteImageUrl = info?.thumburl || info?.url || null;
-        if (!remoteImageUrl) continue;
-
-        try {
-          const image = await cachedRemoteImage(remoteImageUrl, title, objectType, page?.title || remoteImageUrl);
-          if (!image) continue;
-          return {
-            imageUrl: image.url,
-            cachedImage: image.filename,
-            remoteImageUrl,
-            imageSourceTitle: cleanText(String(page?.title ?? "").replace(/^File:/i, ""), 240) || "Wikimedia Commons",
-            imageSourceUrl: info?.descriptionurl || commonsFilePageUrl(page?.title),
-            imageProvider: "Wikimedia Commons",
-            ...commonsImageCredit(page),
-            query,
-          };
-        } catch (err) {
-          console.warn("CosmosMap Wikimedia image cache failed:", err);
-        }
-      }
-    } catch (err) {
-      console.warn("CosmosMap Wikimedia Commons image lookup failed:", err);
-    }
+// The validated article's own lead image, with its Commons/enwiki credit.
+async function articleLeadImage({ title, objectType, pageTitle }) {
+  const lead = await leadImageFileFor(pageTitle);
+  if (!lead?.fileName) return null;
+  const meta = await imageFileMetadata(lead.fileName);
+  const mime = String(meta?.info?.mime ?? "").toLowerCase();
+  // SVG / TIFF lead images (constellation charts, EHT images) are fine when
+  // Wikimedia gives us a rasterised thumbnail.
+  const rasterThumb = /\.(?:jpe?g|png|webp|gif)(?:\?|$)/i.test(lead.thumbUrl ?? "");
+  if (!meta || !(/^image\/(?:jpeg|png|webp|gif)$/.test(mime) || (mime.startsWith("image/") && rasterThumb))) return null;
+  if (imageIsRejected(lead.fileName, meta.metadata)) {
+    console.warn(`CosmosMap rejected lead image ${lead.fileName} for ${pageTitle}`);
+    return null;
   }
-
-  return null;
-}
-
-async function wikipediaObjectInfo({ title, objectType, subtitle }) {
-  const candidates = await wikipediaSearchPageCandidates({ title, objectType, subtitle });
-  for (const resolved of candidates) {
-    try {
-      const url = new URL(`${WIKIPEDIA_SUMMARY_API}/${encodeURIComponent(resolved.pageTitle)}`);
-      url.searchParams.set("redirect", "true");
-
-      const summary = await fetchJson(url);
-      if (!isUsableWikipediaSummary(summary)) continue;
-      if (!resolved.catalogDesignationMatch && !wikipediaSummaryMatchesCatalogDesignation(summary, title)) continue;
-
-      const description = cleanText(summary.extract, GENERAL_DESCRIPTION_MAX_LENGTH);
-      let image = null;
-      try {
-        image = await wikimediaCommonsImageInfo({
-          title,
-          objectType,
-          subtitle,
-          pageTitle: summary?.title || resolved.pageTitle,
-        });
-      } catch (err) {
-        console.warn("CosmosMap Wikimedia image lookup failed:", err);
-      }
-      const sourceUrl = summary?.content_urls?.desktop?.page || wikipediaPageUrl(resolved.pageTitle);
-
-      return {
-        cacheVersion: OBJECT_INFO_CACHE_VERSION,
-        title,
-        objectType,
-        description,
-        imageUrl: image?.imageUrl ?? null,
-        nasaId: null,
-        sourceTitle: cleanText(summary.title || resolved.pageTitle, 180),
-        sourceUrl,
-        wikipediaUrl: sourceUrl,
-        query: resolved.query,
-        wikipediaMatchKind: resolved.matchKind,
-        cachedImage: image?.cachedImage ?? null,
-        remoteImageUrl: image?.remoteImageUrl ?? null,
-        imageCredit: image?.imageCredit ?? null,
-        imageLicense: image?.imageLicense ?? null,
-        imageLicenseUrl: image?.imageLicenseUrl ?? null,
-        imageProvider: image?.imageProvider ?? null,
-        imageSourceTitle: image?.imageSourceTitle ?? null,
-        imageSourceUrl: image?.imageSourceUrl ?? null,
-        provider: "Wikipedia",
-        cachedAt: new Date().toISOString(),
-      };
-    } catch (err) {
-      console.warn(`CosmosMap Wikipedia summary failed for ${resolved.pageTitle}:`, err);
-    }
-  }
-
-  return null;
-}
-
-async function nasaScienceRecordInfo({ record, searchItem, title, objectType }) {
-  const contentHtml = record?.content?.rendered ?? "";
-  const fallback = record?.excerpt?.rendered || record?.parsely?.meta?.description || "";
-  const description = scienceDescriptionFromHtml(contentHtml, fallback);
-  if (!description) return null;
-
-  const remoteImageUrl = scienceRecordImageUrl(record, contentHtml);
-  let image = null;
-  try {
-    image = await cachedRemoteImage(remoteImageUrl, title, objectType, record?.id ?? record?.link ?? searchItem?.url);
-  } catch (err) {
-    console.warn("CosmosMap NASA Science image cache failed:", err);
-  }
-
+  const remoteImageUrl = rasterThumb ? lead.thumbUrl : (/^image\/(?:jpeg|png|webp|gif)$/.test(mime) ? meta.info.url : null);
+  if (!remoteImageUrl) return null;
+  const image = await cachedRemoteImage(remoteImageUrl, title, objectType, `File:${lead.fileName}`);
+  if (!image) return null;
   return {
-    cacheVersion: OBJECT_INFO_CACHE_VERSION,
-    title,
-    objectType,
-    description,
-    imageUrl: image?.url ?? null,
-    nasaId: null,
-    sourceTitle: cleanText(record?.title?.rendered || searchItem?.title || `${title}: NASA Science`, 240),
-    sourceUrl: record?.link || searchItem?.url || NASA_SCIENCE_WEB,
-    query: searchItem?.url || "",
-    cachedImage: image?.filename ?? null,
+    imageUrl: image.url,
+    cachedImage: image.filename,
     remoteImageUrl,
-    provider: "NASA Science",
-    cachedAt: new Date().toISOString(),
+    imageProvider: "Wikimedia Commons",
+    imageSourceTitle: cleanText(lead.fileName.replace(/_/g, " "), 240),
+    imageSourceUrl: meta.info.descriptionurl || commonsFilePageUrl(`File:${lead.fileName}`),
+    ...imageCredit(lead.fileName, meta.metadata),
   };
 }
 
-async function nasaScienceObjectInfo({ title, objectType }) {
-  const sourcePage = NASA_SCIENCE_OBJECT_PAGES.get(objectLookupKey(title));
-  if (!sourcePage) return null;
+function localDescription(title, objectType, subtitle) {
+  const type = cleanText(objectType || "object", 60);
+  const facts = cleanText(subtitle, 180);
+  const article = /^[aeiou]/i.test(type) ? "an" : "a";
+  return `${title} is shown in CosmosMap as ${article} ${type}${facts ? ` (${facts})` : ""}. ` +
+    "No encyclopedia article could be verified for this object, so only local catalog data is shown.";
+}
 
-  const { html, url } = await fetchText(sourcePage);
-  const metaDescription = metaContent(html, ["description", "og:description"], GENERAL_DESCRIPTION_MAX_LENGTH);
-  const description = scienceDescriptionFromHtml(html, metaDescription);
-  if (!description) return null;
-
-  const remoteImageUrl = metaContent(html, ["og:image"], 1000) || firstImageFromHtml(html) || null;
-  let image = null;
-  try {
-    image = await cachedRemoteImage(remoteImageUrl, title, objectType, url);
-  } catch (err) {
-    console.warn("CosmosMap NASA Science image cache failed:", err);
-  }
-
+function localInfo({ title, objectType, subtitle }, reason) {
   return {
     cacheVersion: OBJECT_INFO_CACHE_VERSION,
     title,
     objectType,
-    description,
-    imageUrl: image?.url ?? null,
-    nasaId: null,
-    sourceTitle: pageTitle(html, `${title}: Facts`),
-    sourceUrl: url,
-    query: sourcePage,
-    cachedImage: image?.filename ?? null,
-    remoteImageUrl,
-    provider: "NASA Science",
-    cachedAt: new Date().toISOString(),
-  };
-}
-
-async function nasaScienceSearchInfo({ title, objectType, subtitle }) {
-  for (const query of scienceSearchTerms(title, objectType, subtitle)) {
-    try {
-      const url = new URL(NASA_SCIENCE_SEARCH_API);
-      url.searchParams.set("search", query);
-      url.searchParams.set("per_page", "8");
-
-      const searchJson = await fetchJson(url);
-      const item = chooseScienceSearchItem(searchJson, title, objectType);
-      const href = scienceSearchHref(item);
-      if (!href) continue;
-
-      const record = await fetchJson(href);
-      const info = await nasaScienceRecordInfo({ record, searchItem: item, title, objectType });
-      if (info) return info;
-    } catch (err) {
-      console.warn("CosmosMap NASA Science search failed:", err);
-    }
-  }
-  return null;
-}
-
-async function nasaImagesObjectInfo({ title, objectType, subtitle }) {
-  const queries = normalizedSearchTerms(title, objectType, subtitle);
-
-  for (const query of queries) {
-    const url = new URL("/search", NASA_IMAGES_API);
-    url.searchParams.set("q", query);
-    url.searchParams.set("media_type", "image");
-    url.searchParams.set("page_size", "12");
-
-    const searchJson = await fetchJson(url);
-    const item = chooseSearchItem(searchJson?.collection?.items, title, objectType);
-    if (!item) continue;
-
-    const data = dataForItem(item);
-    const nasaId = cleanText(data.nasa_id, 120);
-    let remoteImageUrl = previewImageForItem(item);
-    if (nasaId) {
-      try {
-        const assetJson = await fetchJson(`${NASA_IMAGES_API}/asset/${encodeURIComponent(nasaId)}`);
-        remoteImageUrl = selectAssetImage(assetJson, remoteImageUrl);
-      } catch {
-        // The search result preview is good enough if the manifest endpoint is unavailable.
-      }
-    }
-
-    let image = null;
-    try {
-      image = await cachedRemoteImage(remoteImageUrl, title, objectType, nasaId);
-    } catch (err) {
-      console.warn("CosmosMap object-info image cache failed:", err);
-    }
-
-    return {
-      cacheVersion: OBJECT_INFO_CACHE_VERSION,
-      title,
-      objectType,
-      description: cleanMediaDescription(data.description || data.description_508, title, objectType),
-      imageUrl: image?.url ?? null,
-      nasaId: nasaId || null,
-      sourceTitle: cleanText(data.title || title, 240),
-      sourceUrl: sourceDetailsUrl(nasaId),
-      query,
-      cachedImage: image?.filename ?? null,
-      remoteImageUrl: remoteImageUrl ?? null,
-      provider: "NASA Image and Video Library",
-      cachedAt: new Date().toISOString(),
-    };
-  }
-
-  return {
-    cacheVersion: OBJECT_INFO_CACHE_VERSION,
-    title,
-    objectType,
-    description: fallbackDescription(title, objectType),
+    description: localDescription(title, objectType, subtitle),
+    resolved: false,
+    resolveReason: reason,
+    resolvedPage: null,
+    wikidataId: null,
     imageUrl: null,
     nasaId: null,
-    sourceTitle: "NASA Image and Video Library",
-    sourceUrl: NASA_IMAGES_WEB,
-    query: queries[0] ?? title,
-    cachedImage: null,
-    remoteImageUrl: null,
-    provider: "NASA Image and Video Library",
-    cachedAt: new Date().toISOString(),
-  };
-}
-
-async function withFallbackImage(info, params) {
-  if (info.imageUrl) return info;
-
-  try {
-    const imageInfo = await nasaImagesObjectInfo(params);
-    if (!imageInfo.imageUrl) return info;
-    return {
-      ...info,
-      imageUrl: imageInfo.imageUrl,
-      cachedImage: imageInfo.cachedImage,
-      remoteImageUrl: imageInfo.remoteImageUrl,
-      imageProvider: imageInfo.provider,
-      imageSourceTitle: imageInfo.sourceTitle,
-      imageSourceUrl: imageInfo.sourceUrl,
-    };
-  } catch (err) {
-    console.warn("CosmosMap NASA fallback image lookup failed:", err);
-    return info;
-  }
-}
-
-async function objectInfo({ title, objectType, subtitle }) {
-  const params = { title, objectType, subtitle };
-  const wikipediaInfo = await tryInfoSource("Wikipedia summary", () => wikipediaObjectInfo(params));
-  if (wikipediaInfo) return wikipediaInfo;
-
-  return {
-    cacheVersion: OBJECT_INFO_CACHE_VERSION,
-    title,
-    objectType,
-    description: fallbackDescription(title, objectType),
-    imageUrl: null,
-    nasaId: null,
-    sourceTitle: "Wikipedia",
-    sourceUrl: WIKIPEDIA_WEB,
-    query: title,
+    sourceTitle: "CosmosMap catalog",
+    sourceUrl: null,
+    wikipediaUrl: null,
     cachedImage: null,
     remoteImageUrl: null,
     imageCredit: null,
@@ -1314,27 +949,102 @@ async function objectInfo({ title, objectType, subtitle }) {
     imageProvider: null,
     imageSourceTitle: null,
     imageSourceUrl: null,
-    provider: "Wikipedia",
+    provider: "CosmosMap",
     cachedAt: new Date().toISOString(),
   };
 }
 
+async function objectInfo(params) {
+  const { title, objectType } = params;
+  if (isGenericObjectName(title)) return { info: localInfo(params, "generic"), cacheable: false };
+
+  const resolved = await resolveWikipediaPage(params);
+  if (!resolved.summary) {
+    // Don't persist "not found" when the lookup was cut short by the network.
+    return { info: localInfo(params, "unverified"), cacheable: !resolved.state.networkError };
+  }
+
+  const summary = resolved.summary;
+  const resolvedPage = cleanText(summary.titles?.normalized || summary.title, 180);
+  let image = null;
+  try {
+    image = await articleLeadImage({ title, objectType, pageTitle: resolvedPage });
+  } catch (err) {
+    console.warn(`CosmosMap lead image lookup failed for ${resolvedPage}:`, err?.message ?? err);
+  }
+  if (!image) {
+    try {
+      image = await curatedNasaImage({ title, objectType, resolvedPage });
+    } catch (err) {
+      console.warn(`CosmosMap NASA image lookup failed for ${title}:`, err?.message ?? err);
+    }
+  }
+
+  const sourceUrl = summary?.content_urls?.desktop?.page || wikipediaPageUrl(resolvedPage);
+  return {
+    cacheable: true,
+    info: {
+      cacheVersion: OBJECT_INFO_CACHE_VERSION,
+      title,
+      objectType,
+      description: cleanExcerpt(summary.extract),
+      resolved: true,
+      resolvedPage,
+      wikidataId: summary.wikibase_item ?? null,
+      wikipediaMatchKind: resolved.kind,
+      validatedVia: resolved.via,
+      imageUrl: image?.imageUrl ?? null,
+      nasaId: null,
+      sourceTitle: resolvedPage,
+      sourceUrl,
+      wikipediaUrl: sourceUrl,
+      cachedImage: image?.cachedImage ?? null,
+      remoteImageUrl: image?.remoteImageUrl ?? null,
+      imageCredit: image?.imageCredit ?? null,
+      imageLicense: image?.imageLicense ?? null,
+      imageLicenseUrl: image?.imageLicenseUrl ?? null,
+      imageProvider: image?.imageProvider ?? null,
+      imageSourceTitle: image?.imageSourceTitle ?? null,
+      imageSourceUrl: image?.imageSourceUrl ?? null,
+      provider: "Wikipedia",
+      cachedAt: new Date().toISOString(),
+    },
+  };
+}
+
+const inflightLookups = new Map();
+
 async function objectInfoResponse(params) {
-  const cacheFile = cacheFileFor(params.title, params.objectType);
+  const cacheFile = cacheFileFor(params.title, params.objectType, params.pageHint);
   const cached = await readCache(cacheFile);
   if (cached && !params.refresh && cacheIsFresh(cached)) {
     return { ...cached, cacheHit: true };
   }
 
-  try {
-    const fresh = await objectInfo(params);
-    await writeCache(cacheFile, fresh);
-    return { ...fresh, cacheHit: false };
-  } catch (err) {
-    if (cacheVersionIsCurrent(cached)) {
-      return { ...cached, cacheHit: true, stale: true, warning: "Returned stale cache after object lookup failed." };
+  const inflightKey = `${cacheFile}\n${params.aliases.join("|")}`;
+  const existing = inflightLookups.get(inflightKey);
+  if (existing) return existing;
+
+  const lookup = (async () => {
+    try {
+      const { info, cacheable } = await objectInfo(params);
+      if (cacheable) await writeCache(cacheFile, info);
+      else if (!info.resolved && cacheVersionIsCurrent(cached) && cached.resolved) {
+        return { ...cached, cacheHit: true, stale: true, warning: "Returned stale cache after object lookup failed." };
+      }
+      return { ...info, cacheHit: false };
+    } catch (err) {
+      if (cacheVersionIsCurrent(cached)) {
+        return { ...cached, cacheHit: true, stale: true, warning: "Returned stale cache after object lookup failed." };
+      }
+      throw err;
     }
-    throw err;
+  })();
+  inflightLookups.set(inflightKey, lookup);
+  try {
+    return await lookup;
+  } finally {
+    inflightLookups.delete(inflightKey);
   }
 }
 
@@ -1376,6 +1086,8 @@ async function serveCachedImage(req, res, url) {
     return true;
   }
 
+  // Filenames are content-addressed (hash of source file + URL), so a given
+  // name always maps to the same bytes and may be cached aggressively.
   res.writeHead(200, {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, OPTIONS",
@@ -1386,7 +1098,9 @@ async function serveCachedImage(req, res, url) {
     "Cross-Origin-Opener-Policy": "same-origin",
     "Cross-Origin-Embedder-Policy": "require-corp",
   });
-  createReadStream(imagePath).pipe(res);
+  const stream = createReadStream(imagePath);
+  stream.on("error", err => res.destroy(err));
+  stream.pipe(res);
   return true;
 }
 
@@ -1423,18 +1137,25 @@ export async function handleObjectInfoRequest(req, res) {
 
   const objectType = cleanText(url.searchParams.get("type") || "object", 60);
   const subtitle = cleanText(url.searchParams.get("subtitle") || "", 180);
+  // Optional catalog-derived hints: `page` is a Wikipedia title for the
+  // physical object (e.g. a 3D model variant's base object); `aliases` is a
+  // "|"-separated list of alternative names / designations.
+  const pageHint = cleanText(url.searchParams.get("page") || "", 180);
+  const aliases = String(url.searchParams.get("aliases") || "")
+    .split("|")
+    .map(alias => cleanText(alias, 80))
+    .filter(Boolean)
+    .slice(0, MAX_ALIASES);
   const refresh = url.searchParams.get("refresh") === "1";
 
   try {
-    const payload = await objectInfoResponse({ title, objectType, subtitle, refresh });
+    const payload = await objectInfoResponse({ title, objectType, subtitle, pageHint, aliases, refresh });
     sendJson(res, 200, payload);
   } catch (err) {
     console.error("CosmosMap object-info lookup failed:", err);
     sendJson(res, 502, {
+      ...localInfo({ title, objectType, subtitle }, "lookup_failed"),
       error: "object_lookup_failed",
-      title,
-      objectType,
-      description: fallbackDescription(title, objectType),
     });
   }
 

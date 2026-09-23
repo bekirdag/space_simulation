@@ -16,6 +16,68 @@ const STALE_CACHE_LOOKBACK_DAYS = Number.parseInt(process.env.COSMOSMAP_HORIZONS
 const inFlight = new Map();
 const backgroundRefreshes = new Map();
 
+// ── JPL rate-limit protection ────────────────────────────────────────────────
+// Every Horizons request from every visitor goes through one global queue, and
+// a public deployment must never let visitors drive JPL into rate limiting us:
+//  * one shared request spacing + concurrency limit across all snapshot fetches
+//  * a cooldown (circuit breaker) after JPL keeps answering 429/5xx
+//  * an hourly budget of *new* dates fetched from JPL (cached dates are free)
+//  * `refresh=1` honoured at most once per date per REFRESH_MIN_INTERVAL_MS
+//  * partial snapshots are served but never persisted as complete, and are
+//    retried at most once per PARTIAL_RETRY_MS
+const JPL_MAX_CONCURRENCY = 2;
+const JPL_COOLDOWN_MS = envInt("COSMOSMAP_HORIZONS_COOLDOWN_MS", 10 * 60 * 1000);
+const NEW_DATE_BUDGET_PER_HOUR = envInt("COSMOSMAP_HORIZONS_DATES_PER_HOUR", 24);
+const REFRESH_MIN_INTERVAL_MS = envInt("COSMOSMAP_HORIZONS_REFRESH_INTERVAL_MS", 6 * 60 * 60 * 1000);
+const PARTIAL_RETRY_MS = envInt("COSMOSMAP_HORIZONS_PARTIAL_RETRY_MS", 60 * 60 * 1000);
+const partialSnapshots = new Map(); // dateStr -> { snapshot, fetchedMs }
+const lastRefreshMs = new Map();    // dateStr -> ms
+const newDateFetches = [];          // ms timestamps of JPL snapshot fetches
+let jplCooldownUntil = 0;
+let jplActive = 0;
+let jplNextStart = 0;
+const jplWaiters = [];
+
+function envInt(name, fallback) {
+  const value = Number.parseInt(process.env[name] || "", 10);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+class JplUnavailableError extends Error {
+  constructor(message, retryAfterSec) {
+    super(message);
+    this.retryAfterSec = retryAfterSec;
+  }
+}
+
+function jplCoolingDown() {
+  return Date.now() < jplCooldownUntil;
+}
+
+function consumeNewDateBudget() {
+  const hourAgo = Date.now() - 60 * 60 * 1000;
+  while (newDateFetches.length > 0 && newDateFetches[0] < hourAgo) newDateFetches.shift();
+  if (newDateFetches.length >= NEW_DATE_BUDGET_PER_HOUR) return false;
+  newDateFetches.push(Date.now());
+  return true;
+}
+
+async function acquireJplSlot() {
+  if (jplActive >= JPL_MAX_CONCURRENCY) {
+    await new Promise(resolve => jplWaiters.push(resolve));
+  }
+  jplActive++;
+  const now = Date.now();
+  const startAt = Math.max(now, jplNextStart);
+  jplNextStart = startAt + HORIZONS_REQUEST_SPACING_MS;
+  if (startAt > now) await delay(startAt - now);
+}
+
+function releaseJplSlot() {
+  jplActive--;
+  jplWaiters.shift()?.();
+}
+
 const TARGETS = [
   ["Sun", "10"],
   ["Mercury", "199"],
@@ -234,6 +296,7 @@ async function fetchTarget([name, command], dateStr) {
   const url = `${HORIZONS}?${params}`;
   let response = null;
   for (let attempt = 0; attempt < 6; attempt++) {
+    if (jplCoolingDown()) throw new Error("JPL cooldown active");
     try {
       response = await fetch(url, {
         headers: {
@@ -252,7 +315,13 @@ async function fetchTarget([name, command], dateStr) {
     await delay(600 * 2 ** attempt);
   }
 
-  if (!response?.ok) throw new Error(`HTTP ${response?.status ?? "network"}`);
+  if (!response?.ok) {
+    if (!response || RETRY_STATUSES.has(response.status)) {
+      jplCooldownUntil = Date.now() + JPL_COOLDOWN_MS;
+      console.warn(`CosmosMap: JPL Horizons unavailable (${response?.status ?? "network"}); pausing JPL requests for ${Math.round(JPL_COOLDOWN_MS / 1000)} s.`);
+    }
+    throw new Error(`HTTP ${response?.status ?? "network"}`);
+  }
   const json = await response.json();
   if (json.code && json.code !== "200") throw new Error(json.message ?? `API ${json.code}`);
   if (!json.result) throw new Error("Empty response");
@@ -279,17 +348,13 @@ async function mapLimit(items, limit, task) {
 }
 
 async function fetchSnapshotFromJpl(dateStr) {
-  let nextRequestStart = 0;
-  async function waitForRequestSlot() {
-    const now = Date.now();
-    const startAt = Math.max(now, nextRequestStart);
-    nextRequestStart = startAt + HORIZONS_REQUEST_SPACING_MS;
-    if (startAt > now) await delay(startAt - now);
-  }
-
-  const settled = await mapLimit(TARGETS, 2, async (target) => {
-    await waitForRequestSlot();
-    return fetchTarget(target, dateStr);
+  const settled = await mapLimit(TARGETS, JPL_MAX_CONCURRENCY, async (target) => {
+    await acquireJplSlot();
+    try {
+      return await fetchTarget(target, dateStr);
+    } finally {
+      releaseJplSlot();
+    }
   });
 
   const vectors = [];
@@ -328,7 +393,12 @@ async function fetchSnapshotFromJpl(dateStr) {
 
 async function resolveSnapshot(dateStr, refresh) {
   const cacheFile = cacheFileFor(dateStr);
-  const cached = await readSnapshot(cacheFile, dateStr);
+  let cached = await readSnapshot(cacheFile, dateStr);
+  if (cached && cached.vectors.length < TARGETS.length) {
+    // Written by an older server version: treat as partial so it gets retried.
+    if (!partialSnapshots.has(dateStr)) partialSnapshots.set(dateStr, { snapshot: cached, fetchedMs: 0 });
+    cached = null;
+  }
   if (cached && !refresh) return withCacheStatus(cached, "runtime-cache");
 
   if (!refresh) {
@@ -352,11 +422,31 @@ async function resolveSnapshot(dateStr, refresh) {
     }
   }
 
+  const partial = partialSnapshots.get(dateStr);
+  if (partial && Date.now() - partial.fetchedMs < PARTIAL_RETRY_MS) {
+    return withCacheStatus(partial.snapshot, "partial-cache", { stale: true, partial: true });
+  }
+
   try {
+    if (jplCoolingDown()) {
+      throw new JplUnavailableError("JPL Horizons is cooling down after rate limiting", Math.ceil((jplCooldownUntil - Date.now()) / 1000));
+    }
+    if (!cached && !partial && !consumeNewDateBudget()) {
+      throw new JplUnavailableError("Hourly JPL Horizons budget for new dates is used up", 15 * 60);
+    }
     const fresh = await fetchSnapshotFromJpl(dateStr);
+    if (fresh.vectors.length < TARGETS.length) {
+      // Keep partial results out of the persistent cache so they get retried.
+      partialSnapshots.set(dateStr, { snapshot: fresh, fetchedMs: Date.now() });
+      return withCacheStatus(fresh, "network", { stale: true, partial: true });
+    }
+    partialSnapshots.delete(dateStr);
     await writeSnapshot(cacheFile, fresh);
     return withCacheStatus(fresh, "network");
   } catch (err) {
+    if (partial) {
+      return withCacheStatus(partial.snapshot, "partial-cache", { stale: true, partial: true });
+    }
     if (cached) {
       return withCacheStatus(cached, "stale-runtime-cache", {
         stale: true,
@@ -428,11 +518,28 @@ export async function handleHorizonsRequest(req, res) {
     return true;
   }
 
-  const refresh = url.searchParams.get("refresh") === "1";
+  let refresh = url.searchParams.get("refresh") === "1";
+  if (refresh) {
+    const last = lastRefreshMs.get(dateStr) ?? 0;
+    if (Date.now() - last < REFRESH_MIN_INTERVAL_MS) {
+      refresh = false; // served from cache; JPL refreshes are rate limited per date
+    } else {
+      lastRefreshMs.set(dateStr, Date.now());
+    }
+  }
   try {
     const payload = await horizonsResponse(dateStr, refresh);
     sendJson(res, 200, payload, !refresh && !payload.stale && payload.date === dateStr);
   } catch (err) {
+    if (err instanceof JplUnavailableError) {
+      res.setHeader("Retry-After", String(err.retryAfterSec));
+      sendJson(res, 503, {
+        error: "horizons_rate_limited",
+        date: dateStr,
+        message: err.message,
+      });
+      return true;
+    }
     console.error("CosmosMap Horizons lookup failed:", err);
     sendJson(res, 502, {
       error: "horizons_lookup_failed",
