@@ -96,6 +96,11 @@ import {
 } from "./catalog/nebulas";
 import { BackendUnavailableError, backendAssetUrl, backendFetch, readBackendJson } from "./services/backend";
 import sagaBlackHoleUrl from "./img/saga.jpg?url";
+import { attachTouchControls } from "./scene/touch-controls";
+import { AdaptiveQuality, loadQualityMode, saveQualityMode, type QualityMode } from "./gpu/quality";
+import {
+  DOUBLE_TAP_MS, DOUBLE_TAP_SLOP_PX, hasTouchInput, isCoarsePointer, isEmbeddedNativeApp, isSyntheticMouseEvent,
+} from "./ui/input-mode";
 
 const MAX_BODIES = 1024;
 const MAX_CATALOG_STARS  = DEFAULT_VISIBLE_STAR_COUNT + 8_000;
@@ -1147,13 +1152,34 @@ async function main(): Promise<void> {
     return deduped;
   }
 
+  // Render scale: device-pixel ratio capped by the quality level (2 on "high",
+  // the original desktop behaviour for dpr <= 2), and the canvas clamped to the
+  // GPU's max texture size so huge displays don't end up with a black canvas.
+  let renderDprCap = 2;
+  let maxCanvasDimension = 8192;
   function resizeCanvas() {
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width  = Math.floor(window.innerWidth  * dpr);
-    canvas.height = Math.floor(window.innerHeight * dpr);
+    const dpr = Math.max(0.5, Math.min(window.devicePixelRatio || 1, renderDprCap));
+    let width  = Math.max(1, Math.floor(window.innerWidth  * dpr));
+    let height = Math.max(1, Math.floor(window.innerHeight * dpr));
+    const fit = Math.min(1, maxCanvasDimension / Math.max(width, height));
+    if (fit < 1) {
+      width  = Math.max(1, Math.floor(width  * fit));
+      height = Math.max(1, Math.floor(height * fit));
+    }
+    if (canvas.width !== width) canvas.width = width;
+    if (canvas.height !== height) canvas.height = height;
   }
   resizeCanvas();
-  window.addEventListener("resize", resizeCanvas);
+  window.addEventListener("resize", () => {
+    resizeCanvas();
+    qualityController?.resetMeasurement();
+  });
+  let qualityController: AdaptiveQuality | null = null;
+
+  // ── Native iPad shell / touch device adjustments ─────────────────────────
+  const embeddedNative = isEmbeddedNativeApp();
+  document.documentElement.classList.toggle("embedded-native", embeddedNative);
+  document.documentElement.classList.toggle("touch-input", hasTouchInput());
 
   // ── Fullscreen toggle ─────────────────────────────────────────────────────
   const btnFS = document.getElementById("btn-fullscreen")!;
@@ -1170,6 +1196,8 @@ async function main(): Promise<void> {
     }
   });
   document.addEventListener("fullscreenchange", updateFSIcon);
+  // The app shell is always full screen; browsers without the API can't toggle it.
+  if (embeddedNative || !document.fullscreenEnabled) btnFS.hidden = true;
 
   // ── Settings panel ────────────────────────────────────────────────────────
   const settingsModal   = document.getElementById("settings-modal")!;
@@ -1293,6 +1321,40 @@ async function main(): Promise<void> {
 
   const renderer = new Renderer(gpu.ctx, gpu.canvasCtx);
   renderer.init(MAX_BODIES, MAX_CATALOG_STARS, MAX_CATALOG_GALAXIES);
+
+  // ── Render quality (Settings → Quality: Auto/High/Medium/Low) ────────────
+  maxCanvasDimension = Math.max(1, gpu.ctx.device.limits.maxTextureDimension2D || 8192);
+  const qualityStatus = document.getElementById("set-quality-status");
+  const touchDevice = hasTouchInput();
+  const quality = new AdaptiveQuality(
+    loadQualityMode(touchDevice ? "auto" : "high"),
+    isCoarsePointer() ? "medium" : "high",
+    (level, params) => {
+      renderDprCap = params.dprCap;
+      resizeCanvas();
+      renderer.setQuality(params);
+      if (qualityStatus) qualityStatus.textContent = quality?.mode === "auto" ? level : "";
+    },
+  );
+  qualityController = quality;
+  {
+    const params = quality.params;
+    renderDprCap = params.dprCap;
+    resizeCanvas();
+    renderer.setQuality(params);
+    if (qualityStatus) qualityStatus.textContent = quality.mode === "auto" ? quality.level : "";
+    const radio = document.querySelector<HTMLInputElement>(`input[name="quality"][value="${quality.mode}"]`);
+    if (radio) radio.checked = true;
+    for (const input of document.querySelectorAll<HTMLInputElement>('input[name="quality"]')) {
+      input.addEventListener("change", () => {
+        if (!input.checked) return;
+        const mode = input.value as QualityMode;
+        quality.setMode(mode);
+        saveQualityMode(mode);
+        if (qualityStatus) qualityStatus.textContent = mode === "auto" ? quality.level : "";
+      });
+    }
+  }
 
   const camera = new Camera();
   camera.attach(canvas);
@@ -1878,6 +1940,9 @@ async function main(): Promise<void> {
       setFocusTitle(title, subtitle, objectType);
     },
   });
+  // Narrow touch windows (Split View / Stage Manager): start with the list
+  // collapsed so the scene stays usable; the toggle tab reopens it.
+  if (touchDevice && window.innerWidth < 700) nav.setOpen(false);
 
   document.addEventListener("keydown", event => {
     if (event.key !== "Escape" || event.repeat) return;
@@ -2382,7 +2447,7 @@ async function main(): Promise<void> {
 
     let bestMilkyWayStar: MapObjectHit | null = null;
     const mwFullStarCount = Math.floor(milkyWayStarBuffer.length / MW_FLOATS);
-    const mwDrawnStarCount = Math.min(mwFullStarCount, currentMwStarLimit);
+    const mwDrawnStarCount = Math.min(mwFullStarCount, Math.floor(currentMwStarLimit * (qualityController?.params.instanceScale ?? 1)));
     if (mwDrawnStarCount > 0) {
       const visitMilkyWayStar = (i: number): void => {
         const o = i * MW_FLOATS;
@@ -2518,6 +2583,7 @@ async function main(): Promise<void> {
   let rightDragHappened = false;
 
   canvas.addEventListener("mousedown", e => {
+    if (isSyntheticMouseEvent(e)) return;
     if (e.button === 0) pointerDownAt = { x: e.clientX, y: e.clientY };
     if (e.button === 2) {
       rightDownAt     = { x: e.clientX, y: e.clientY };
@@ -2533,16 +2599,24 @@ async function main(): Promise<void> {
   });
 
   canvas.addEventListener("mouseup", e => {
-    if (e.button !== 0) return;
+    if (e.button !== 0 || isSyntheticMouseEvent(e)) return;
     const dx = e.clientX - pointerDownAt.x;
     const dy = e.clientY - pointerDownAt.y;
     if (Math.sqrt(dx*dx + dy*dy) > 5) return;
+    pickSceneAt(e.clientX, e.clientY, 300, 12);
+  });
 
+  /**
+   * Select what is under a click/tap. A second activation within `dblMs` and
+   * `dblSlopPx` of the previous one counts as a double-click (travel close).
+   */
+  function pickSceneAt(clientX: number, clientY: number, dblMs: number, dblSlopPx: number): void {
+    const e = { clientX, clientY };
     contextMenu.hide();
 
     const now = Date.now();
     const clickGap = Math.hypot(e.clientX - lastClickAt.x, e.clientY - lastClickAt.y);
-    const isDbl = now - lastClickMs < 300 && clickGap < 12;
+    const isDbl = now - lastClickMs < dblMs && clickGap < dblSlopPx;
 
     const labelBody = labels.findBodyAtScreen(e.clientX, e.clientY, MAP_TARGET_LOCK_HALF_PX);
     const labelProjected = labelBody ? projectMapPoint(labelBody.x, labelBody.y, labelBody.z) : null;
@@ -2573,7 +2647,7 @@ async function main(): Promise<void> {
 
     autoSnapSuppressedBodyName = null;
     hit.select(isDbl ? "double" : "single");
-  });
+  }
 
   // ── Right-click: context menu ─────────────────────────────────────────────
   // Always suppress the native browser menu.
@@ -2670,9 +2744,17 @@ async function main(): Promise<void> {
   }
 
   canvas.addEventListener("mouseup", e => {
-    if (e.button !== 2) return;
+    if (e.button !== 2 || isSyntheticMouseEvent(e)) return;
     if (rightDragHappened) { rightDragHappened = false; return; }
     openContextMenuAt(e.clientX, e.clientY);
+  });
+
+  // ── Touch: tap = click, double-tap = double-click, long-press = right-click;
+  // one-finger drag orbits, pinch zooms, two-finger drag pans (touch-controls.ts).
+  attachTouchControls(canvas, camera, {
+    onTap: (x, y) => pickSceneAt(x, y, DOUBLE_TAP_MS, DOUBLE_TAP_SLOP_PX),
+    onLongPress: (x, y) => openContextMenuAt(x, y),
+    onGestureStart: () => contextMenu.hide(),
   });
 
   // ── Time control ──────────────────────────────────────────────────────────
@@ -2807,6 +2889,15 @@ async function main(): Promise<void> {
   // ── Render loop ───────────────────────────────────────────────────────────
   let lastTime = performance.now();
 
+  // Hidden tabs/apps get no animation frames. On return, restart the frame
+  // clock and drop buffered fast-path physics debt so there is no catch-up spike.
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) return;
+    lastTime = performance.now();
+    physicsAccumYr = 0;
+    quality.resetMeasurement();
+  });
+
   let frameErrorCount = 0;
   function frame(now: number): void {
     // Schedule first so one exception cannot silently stop the render loop.
@@ -2825,6 +2916,7 @@ async function main(): Promise<void> {
     const wallDt = Math.min((now - lastTime) / 1000, 0.05);
     lastTime = now;
     hud.recordFrame(wallDt);
+    quality.recordFrame(now);
 
     if (!paused && timewarp !== 0) {
       // ── Hybrid integration ────────────────────────────────────────────────

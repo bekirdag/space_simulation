@@ -782,8 +782,29 @@ export class Renderer {
   private _blackHoleUniform = new Float32Array([
     0, 0, 0, 0,
     0, 1, 1, 1,
-    0, 0, 0, 0,
+    0, 0, 1, 0, // flight.x warp, flight.y blur, flight.z ray-march step scale (quality)
   ]);
+  /** Bloom buffers are 1/_bloomScale of the scene resolution (quality setting). */
+  private _bloomScale = BLOOM_SCALE;
+  /** Fraction of the configured star/galaxy/dust instance limits drawn (quality setting). */
+  private _instanceScale = 1;
+
+  /**
+   * Render-quality knobs driven by the adaptive quality controller.
+   * Defaults (1, BLOOM_SCALE, 1) are the original full-quality behaviour.
+   */
+  setQuality(q: { blackHoleStepScale?: number; bloomScale?: number; instanceScale?: number }): void {
+    if (q.blackHoleStepScale !== undefined) {
+      this._blackHoleUniform[10] = clamp(q.blackHoleStepScale, 1, 4);
+    }
+    if (q.bloomScale !== undefined) this._bloomScale = clamp(Math.round(q.bloomScale), 2, 8);
+    if (q.instanceScale !== undefined) this._instanceScale = clamp(q.instanceScale, 0.05, 1);
+  }
+
+  private scaledLimit(limit: number): number {
+    if (!Number.isFinite(limit) || this._instanceScale >= 1) return limit;
+    return Math.max(0, Math.floor(limit * this._instanceScale));
+  }
 
   applySettings(s: {
     starLimit?:   number;
@@ -2491,8 +2512,8 @@ export class Renderer {
       throw new Error("HDR scene texture must exist before bloom textures");
     }
 
-    const width = Math.max(1, Math.ceil(this.sceneTextureWidth / BLOOM_SCALE));
-    const height = Math.max(1, Math.ceil(this.sceneTextureHeight / BLOOM_SCALE));
+    const width = Math.max(1, Math.ceil(this.sceneTextureWidth / this._bloomScale));
+    const height = Math.max(1, Math.ceil(this.sceneTextureHeight / this._bloomScale));
     const resized =
       !this.bloomExtractTexture ||
       !this.bloomExtractTextureView ||
@@ -2854,8 +2875,8 @@ export class Renderer {
       pass.setPipeline(this.galaxyPipeline);
       pass.setBindGroup(0, this.galaxyBindGroup);
       drawOctants(
-        this.galaxyOctants, this._galaxyLimit, this.galaxyCount,
-        () => pass.draw(6, Math.min(this.galaxyCount, this._galaxyLimit), 0, 0),
+        this.galaxyOctants, this.scaledLimit(this._galaxyLimit), this.galaxyCount,
+        () => pass.draw(6, Math.min(this.galaxyCount, this.scaledLimit(this._galaxyLimit)), 0, 0),
       );
 
       // ── Milky Way as a single galaxy blob (shown when > 10 kpc from origin) ─
@@ -2899,13 +2920,13 @@ export class Renderer {
     pass.setPipeline(this.mwPipeline);
     pass.setBindGroup(0, this.mwBindGroup);
     drawOctants(
-      this.mwOctants, this._mwStarLimit, this.mwStarCount,
-      () => pass.draw(6, Math.min(this.mwStarCount, this._mwStarLimit), 0, 0),
+      this.mwOctants, this.scaledLimit(this._mwStarLimit), this.mwStarCount,
+      () => pass.draw(6, Math.min(this.mwStarCount, this.scaledLimit(this._mwStarLimit)), 0, 0),
     );
 
     // ── Partial galactic dust clouds — between background and foreground stars.
     // Positions are sampled from the MF2015 E(B-V) map; nearby catalog stars draw over dust.
-    const dustDrawCount = Math.min(this.dustCloudCount, this._dustDrawLimit);
+    const dustDrawCount = Math.min(this.dustCloudCount, this.scaledLimit(this._dustDrawLimit));
     if (
       this._showDust &&
       dustDrawCount > 0 &&
@@ -2922,8 +2943,8 @@ export class Renderer {
     pass.setPipeline(this.starPipeline);
     pass.setBindGroup(0, this.starBindGroup);
     drawOctants(
-      this.starOctants, this._starLimit, this.starCount,
-      () => pass.draw(6, Math.min(this.starCount, this._starLimit), 0, 0),
+      this.starOctants, this.scaledLimit(this._starLimit), this.starCount,
+      () => pass.draw(6, Math.min(this.starCount, this.scaledLimit(this._starLimit)), 0, 0),
     );
 
     if (this.selectedStarModelActive && this.selectedStarModelVertexCount > 0) {

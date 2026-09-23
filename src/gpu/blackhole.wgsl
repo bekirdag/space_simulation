@@ -338,7 +338,14 @@ fn raymarch_black_hole(camPos: vec3<f32>, rayDir0: vec3<f32>, time: f32, pixelAn
   var minR = 1e5;
   var crossings: i32 = 0;
 
+  // Quality: flight.z >= 1 lengthens each step and shrinks the step budget
+  // proportionally, so rays still cover the same distance (1 = full quality).
+  let stepScale = clamp(blackHole.flight.z, 1.0, 4.0);
+  let maxSteps = i32(ceil(f32(MAX_RAY_STEPS) / stepScale));
   for (var i: i32 = 0; i < MAX_RAY_STEPS; i = i + 1) {
+    if i >= maxSteps {
+      break;
+    }
     let r = length(x);
     minR = min(minR, r);
     if alpha > 0.995 {
@@ -352,7 +359,7 @@ fn raymarch_black_hole(camPos: vec3<f32>, rayDir0: vec3<f32>, time: f32, pixelAn
       break;
     }
 
-    let dt = clamp(0.08 * r, 0.02, 2.5);
+    let dt = clamp(0.08 * r, 0.02, 2.5) * stepScale;
     let prev = x;
     // Kick-drift-kick leapfrog.
     v += a * (0.5 * dt);

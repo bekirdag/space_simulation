@@ -7,6 +7,7 @@ import {
   systemViewDistanceForBody,
 } from "../physics/moons";
 import { BodyType } from "../physics/constants";
+import { addDoubleActivateListener } from "./input-mode";
 import { type StarSearchResult } from "../catalog/stars";
 
 const DEFAULT_TRAVEL_DIST = 0.5;
@@ -163,7 +164,8 @@ export class NavPanel {
         this.travelTo(name, "system");
         this.prepareRightMenuEnterFly(el);
       });
-      el.addEventListener("dblclick", () => {
+      // Mouse double-click or touch double-tap: travel close.
+      addDoubleActivateListener(el, () => {
         const name = el.dataset["travel"]!;
         this.travelTo(name, "close");
         this.prepareRightMenuEnterFly(el);
@@ -777,7 +779,7 @@ export class NavPanel {
     }
   }
 
-  private setOpen(open: boolean): void {
+  setOpen(open: boolean): void {
     this.open = open;
     this.panel.classList.toggle("collapsed", !open);
     this.toggle.textContent = open ? "›" : "‹";

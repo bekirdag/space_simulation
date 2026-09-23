@@ -2,6 +2,7 @@ import {
   type Vec3, type Mat4,
   lookAt, perspective, mulMat4,
 } from "../math/mat4";
+import { isSyntheticMouseEvent } from "../ui/input-mode";
 
 const FOV_Y = Math.PI / 4; // 45° vertical field of view
 const NEAR  = 1e-8;        // AU, allows close body fly-ins without clipping
@@ -391,6 +392,8 @@ export class Camera {
 
     // Middle-click or right-click + drag = orbit; left-click drag = pan
     canvas.addEventListener("mousedown", (e) => {
+      // Touch input is handled by touch-controls.ts; ignore its compatibility mouse events.
+      if (isSyntheticMouseEvent(e)) return;
       if (e.button === 1 || e.button === 2) {
         this.cancelTravelAnimation();
         orbiting = true;
@@ -429,26 +432,8 @@ export class Camera {
       const dy = e.clientY - lastY;
       lastX = e.clientX; lastY = e.clientY;
 
-      if (orbiting) {
-        const fixedEye = !this.lockTarget ? (this._uniforms?.eye ?? this.currentEye()) : null;
-        const sens = 0.006;
-        this.azimuth   -= dx * sens;
-        this.elevation  = Math.max(
-          -Math.PI / 2 + ORBIT_POLE_MARGIN,
-          Math.min(Math.PI / 2 - ORBIT_POLE_MARGIN, this.elevation + dy * sens),
-        );
-        if (fixedEye) this.setTargetFromEyeAndOrbit(fixedEye);
-      }
-
-      if (panning && this._uniforms) {
-        // Move target in the camera's right/up plane
-        const auPerPx = (this.distance * 2 * Math.tan(FOV_Y / 2)) / window.innerHeight;
-        const r = this._uniforms.camRight;
-        const u = this._uniforms.camUp;
-        this.target[0] -= (dx * r[0] - dy * u[0]) * auPerPx;
-        this.target[1] -= (dx * r[1] - dy * u[1]) * auPerPx;
-        this.target[2] -= (dx * r[2] - dy * u[2]) * auPerPx;
-      }
+      if (orbiting) this.orbitBy(dx, dy);
+      if (panning) this.panBy(dx, dy);
     });
 
     // Wheel is handled on window so zooming also works while the cursor is over
@@ -465,9 +450,58 @@ export class Camera {
     }, { passive: false });
   }
 
+  /**
+   * Orbit by a screen-space drag delta in CSS px (right/middle mouse drag,
+   * one-finger touch drag). Free-looks from the current eye when no body is locked.
+   */
+  orbitBy(dx: number, dy: number): void {
+    if (!Number.isFinite(dx) || !Number.isFinite(dy) || (dx === 0 && dy === 0)) return;
+    const fixedEye = !this.lockTarget ? (this._uniforms?.eye ?? this.currentEye()) : null;
+    const sens = 0.006;
+    this.azimuth   -= dx * sens;
+    this.elevation  = Math.max(
+      -Math.PI / 2 + ORBIT_POLE_MARGIN,
+      Math.min(Math.PI / 2 - ORBIT_POLE_MARGIN, this.elevation + dy * sens),
+    );
+    if (fixedEye) this.setTargetFromEyeAndOrbit(fixedEye);
+  }
+
+  /** Pan the target in the camera's right/up plane by a drag delta in CSS px (left mouse drag, two-finger drag). */
+  panBy(dx: number, dy: number): void {
+    if (!this._uniforms || !Number.isFinite(dx) || !Number.isFinite(dy)) return;
+    const auPerPx = (this.distance * 2 * Math.tan(FOV_Y / 2)) / window.innerHeight;
+    const r = this._uniforms.camRight;
+    const u = this._uniforms.camUp;
+    this.target[0] -= (dx * r[0] - dy * u[0]) * auPerPx;
+    this.target[1] -= (dx * r[1] - dy * u[1]) * auPerPx;
+    this.target[2] -= (dx * r[2] - dy * u[2]) * auPerPx;
+  }
+
+  /**
+   * Zoom by a pinch scale ratio (>1 = fingers spread = zoom in) anchored at a
+   * screen point. Reuses the wheel path (point goals, surface clamp, zoom to
+   * cursor) by converting the ratio to equivalent wheel pixels.
+   */
+  pinchZoom(scale: number, clientX: number, clientY: number): void {
+    if (!Number.isFinite(scale) || scale <= 0 || Math.abs(scale - 1) < 1e-6) return;
+    let deltaPx = -Math.log(scale) / WHEEL_ZOOM_PER_PX;
+    // Split large pinch steps into wheel-sized chunks (the wheel path clamps
+    // each event to one notch).
+    const maxChunk = WHEEL_MAX_NOTCHES_PER_EVENT * WHEEL_NOTCH_PX;
+    let guard = 0;
+    while (Math.abs(deltaPx) > 1e-9 && guard++ < 64) {
+      const chunk = Math.max(-maxChunk, Math.min(maxChunk, deltaPx));
+      this.zoomByPixels(chunk, clientX, clientY);
+      deltaPx -= chunk;
+    }
+  }
+
   private handleWheel(e: WheelEvent): void {
-    const rawDeltaPx = wheelDeltaPx(e);
-    if (rawDeltaPx === 0) return;
+    this.zoomByPixels(wheelDeltaPx(e), e.clientX, e.clientY);
+  }
+
+  private zoomByPixels(rawDeltaPx: number, clientX: number, clientY: number): void {
+    if (rawDeltaPx === 0 || !Number.isFinite(rawDeltaPx)) return;
     this.cancelTravelAnimation();
     const zoomingIn = rawDeltaPx < 0;
     // Trackpads emit many small deltas, mouse wheels ~100 px per notch: scale
@@ -539,8 +573,8 @@ export class Camera {
       if (Math.abs(delta) > 1e-12) {
         const cssW  = window.innerWidth;
         const cssH  = window.innerHeight;
-        const mx    = (e.clientX / cssW)  * 2 - 1;   // NDC x, right = +1
-        const my    = -(e.clientY / cssH) * 2 + 1;   // NDC y, up = +1
+        const mx    = (clientX / cssW)  * 2 - 1;   // NDC x, right = +1
+        const my    = -(clientY / cssH) * 2 + 1;   // NDC y, up = +1
         const shift = delta / this._uniforms.focalY;
         const asp   = cssW / cssH;
         const r     = this._uniforms.camRight;
@@ -552,7 +586,7 @@ export class Camera {
     }
   }
 
-  private cancelTravelAnimation(): void {
+  cancelTravelAnimation(): void {
     this.travelAnimation = null;
     this.flightEffect = 0;
     this.flightSpaceWarp = 0;

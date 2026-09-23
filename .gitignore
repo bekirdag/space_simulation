@@ -10,3 +10,9 @@ cache/wikimedia/object-info/
 public/cache/nasa/*.fits
 public/cache/nasa/*.fits.gz
 cache/textures/src/
+
+# iOS app: bundled web build (synced from dist/ by ios/scripts/sync-web.sh) and local build output
+ios/CosmosMap/Web/
+ios/build/
+ios/DerivedData/
+ios/**/xcuserdata/
