@@ -1307,7 +1307,17 @@ async function main(): Promise<void> {
     gpu = await initGPU(canvas);
   } catch (e) {
     console.error(e);
-    errorOverlay.classList.add("visible");
+    if ((window as { CosmosMapNative?: unknown }).CosmosMapNative) {
+      // The browser-download advice in the default overlay makes no sense inside the iPad app.
+      showFatalError(
+        "3D graphics unavailable",
+        "gpu" in navigator
+          ? "This iPad could not start WebGPU graphics. Close CosmosMap and open it again; if this keeps happening, restart the iPad."
+          : "CosmosMap needs iPadOS 26 or later for its 3D graphics. Please update your iPad in Settings › General › Software Update.",
+      );
+    } else {
+      errorOverlay.classList.add("visible");
+    }
     loadingEl.classList.add("gone");
     return;
   }
