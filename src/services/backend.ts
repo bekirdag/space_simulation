@@ -1,6 +1,11 @@
 const BACKEND_HEALTH_PATH = "/api/health";
 const BACKEND_SERVICE_NAME = "cosmosmap-backend";
-const BACKEND_PROBE_TIMEOUT_MS = 900;
+// The first request through the iPad app's native /api proxy includes a TLS
+// handshake to cosmosmap.org; 900 ms was too short there and the app fell back
+// to the offline J2000 preset although /api/health answered 200.
+const BACKEND_PROBE_TIMEOUT_MS = 4000;
+/** Delays before the 2nd and 3rd health-probe attempts (per origin). */
+const BACKEND_PROBE_RETRY_DELAYS_MS = [400, 1500];
 const BACKEND_ORIGIN_STORAGE_KEY = "cosmosmap.backendOrigin";
 
 let backendOriginPromise: Promise<string> | null = null;
@@ -41,7 +46,13 @@ function forgetBackendOrigin(): void {
   }
 }
 
-async function probeBackend(origin: string): Promise<boolean> {
+type ProbeOutcome = "ok" | "not-backend" | "unreachable";
+
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => window.setTimeout(resolve, ms));
+}
+
+async function probeBackendOnce(origin: string): Promise<ProbeOutcome> {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), BACKEND_PROBE_TIMEOUT_MS);
   try {
@@ -50,13 +61,28 @@ async function probeBackend(origin: string): Promise<boolean> {
       signal: controller.signal,
     });
     const contentType = response.headers.get("content-type") ?? "";
-    if (!response.ok || !contentType.toLowerCase().includes("application/json")) return false;
+    // 5xx (e.g. the iPad proxy's 503 {"error":"offline"}) is transient; a
+    // non-JSON 2xx/4xx means this origin simply has no backend (static host).
+    if (response.status >= 500) return "unreachable";
+    if (!response.ok || !contentType.toLowerCase().includes("application/json")) return "not-backend";
     const payload = await response.json() as { service?: unknown; ok?: unknown };
-    return payload.ok === true && payload.service === BACKEND_SERVICE_NAME;
+    return payload.ok === true && payload.service === BACKEND_SERVICE_NAME ? "ok" : "not-backend";
   } catch {
-    return false;
+    return "unreachable";
   } finally {
     window.clearTimeout(timeout);
+  }
+}
+
+/** Health probe with a generous timeout and a short backoff retry for transient failures. */
+async function probeBackend(origin: string): Promise<boolean> {
+  for (let attempt = 0; ; attempt++) {
+    const outcome = await probeBackendOnce(origin);
+    if (outcome === "ok") return true;
+    if (outcome === "not-backend") return false;
+    const wait = BACKEND_PROBE_RETRY_DELAYS_MS[attempt];
+    if (wait === undefined || (typeof navigator !== "undefined" && navigator.onLine === false)) return false;
+    await delay(wait);
   }
 }
 

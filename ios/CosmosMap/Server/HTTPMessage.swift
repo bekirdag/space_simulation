@@ -1,7 +1,7 @@
 import Foundation
 
-/// A parsed HTTP/1.x request head. Bodies are not supported (the app only issues
-/// GET/HEAD/OPTIONS to the local server).
+/// A parsed HTTP/1.x request head. Bodies are only read for the one proxied POST
+/// endpoint (`APIProxy.diagnosticsPath`); every other request with a body is refused.
 struct HTTPRequest: Equatable {
     let method: String
     /// Raw request-target as sent (origin-form, still percent-encoded, with query).
@@ -9,6 +9,8 @@ struct HTTPRequest: Equatable {
     let version: String
     /// Header names are lower-cased; repeated headers are joined with ", ".
     let headers: [String: String]
+    /// Request body (filled in by the connection for accepted POSTs only).
+    var body = Data()
 
     var path: String {
         if let q = target.firstIndex(where: { $0 == "?" || $0 == "#" }) { return String(target[..<q]) }
@@ -30,6 +32,16 @@ struct HTTPRequest: Equatable {
         if tokens.contains("close") { return false }
         if version == "HTTP/1.1" { return true }
         return tokens.contains("keep-alive")
+    }
+
+    /// The declared Content-Length, or nil when absent or malformed.
+    var contentLength: Int? {
+        guard let cl = header("content-length") else { return nil }
+        return Int(cl.trimmingCharacters(in: .whitespaces))
+    }
+
+    var hasTransferEncoding: Bool {
+        !(header("transfer-encoding") ?? "").isEmpty
     }
 
     var declaresBody: Bool {
@@ -141,7 +153,9 @@ struct HTTPResponseHead {
         case 404: return "Not Found"
         case 405: return "Method Not Allowed"
         case 408: return "Request Timeout"
+        case 411: return "Length Required"
         case 413: return "Content Too Large"
+        case 415: return "Unsupported Media Type"
         case 416: return "Range Not Satisfiable"
         case 429: return "Too Many Requests"
         case 431: return "Request Header Fields Too Large"

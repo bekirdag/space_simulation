@@ -197,6 +197,41 @@ final class APIProxyTests: XCTestCase {
         wait(for: [done], timeout: 2)
     }
 
+    func testDiagnosticsPostIsTheOnlyAllowedBody() {
+        XCTAssertTrue(APIProxy.allows(request("/api/client-diagnostics", method: "POST")))
+        XCTAssertFalse(APIProxy.allows(request("/api/client-diagnostics/x", method: "POST")))
+        XCTAssertFalse(APIProxy.allows(request("/api/horizons", method: "POST")))
+        XCTAssertFalse(APIProxy.allows(request("/api/client-diagnostics", method: "PUT")))
+
+        let proxy = APIProxy(upstream: URL(string: "http://127.0.0.1:9")!, requestTimeout: 2, resourceTimeout: 2)
+        let done = expectation(description: "response")
+        var post = request("/api/client-diagnostics", method: "POST")
+        post.body = Data("{}".utf8)
+        // No application/json content type: refused before anything is sent upstream.
+        proxy.forward(post) { response in
+            XCTAssertEqual(response.status, 415)
+            done.fulfill()
+        }
+        wait(for: [done], timeout: 2)
+    }
+
+    func testClientDiagnosticsSummary() throws {
+        let json = #"""
+        {"session":"abc123","reason":"probe","adapter":{"vendor":"apple","architecture":"common-3"},
+         "brokenPipelines":["black-hole-postprocess-pipeline"],
+         "entries":[{"kind":"pipeline","severity":"error","label":"black-hole-postprocess-pipeline [validation]","message":"boom"},
+                    {"kind":"probe","severity":"warning","label":"render-probe","message":"x"}]}
+        """#
+        let summary = try XCTUnwrap(ClientDiagnosticsSummary(json: Data(json.utf8)))
+        XCTAssertEqual(summary.session, "abc123")
+        XCTAssertEqual(summary.adapter, "apple / common-3")
+        XCTAssertEqual(summary.errorCount, 1)
+        XCTAssertEqual(summary.brokenPipelines, ["black-hole-postprocess-pipeline"])
+        XCTAssertEqual(summary.firstErrors, ["pipeline black-hole-postprocess-pipeline [validation]: boom"])
+        XCTAssertNil(ClientDiagnosticsSummary(json: Data("[1,2]".utf8)))
+        XCTAssertNil(ClientDiagnosticsSummary(json: Data("not json".utf8)))
+    }
+
     func testOfflineResponseShape() throws {
         let response = APIProxy.offline()
         XCTAssertEqual(response.status, 503)
@@ -256,9 +291,11 @@ final class LocalHTTPServerIntegrationTests: XCTestCase {
         try? FileManager.default.removeItem(at: root)
     }
 
-    private func fetch(_ path: String, method: String = "GET", headers: [String: String] = [:]) -> (HTTPURLResponse, Data) {
+    private func fetch(_ path: String, method: String = "GET", headers: [String: String] = [:],
+                       body: Data? = nil) -> (HTTPURLResponse, Data) {
         var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)\(path)")!)
         request.httpMethod = method
+        request.httpBody = body
         request.cachePolicy = .reloadIgnoringLocalCacheData
         for (k, v) in headers { request.setValue(v, forHTTPHeaderField: k) }
         let done = expectation(description: path)
@@ -302,6 +339,20 @@ final class LocalHTTPServerIntegrationTests: XCTestCase {
 
         let etag = full.value(forHTTPHeaderField: "ETag") ?? ""
         XCTAssertEqual(fetch("/data/big.bin", headers: ["If-None-Match": etag]).0.statusCode, 304)
+    }
+
+    func testDiagnosticsPostBodyIsReadAndForwarded() {
+        let json = ["Content-Type": "application/json"]
+        // The body is read and forwarded; the (closed) upstream makes that a 503.
+        let (offline, body) = fetch("/api/client-diagnostics", method: "POST", headers: json,
+                                    body: Data(#"{"v":1,"entries":[]}"#.utf8))
+        XCTAssertEqual(offline.statusCode, 503)
+        XCTAssertEqual(String(decoding: body, as: UTF8.self), #"{"error":"offline"}"#)
+        // Bigger than 64 KB: refused without contacting the upstream.
+        XCTAssertEqual(fetch("/api/client-diagnostics", method: "POST", headers: json,
+                             body: Data(count: 70 * 1024)).0.statusCode, 413)
+        // Any other POST with a body is still refused.
+        XCTAssertEqual(fetch("/api/horizons", method: "POST", headers: json, body: Data("{}".utf8)).0.statusCode, 405)
     }
 
     func testMethodAndProxyErrors() {

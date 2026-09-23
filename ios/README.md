@@ -114,6 +114,8 @@ echo "$COSMOSMAP_GOOGLE_SERVICE_INFO" | base64 --decode > ios/CosmosMap/Resource
   - Status, Content-Type, Cache-Control, Retry-After, ETag and Last-Modified pass through.
   - The timeout is 15 s.
   - Network failures return `503 {"error":"offline"}`.
+- `POST /api/client-diagnostics` is the only request that may carry a body: `application/json`, a `Content-Length` of at most 64 KB (411/413/415 otherwise).
+  It is the web app's WebGPU diagnostics report (`src/gpu/gpu-diagnostics.ts`); it is forwarded upstream and also written to Crashlytics (see below). Any other request with a body gets 405.
 - `acceptLocalOnly` is deliberately **not** set. In the simulator it resets every loopback connection.
 
 ### Web view
@@ -142,7 +144,8 @@ echo "$COSMOSMAP_GOOGLE_SERVICE_INFO" | base64 --decode > ios/CosmosMap/Resource
   - the WebContent process was terminated
   - the local server could not start, even on an ephemeral port
   - the web bundle is missing
-- Crashlytics custom keys: `app_version` and `web_bundle_present`. No user identifier is ever set.
+  - the web app reported WebGPU errors (shader/pipeline/validation), once per web session, with the adapter, skipped pipelines and the first three errors as user info; every diagnostics report is also added to the Crashlytics log
+- Crashlytics custom keys: `app_version`, `web_bundle_present`, and from the diagnostics report `gpu_adapter` and `gpu_error_count`. No user identifier is ever set.
 - Analytics logs `screen_view` (`screen_name` "cosmosmap") at launch.
 
 #### Web analytics bridge

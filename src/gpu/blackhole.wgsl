@@ -101,19 +101,27 @@ fn vs_main(@builtin(vertex_index) vi: u32) -> VertexOut {
   return out;
 }
 
+// NaN / +-Inf texels (e.g. an rgba16float overflow or a driver producing
+// garbage) would otherwise poison the whole composite: the tone map, the
+// lensing resample and every bloom tap. Finite values pass through untouched.
+fn finite_hdr(c: vec3<f32>) -> vec3<f32> {
+  let bad = (c != c) | (abs(c) > vec3<f32>(65504.0));
+  return select(c, vec3<f32>(0.0), bad);
+}
+
 fn sample_scene(uv: vec2<f32>) -> vec3<f32> {
   // textureSampleLevel is valid inside non-uniform branches; implicit LOD is not.
   if uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 {
     return vec3<f32>(0.0);
   }
-  return textureSampleLevel(sceneTex, sceneSampler, uv, 0.0).rgb;
+  return finite_hdr(textureSampleLevel(sceneTex, sceneSampler, uv, 0.0).rgb);
 }
 
 fn sample_bloom(uv: vec2<f32>) -> vec3<f32> {
   if uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 {
     return vec3<f32>(0.0);
   }
-  return textureSampleLevel(bloomTex, bloomSampler, uv, 0.0).rgb * BLOOM_STRENGTH;
+  return finite_hdr(textureSampleLevel(bloomTex, bloomSampler, uv, 0.0).rgb) * BLOOM_STRENGTH;
 }
 
 fn aces_curve_scalar(value: f32) -> f32 {
@@ -225,10 +233,10 @@ fn noise3d(p: vec3<f32>) -> f32 {
 fn fbm(p: vec3<f32>, lacunarity: f32, persistence: f32) -> f32 {
   var value = 0.0;
   var amplitude = 0.5;
-  var pos = p;
+  var q = p;
   for (var i: i32 = 0; i < 4; i = i + 1) {
-    value += noise3d(pos) * amplitude;
-    pos *= lacunarity;
+    value += noise3d(q) * amplitude;
+    q *= lacunarity;
     amplitude *= persistence;
   }
   return value;
@@ -416,15 +424,15 @@ fn apply_black_hole_scene_lensing(sceneColor: vec3<f32>, uv: vec2<f32>, centerUv
     return sceneColor;
   }
 
-  let window = (1.0 - smoothstep(radiusUv * 1.1, radiusUv * 3.2 + 0.08, radius)) *
+  let lensWindow = (1.0 - smoothstep(radiusUv * 1.1, radiusUv * 3.2 + 0.08, radius)) *
     smoothstep(0.0, radiusUv * 2.2 + 0.08, radius);
-  if window <= 0.001 {
+  if lensWindow <= 0.001 {
     return sceneColor;
   }
 
   // Radial direction in aspect-corrected space, mapped back to uv units.
   let dir = (delta / radius) / vec2<f32>(aspect, 1.0);
-  let pull = min(strength * window * radiusUv * radiusUv / max(radius, 0.025), 0.12);
+  let pull = min(strength * lensWindow * radiusUv * radiusUv / max(radius, 0.025), 0.12);
   let lensedUv = uv - dir * pull;
   // Return only the displaced sample: the pull already tapers to zero at the
   // window edges. Blending with the unlensed scene drew every star twice.
@@ -552,9 +560,9 @@ fn black_hole_composite(sceneColor: vec3<f32>, uv: vec2<f32>) -> vec3<f32> {
       let focalY = max(camera.upAndFocal.w, 0.000001);
       let pixelAngle = 2.0 / (focalY * max(blackHole.params.z, 1.0));
       let rayDir = black_hole_space(screen_ray(uv));
-      let sample = raymarch_black_hole(camPos, rayDir, blackHole.params.x, pixelAngle);
-      // Front-to-back: sample.color is premultiplied, alpha covers the scene.
-      base = sample.color + base * (1.0 - sample.alpha);
+      let bhSample = raymarch_black_hole(camPos, rayDir, blackHole.params.x, pixelAngle);
+      // Front-to-back: bhSample.color is premultiplied, alpha covers the scene.
+      base = bhSample.color + base * (1.0 - bhSample.alpha);
     }
     // Fade only the output; geometry and bending stay physical.
     result = mix(result, base, bh.proceduralFade);

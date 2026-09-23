@@ -1,3 +1,5 @@
+import { gpuDiagnostics } from "./gpu-diagnostics";
+
 export interface GPUContext {
   device: GPUDevice;
   adapter: GPUAdapter;
@@ -25,6 +27,8 @@ export async function initGPU(canvas: HTMLCanvasElement): Promise<{
   if (!canvasCtx) throw new Error("Failed to get WebGPU canvas context.");
 
   const format = navigator.gpu.getPreferredCanvasFormat();
+  // Must run before any shader/pipeline is created so their errors are captured.
+  gpuDiagnostics.attach(device, adapter, format);
   canvasCtx.configure({ device, format, alphaMode: "opaque" });
 
   return { ctx: { device, adapter, format }, canvasCtx };

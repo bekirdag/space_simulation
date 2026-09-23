@@ -3,6 +3,10 @@ import Foundation
 /// Forwards same-origin `/api/*` requests from the web view to the public backend, so the
 /// web code keeps using relative `/api/...` URLs unchanged. Any network failure turns into
 /// `503 {"error":"offline"}`, which the web app already treats as "backend unavailable".
+///
+/// Only GET/HEAD/OPTIONS are proxied, plus POST for exactly `/api/client-diagnostics`
+/// (a JSON body of at most `maxDiagnosticsBodyBytes`, the web app's WebGPU diagnostics
+/// report), which is also handed to `diagnosticsObserver` (Crashlytics).
 final class APIProxy {
     struct Response {
         var status: Int
@@ -11,6 +15,20 @@ final class APIProxy {
     }
 
     static let allowedMethods: Set<String> = ["GET", "HEAD", "OPTIONS"]
+    static let diagnosticsPath = "/api/client-diagnostics"
+    static let maxDiagnosticsBodyBytes = 64 * 1024
+
+    /// Called (on a background queue) with each diagnostics body that is forwarded.
+    var diagnosticsObserver: ((Data) -> Void)?
+
+    /// True for the only request that may carry a body: POST /api/client-diagnostics.
+    static func isDiagnosticsPost(_ request: HTTPRequest) -> Bool {
+        request.method == "POST" && request.path == diagnosticsPath
+    }
+
+    static func allows(_ request: HTTPRequest) -> Bool {
+        allowedMethods.contains(request.method) || isDiagnosticsPost(request)
+    }
 
     /// Request headers worth forwarding upstream (everything else is dropped).
     private static let forwardedRequestHeaders = [
@@ -76,10 +94,24 @@ final class APIProxy {
     }
 
     func forward(_ request: HTTPRequest, completion: @escaping (Response) -> Void) {
-        guard Self.allowedMethods.contains(request.method) else {
-            completion(Response(status: 405, headers: [("Allow", "GET, HEAD, OPTIONS"), ("Content-Type", "application/json; charset=utf-8")],
+        guard Self.allows(request) else {
+            let allow = request.path == Self.diagnosticsPath ? "POST, OPTIONS" : "GET, HEAD, OPTIONS"
+            completion(Response(status: 405, headers: [("Allow", allow), ("Content-Type", "application/json; charset=utf-8")],
                                 body: Data(#"{"error":"method_not_allowed"}"#.utf8)))
             return
+        }
+        if Self.isDiagnosticsPost(request) {
+            let contentType = (request.header("content-type") ?? "").lowercased()
+            guard contentType.hasPrefix("application/json") else {
+                completion(Response(status: 415, headers: [("Content-Type", "application/json; charset=utf-8")],
+                                    body: Data(#"{"error":"unsupported_media_type"}"#.utf8)))
+                return
+            }
+            guard request.body.count <= Self.maxDiagnosticsBodyBytes else {
+                completion(Response(status: 413, headers: [("Content-Type", "application/json; charset=utf-8")],
+                                    body: Data(#"{"error":"too_large"}"#.utf8)))
+                return
+            }
         }
         guard let url = upstreamURL(for: request) else {
             completion(Response(status: 400, headers: [("Content-Type", "application/json; charset=utf-8")],
@@ -91,6 +123,11 @@ final class APIProxy {
         upstreamRequest.httpMethod = request.method
         for name in Self.forwardedRequestHeaders {
             if let value = request.header(name) { upstreamRequest.setValue(value, forHTTPHeaderField: name) }
+        }
+        if Self.isDiagnosticsPost(request) {
+            upstreamRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            upstreamRequest.httpBody = request.body
+            diagnosticsObserver?(request.body)
         }
 
         session.dataTask(with: upstreamRequest) { data, response, error in
@@ -115,5 +152,45 @@ final class APIProxy {
         Response(status: 503,
                  headers: [("Content-Type", "application/json; charset=utf-8"), ("Cache-Control", "no-store")],
                  body: Data(#"{"error":"offline"}"#.utf8))
+    }
+}
+
+/// The few fields of a web WebGPU diagnostics report (src/gpu/gpu-diagnostics.ts) that are
+/// worth a Crashlytics key or non-fatal. The body is untrusted: every field is optional.
+struct ClientDiagnosticsSummary: Equatable {
+    static let maxMessageLength = 500
+
+    let session: String
+    let reason: String
+    let adapter: String
+    let errorCount: Int
+    let brokenPipelines: [String]
+    /// First error messages ("kind label: message"), each cut to `maxMessageLength`.
+    let firstErrors: [String]
+
+    init?(json body: Data) {
+        guard body.count <= APIProxy.maxDiagnosticsBodyBytes,
+              let object = try? JSONSerialization.jsonObject(with: body),
+              let report = object as? [String: Any]
+        else { return nil }
+        session = String((report["session"] as? String ?? "").prefix(40))
+        reason = String((report["reason"] as? String ?? "").prefix(40))
+        let adapterInfo = report["adapter"] as? [String: Any] ?? [:]
+        adapter = ["vendor", "architecture", "device", "description"]
+            .compactMap { adapterInfo[$0] as? String }
+            .filter { !$0.isEmpty }
+            .joined(separator: " / ")
+            .prefix(120)
+            .description
+        brokenPipelines = (report["brokenPipelines"] as? [Any] ?? []).compactMap { $0 as? String }.prefix(20).map { String($0.prefix(80)) }
+        let entries = (report["entries"] as? [Any] ?? []).compactMap { $0 as? [String: Any] }
+        let errors = entries.filter { ($0["severity"] as? String) == "error" }
+        errorCount = errors.count
+        firstErrors = errors.prefix(3).map { entry in
+            let kind = entry["kind"] as? String ?? "?"
+            let label = entry["label"] as? String ?? "?"
+            let message = entry["message"] as? String ?? ""
+            return String("\(kind) \(label): \(message)".prefix(Self.maxMessageLength))
+        }
     }
 }

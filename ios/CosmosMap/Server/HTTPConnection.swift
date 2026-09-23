@@ -78,19 +78,34 @@ final class HTTPConnection {
 
     private func handle(_ request: HTTPRequest) {
         let isHead = request.method == "HEAD"
-        // Bodies are never expected; refusing them keeps the framing trivially correct.
-        if request.declaresBody {
-            sendSimple(status: 405, message: "Request bodies are not supported", keepAlive: false, isHead: isHead,
-                       extraHeaders: [("Allow", "GET, HEAD")])
+        // Bodies are refused (keeping the framing trivially correct), except for the one
+        // proxied POST (/api/client-diagnostics) with a Content-Length of at most 64 KB.
+        if request.declaresBody || APIProxy.isDiagnosticsPost(request) {
+            guard APIProxy.isDiagnosticsPost(request) else {
+                sendSimple(status: 405, message: "Request bodies are not supported", keepAlive: false, isHead: isHead,
+                           extraHeaders: [("Allow", "GET, HEAD")])
+                return
+            }
+            guard !request.hasTransferEncoding, let length = request.contentLength, length >= 0 else {
+                sendSimple(status: 411, message: "Content-Length required", keepAlive: false, isHead: false)
+                return
+            }
+            guard length <= APIProxy.maxDiagnosticsBodyBytes else {
+                sendSimple(status: 413, message: "Request body too large", keepAlive: false, isHead: false)
+                return
+            }
+            readBody(length: length) { [weak self] body in
+                guard let self else { return }
+                var withBody = request
+                withBody.body = body
+                self.forwardToProxy(withBody, keepAlive: request.wantsKeepAlive, isHead: false)
+            }
             return
         }
         let keepAlive = request.wantsKeepAlive
 
         if APIProxy.handles(path: request.path) {
-            context.proxy.forward(request) { [weak self] response in
-                guard let self else { return }
-                self.queue.async { self.sendProxied(response, keepAlive: keepAlive, isHead: isHead) }
-            }
+            forwardToProxy(request, keepAlive: keepAlive, isHead: isHead)
             return
         }
 
@@ -107,6 +122,35 @@ final class HTTPConnection {
             sendSimple(status: 404, message: "Not found", keepAlive: keepAlive, isHead: isHead)
         case .file(let url):
             sendFile(url, request: request, keepAlive: keepAlive, isHead: isHead)
+        }
+    }
+
+    private func forwardToProxy(_ request: HTTPRequest, keepAlive: Bool, isHead: Bool) {
+        context.proxy.forward(request) { [weak self] response in
+            guard let self else { return }
+            self.queue.async { self.sendProxied(response, keepAlive: keepAlive, isHead: isHead) }
+        }
+    }
+
+    /// Collects exactly `length` body bytes (some may already be buffered after the head).
+    private func readBody(length: Int, completion: @escaping (Data) -> Void) {
+        guard !closed else { return }
+        if buffer.count >= length {
+            let body = Data(buffer.prefix(length))
+            buffer.removeFirst(length)
+            completion(body)
+            return
+        }
+        armIdleTimer()
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { [weak self] data, _, isComplete, error in
+            guard let self else { return }
+            self.idleTimer?.cancel()
+            if let data, !data.isEmpty { self.buffer.append(data) }
+            if error != nil || (isComplete && self.buffer.count < length) {
+                self.close()
+                return
+            }
+            self.readBody(length: length, completion: completion)
         }
     }
 

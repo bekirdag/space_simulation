@@ -26,7 +26,14 @@ final class LocalServerController: ObservableObject {
     private var generation = 0
     private var lastPort: UInt16?
     private var attemptedFallback = false
-    private lazy var proxy = APIProxy(upstream: Self.upstream)
+    private lazy var proxy: APIProxy = {
+        let proxy = APIProxy(upstream: Self.upstream)
+        // WebGPU diagnostics reports from the page also go to Crashlytics.
+        proxy.diagnosticsObserver = { body in
+            Task { @MainActor in Telemetry.recordClientDiagnostics(body) }
+        }
+        return proxy
+    }()
 
     var webRoot: URL? { Bundle.main.resourceURL?.appendingPathComponent("Web", isDirectory: true) }
 

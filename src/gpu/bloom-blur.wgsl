@@ -37,11 +37,12 @@ fn sample_source(uv: vec2<f32>) -> vec3<f32> {
 
 @fragment
 fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
-  let step = blurStep.xy;
+  // Not named `step`: that would shadow the WGSL builtin step().
+  let texelStep = blurStep.xy;
   var color = sample_source(in.uv) * 0.22702703;
-  color += sample_source(in.uv + step * 1.38461538) * 0.31621622;
-  color += sample_source(in.uv - step * 1.38461538) * 0.31621622;
-  color += sample_source(in.uv + step * 3.23076923) * 0.07027027;
-  color += sample_source(in.uv - step * 3.23076923) * 0.07027027;
+  color += sample_source(in.uv + texelStep * 1.38461538) * 0.31621622;
+  color += sample_source(in.uv - texelStep * 1.38461538) * 0.31621622;
+  color += sample_source(in.uv + texelStep * 3.23076923) * 0.07027027;
+  color += sample_source(in.uv - texelStep * 3.23076923) * 0.07027027;
   return vec4<f32>(color, 1.0);
 }

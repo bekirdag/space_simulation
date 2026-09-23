@@ -6,6 +6,9 @@
 
 @group(0) @binding(0) var sceneTex: texture_2d<f32>;
 @group(0) @binding(1) var sceneSampler: sampler;
+// x = scene pixels per bloom texel (renderer _bloomScale: 4 on high/medium,
+// 6 on the low quality level), yzw unused.
+@group(0) @binding(2) var<uniform> bloomParams: vec4<f32>;
 
 struct VertexOut {
   @builtin(position) clip_pos: vec4<f32>,
@@ -41,24 +44,26 @@ fn bright_pass(color: vec3<f32>) -> vec3<f32> {
   return color * (contribution / max(luma, 0.0001));
 }
 
-// Must match BLOOM_SCALE in renderer.ts (bloom targets are 1/4 resolution).
-const BLOOM_DOWNSAMPLE: i32 = 4;
+const MAX_BLOOM_DOWNSAMPLE: i32 = 8;
 
 @fragment
 fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
-  // Box-downsample the full 4x4 footprint of this bloom texel and apply the
+  // Box-downsample the full NxN footprint of this bloom texel and apply the
   // bright pass per scene pixel. A single bilinear tap only saw 4 of the 16
   // pixels, so point-like stars fed bloom only when they crossed that 2x2
   // window and their halos winked on/off while the camera rotated.
+  // N follows the renderer's bloom scale (it used to be hard-coded to 4, which
+  // shifted and shrank the bloom on the "low" quality level, scale 6).
+  let downsample = clamp(i32(round(bloomParams.x)), 1, MAX_BLOOM_DOWNSAMPLE);
   let sceneSize = vec2<i32>(textureDimensions(sceneTex));
-  let base = vec2<i32>(floor(in.clip_pos.xy)) * BLOOM_DOWNSAMPLE;
+  let base = vec2<i32>(floor(in.clip_pos.xy)) * downsample;
   let maxCoord = sceneSize - vec2<i32>(1);
   var sum = vec3<f32>(0.0);
-  for (var y = 0; y < BLOOM_DOWNSAMPLE; y++) {
-    for (var x = 0; x < BLOOM_DOWNSAMPLE; x++) {
+  for (var y = 0; y < downsample; y++) {
+    for (var x = 0; x < downsample; x++) {
       let coord = clamp(base + vec2<i32>(x, y), vec2<i32>(0), maxCoord);
       sum += bright_pass(textureLoad(sceneTex, coord, 0).rgb);
     }
   }
-  return vec4<f32>(sum / f32(BLOOM_DOWNSAMPLE * BLOOM_DOWNSAMPLE), 1.0);
+  return vec4<f32>(sum / f32(downsample * downsample), 1.0);
 }

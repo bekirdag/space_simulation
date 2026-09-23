@@ -147,13 +147,15 @@ fn fs_depth(in: VertexOut) -> @builtin(frag_depth) f32 {
 @fragment
 fn fs_main(in: VertexOut) -> FragmentOut {
   let d = length(in.uv);
-  if d > 1.0 { discard; }
-
   let brightness = max(in.brightness, 0.0);
   let displayLift = clamp(pow(max(brightness, 0.08), 0.35), 0.50, 5.25);
   let glowScale = clamp(1.0 + log2(max(brightness, 1.0)) * 0.65, 1.0, 8.0);
   let sphereD = d * glowScale;
+  // Derivatives before any discard: WebKit lowers `discard` to Metal's
+  // discard_fragment(), after which quad neighbours are no longer defined.
   let edgeAa = clamp(fwidth(sphereD), 0.0015, 0.045);
+  if d > 1.0 { discard; }
+
   let coreEdge = 1.0 - smoothstep(1.0 - edgeAa, 1.0 + edgeAa, sphereD);
   var coreAlpha = coreEdge * in.fade;
   var coreCol = in.color;

@@ -15,6 +15,8 @@ import bloomBlurWGSL from "./bloom-blur.wgsl?raw";
 import blackholeWGSL from "./blackhole.wgsl?raw";
 import constellationWGSL from "./constellation.wgsl?raw";
 import trailWGSL    from "./trail.wgsl?raw";
+import presentFallbackWGSL from "./present-fallback.wgsl?raw";
+import { decodeProbeTexels, gpuDiagnostics, type GpuProbeResult } from "./gpu-diagnostics";
 import { type GPUContext } from "./device";
 import { type Body, BODY_FLOATS } from "../physics/body";
 import { STAR_FLOATS } from "../catalog/stars";
@@ -635,6 +637,12 @@ export class Renderer {
   private bloomExtractPipeline!: GPURenderPipeline;
   private bloomBlurPipeline!: GPURenderPipeline;
   private blackHolePipeline!: GPURenderPipeline;
+  /** Tone-map-only present pass, used if blackHolePipeline fails on this GPU/browser. */
+  private presentFallbackPipeline!: GPURenderPipeline;
+  private bloomExtractParamsBuffer!: GPUBuffer;
+  private frameCount = 0;
+  private probeAtFrame = -1;
+  private probeRunning = false;
   private constellationPipeline!: GPURenderPipeline;
   private trailPipeline!:   GPURenderPipeline;
 
@@ -1017,8 +1025,8 @@ export class Renderer {
         { binding: 1, resource: { buffer: this.bodyBuffer } },
       ],
     });
-    const bodyShader = device.createShaderModule({ code: renderWGSL });
-    this.bodyPipeline = device.createRenderPipeline({
+    const bodyShader = gpuDiagnostics.createShaderModule(device, "render", renderWGSL);
+    this.bodyPipeline = gpuDiagnostics.createRenderPipeline(device, {
       label: "body-pipeline",
       layout: device.createPipelineLayout({ bindGroupLayouts: [bodyBGL] }),
       vertex:   { module: bodyShader, entryPoint: "vs_main" },
@@ -1039,7 +1047,7 @@ export class Renderer {
     });
     // Depth-only pre-pass: sprite bodies' physical discs as sphere impostors,
     // drawn first so stars/galaxies/dust/constellations/trails behind them fail.
-    this.bodyDepthPrepassPipeline = device.createRenderPipeline({
+    this.bodyDepthPrepassPipeline = gpuDiagnostics.createRenderPipeline(device, {
       label: "body-depth-prepass-pipeline",
       layout: device.createPipelineLayout({ bindGroupLayouts: [bodyBGL] }),
       vertex:   { module: bodyShader, entryPoint: "vs_main" },
@@ -1132,8 +1140,8 @@ export class Renderer {
         { binding: 3, resource: { buffer: this.starLodBuffer } },
       ],
     });
-    const starShader = device.createShaderModule({ code: starWGSL });
-    this.starPipeline = device.createRenderPipeline({
+    const starShader = gpuDiagnostics.createShaderModule(device, "star", starWGSL);
+    this.starPipeline = gpuDiagnostics.createRenderPipeline(device, {
       label: "catalog-star-pipeline",
       layout: device.createPipelineLayout({ bindGroupLayouts: [this.starBGL] }),
       vertex:   { module: starShader, entryPoint: "vs_main" },
@@ -1167,8 +1175,8 @@ export class Renderer {
         { binding: 1, resource: { buffer: this.selectedStarModelBuffer } },
       ],
     });
-    const starModelShader = device.createShaderModule({ code: starModelWGSL });
-    this.starModelPipeline = device.createRenderPipeline({
+    const starModelShader = gpuDiagnostics.createShaderModule(device, "star-model", starModelWGSL);
+    this.starModelPipeline = gpuDiagnostics.createRenderPipeline(device, {
       label: "selected-star-model-pipeline",
       layout: device.createPipelineLayout({ bindGroupLayouts: [this.selectedStarModelBGL] }),
       vertex: {
@@ -1216,8 +1224,8 @@ export class Renderer {
         { binding: 2, resource: { buffer: this.mwLodBuffer } },
       ],
     });
-    const mwShader = device.createShaderModule({ code: milkywayWGSL });
-    this.mwPipeline = device.createRenderPipeline({
+    const mwShader = gpuDiagnostics.createShaderModule(device, "milkyway", milkywayWGSL);
+    this.mwPipeline = gpuDiagnostics.createRenderPipeline(device, {
       label: "mw-star-pipeline",
       layout: device.createPipelineLayout({ bindGroupLayouts: [this.mwBGL] }),
       vertex:   { module: mwShader, entryPoint: "vs_main" },
@@ -1261,8 +1269,8 @@ export class Renderer {
         { binding: 2, resource: { buffer: this.mwSelfLodBuffer } },
       ],
     });
-    const galaxyShader = device.createShaderModule({ code: galaxyWGSL });
-    this.galaxyPipeline = device.createRenderPipeline({
+    const galaxyShader = gpuDiagnostics.createShaderModule(device, "galaxy", galaxyWGSL);
+    this.galaxyPipeline = gpuDiagnostics.createRenderPipeline(device, {
       label: "galaxy-pipeline",
       layout: device.createPipelineLayout({ bindGroupLayouts: [this.galaxyBGL] }),
       vertex:   { module: galaxyShader, entryPoint: "vs_main" },
@@ -1290,8 +1298,8 @@ export class Renderer {
         { binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
       ],
     });
-    const galaxyTexturedShader = device.createShaderModule({ code: galaxyTexturedWGSL });
-    this.galaxyTexturedPipeline = device.createRenderPipeline({
+    const galaxyTexturedShader = gpuDiagnostics.createShaderModule(device, "galaxy-textured", galaxyTexturedWGSL);
+    this.galaxyTexturedPipeline = gpuDiagnostics.createRenderPipeline(device, {
       label: "textured-galaxy-model-pipeline",
       layout: device.createPipelineLayout({ bindGroupLayouts: [this.galaxyModelBGL] }),
       vertex:   { module: galaxyTexturedShader, entryPoint: "vs_main" },
@@ -1324,8 +1332,8 @@ export class Renderer {
         { binding: 1, resource: { buffer: this.nebulaBuffer } },
       ],
     });
-    const nebulaShader = device.createShaderModule({ code: nebulaWGSL });
-    this.nebulaPipeline = device.createRenderPipeline({
+    const nebulaShader = gpuDiagnostics.createShaderModule(device, "nebula", nebulaWGSL);
+    this.nebulaPipeline = gpuDiagnostics.createRenderPipeline(device, {
       label: "nebula-pipeline",
       layout: device.createPipelineLayout({ bindGroupLayouts: [this.nebulaBGL] }),
       vertex:   { module: nebulaShader, entryPoint: "vs_main" },
@@ -1354,8 +1362,8 @@ export class Renderer {
         { binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
       ],
     });
-    const homunculusShader = device.createShaderModule({ code: nebulaTexturedWGSL });
-    this.nebulaTexturedPipeline = device.createRenderPipeline({
+    const homunculusShader = gpuDiagnostics.createShaderModule(device, "nebula-textured", nebulaTexturedWGSL);
+    this.nebulaTexturedPipeline = gpuDiagnostics.createRenderPipeline(device, {
       label: "nebula-textured-pipeline",
       layout: device.createPipelineLayout({ bindGroupLayouts: [this.homunculusBGL] }),
       vertex:   { module: homunculusShader, entryPoint: "vs_main" },
@@ -1406,8 +1414,8 @@ export class Renderer {
       { bytesPerRow: 256, rowsPerImage: 1 },
       [1, 1, 1],
     );
-    const milkyWayModelShader = device.createShaderModule({ code: milkyWayModelWGSL });
-    this.milkyWayModelPipeline = device.createRenderPipeline({
+    const milkyWayModelShader = gpuDiagnostics.createShaderModule(device, "milky-way-model", milkyWayModelWGSL);
+    this.milkyWayModelPipeline = gpuDiagnostics.createRenderPipeline(device, {
       label: "milky-way-model-pipeline",
       layout: device.createPipelineLayout({ bindGroupLayouts: [this.milkyWayModelBGL] }),
       vertex: {
@@ -1459,7 +1467,7 @@ export class Renderer {
     // behind the gas (stars, dust, nebulae) per crossed shell layer, so the
     // remnant reads as a translucent medium rather than a see-through outline.
     // Multiplication commutes, so this is order-independent too.
-    this.milkyWayMeshAbsorbPipeline = device.createRenderPipeline({
+    this.milkyWayMeshAbsorbPipeline = gpuDiagnostics.createRenderPipeline(device, {
       label: "milky-way-mesh-absorb-pipeline",
       layout: device.createPipelineLayout({ bindGroupLayouts: [this.milkyWayModelBGL] }),
       vertex: milkyWayMeshVertexState,
@@ -1477,7 +1485,7 @@ export class Renderer {
       primitive: { topology: "triangle-list", cullMode: "none" },
       depthStencil: SCENE_DEPTH_TEST,
     });
-    this.milkyWayMeshPipeline = device.createRenderPipeline({
+    this.milkyWayMeshPipeline = gpuDiagnostics.createRenderPipeline(device, {
       label: "milky-way-mesh-pipeline",
       layout: device.createPipelineLayout({ bindGroupLayouts: [this.milkyWayModelBGL] }),
       vertex: milkyWayMeshVertexState,
@@ -1520,8 +1528,8 @@ export class Renderer {
         { binding: 2, resource: { buffer: this.dustUniformBuffer } },
       ],
     });
-    const dustImpostorShader = device.createShaderModule({ code: dustImpostorWGSL });
-    this.dustImpostorPipeline = device.createRenderPipeline({
+    const dustImpostorShader = gpuDiagnostics.createShaderModule(device, "dust-impostor", dustImpostorWGSL);
+    this.dustImpostorPipeline = gpuDiagnostics.createRenderPipeline(device, {
       label: "dust-cloud-impostor-pipeline",
       layout: device.createPipelineLayout({ bindGroupLayouts: [this.dustBGL] }),
       vertex:   { module: dustImpostorShader, entryPoint: "vs_main" },
@@ -1539,8 +1547,8 @@ export class Renderer {
       depthStencil: SCENE_DEPTH_TEST,
     });
 
-    const dustShader = device.createShaderModule({ code: dustWGSL });
-    this.dustPipeline = device.createRenderPipeline({
+    const dustShader = gpuDiagnostics.createShaderModule(device, "dust", dustWGSL);
+    this.dustPipeline = gpuDiagnostics.createRenderPipeline(device, {
       label: "dust-cloud-pipeline",
       layout: device.createPipelineLayout({ bindGroupLayouts: [this.dustBGL] }),
       vertex:   { module: dustShader, entryPoint: "vs_main" },
@@ -1564,10 +1572,17 @@ export class Renderer {
       entries: [
         { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float" } },
         { binding: 1, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "filtering" } },
+        { binding: 2, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
       ],
     });
-    const bloomExtractShader = device.createShaderModule({ code: bloomExtractWGSL });
-    this.bloomExtractPipeline = device.createRenderPipeline({
+    this.bloomExtractParamsBuffer = device.createBuffer({
+      label: "hdr-bloom-extract-params",
+      size: 16,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    device.queue.writeBuffer(this.bloomExtractParamsBuffer, 0, new Float32Array([this._bloomScale, 0, 0, 0]));
+    const bloomExtractShader = gpuDiagnostics.createShaderModule(device, "bloom-extract", bloomExtractWGSL);
+    this.bloomExtractPipeline = gpuDiagnostics.createRenderPipeline(device, {
       label: "hdr-bloom-extract-pipeline",
       layout: device.createPipelineLayout({ bindGroupLayouts: [this.bloomExtractBGL] }),
       vertex:   { module: bloomExtractShader, entryPoint: "vs_main" },
@@ -1587,8 +1602,8 @@ export class Renderer {
         { binding: 2, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
       ],
     });
-    const bloomBlurShader = device.createShaderModule({ code: bloomBlurWGSL });
-    this.bloomBlurPipeline = device.createRenderPipeline({
+    const bloomBlurShader = gpuDiagnostics.createShaderModule(device, "bloom-blur", bloomBlurWGSL);
+    this.bloomBlurPipeline = gpuDiagnostics.createRenderPipeline(device, {
       label: "hdr-bloom-blur-pipeline",
       layout: device.createPipelineLayout({ bindGroupLayouts: [this.bloomBlurBGL] }),
       vertex:   { module: bloomBlurShader, entryPoint: "vs_main" },
@@ -1614,13 +1629,24 @@ export class Renderer {
         { binding: 7, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "filtering" } },
       ],
     });
-    const blackHoleShader = device.createShaderModule({ code: blackholeWGSL });
-    this.blackHolePipeline = device.createRenderPipeline({
+    const blackHoleShader = gpuDiagnostics.createShaderModule(device, "blackhole", blackholeWGSL);
+    this.blackHolePipeline = gpuDiagnostics.createRenderPipeline(device, {
       label: "black-hole-postprocess-pipeline",
       layout: device.createPipelineLayout({ bindGroupLayouts: [this.blackHoleBGL] }),
       vertex:   { module: blackHoleShader, entryPoint: "vs_main" },
       fragment: {
         module: blackHoleShader, entryPoint: "fs_main",
+        targets: [{ format }],
+      },
+      primitive: { topology: "triangle-list" },
+    });
+    const presentFallbackShader = gpuDiagnostics.createShaderModule(device, "present-fallback", presentFallbackWGSL);
+    this.presentFallbackPipeline = gpuDiagnostics.createRenderPipeline(device, {
+      label: "present-fallback-pipeline",
+      layout: device.createPipelineLayout({ bindGroupLayouts: [this.blackHoleBGL] }),
+      vertex:   { module: presentFallbackShader, entryPoint: "vs_main" },
+      fragment: {
+        module: presentFallbackShader, entryPoint: "fs_main",
         targets: [{ format }],
       },
       primitive: { topology: "triangle-list" },
@@ -1637,8 +1663,8 @@ export class Renderer {
       label: "constellation-bg", layout: this.constellationBGL,
       entries: [{ binding: 0, resource: { buffer: this.cameraBuffer } }],
     });
-    const constellationShader = device.createShaderModule({ code: constellationWGSL });
-    this.constellationPipeline = device.createRenderPipeline({
+    const constellationShader = gpuDiagnostics.createShaderModule(device, "constellation", constellationWGSL);
+    this.constellationPipeline = gpuDiagnostics.createRenderPipeline(device, {
       label: "constellation-pipeline",
       layout: device.createPipelineLayout({ bindGroupLayouts: [this.constellationBGL] }),
       vertex: {
@@ -1680,8 +1706,8 @@ export class Renderer {
         { binding: 1, resource: { buffer: this.trailScreenBuffer } },
       ],
     });
-    const trailShader = device.createShaderModule({ code: trailWGSL });
-    this.trailPipeline = device.createRenderPipeline({
+    const trailShader = gpuDiagnostics.createShaderModule(device, "trail", trailWGSL);
+    this.trailPipeline = gpuDiagnostics.createRenderPipeline(device, {
       label: "trail-pipeline",
       layout: device.createPipelineLayout({ bindGroupLayouts: [trailBGL] }),
       vertex: {
@@ -2500,7 +2526,8 @@ export class Renderer {
       label: "hdr-scene-color",
       size: { width, height },
       format: SCENE_COLOR_FORMAT,
-      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+      // COPY_SRC only for the one-time diagnostics sanity probe.
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC,
     });
     this.sceneTextureView = this.sceneTexture.createView();
     this.bloomExtractBindGroup = null;
@@ -2555,6 +2582,7 @@ export class Renderer {
       this.bloomPingTextureView = this.bloomPingTexture.createView();
       this.bloomPongTextureView = this.bloomPongTexture.createView();
 
+      device.queue.writeBuffer(this.bloomExtractParamsBuffer, 0, new Float32Array([this._bloomScale, 0, 0, 0]));
       device.queue.writeBuffer(this.bloomBlurHBuffer, 0, new Float32Array([1 / width, 0, 0, 0]));
       device.queue.writeBuffer(this.bloomBlurVBuffer, 0, new Float32Array([0, 1 / height, 0, 0]));
       this.bloomExtractBindGroup = null;
@@ -2573,6 +2601,7 @@ export class Renderer {
         entries: [
           { binding: 0, resource: this.sceneTextureView },
           { binding: 1, resource: this.bloomSampler },
+          { binding: 2, resource: { buffer: this.bloomExtractParamsBuffer } },
         ],
       });
     }
@@ -2773,6 +2802,10 @@ export class Renderer {
   draw(trails: TrailSystem): void {
     const { device } = this.ctx;
     const swapView = this.canvasCtx.getCurrentTexture().createView();
+    // The first frames run inside error scopes so validation failures are
+    // attributed to the frame (gpu-diagnostics); later ones go to uncapturederror.
+    const frameScoped = gpuDiagnostics.frameScopeBegin(device);
+    this.frameCount++;
 
     const encoder = device.createCommandEncoder({ label: "frame" });
     const uploadTrails = (): void => {
@@ -2796,7 +2829,7 @@ export class Renderer {
       }
     };
     const drawTrails = (pass: GPURenderPassEncoder): void => {
-      if (!this._showTrails) return;
+      if (!this._showTrails || gpuDiagnostics.isBroken(this.trailPipeline)) return;
       pass.setPipeline(this.trailPipeline);
       pass.setBindGroup(0, this.trailBindGroup);
       for (const bodyId of trails.bodyIds) {
@@ -2822,14 +2855,20 @@ export class Renderer {
           depthStoreOp: "store",
         },
       });
+      // A pipeline that failed to compile/validate would invalidate the whole
+      // command buffer (every layer, and the present pass with it). Skip it.
+      const use = (pipeline: GPURenderPipeline): boolean => {
+        if (gpuDiagnostics.isBroken(pipeline)) return false;
+        pass.setPipeline(pipeline);
+        return true;
+      };
 
       // ── Occluder depth pre-pass (log depth, colour writes off) ─────────────
       // Solar-system meshes and sprite-body discs write depth first so every
       // depth-tested layer below (galaxies, nebulae, MW stars, dust, catalog
       // stars, constellations, trails) is hidden behind them (ISSUES I1).
       this.bodySurfaces.drawDepthPrepass(pass);
-      if (this.bodyCount > 0) {
-        pass.setPipeline(this.bodyDepthPrepassPipeline);
+      if (this.bodyCount > 0 && use(this.bodyDepthPrepassPipeline)) {
         pass.setBindGroup(0, this.bodyBindGroup);
         pass.draw(6, this.bodyCount, 0, 0);
       }
@@ -2864,15 +2903,12 @@ export class Renderer {
       // Glowing gas: extinction pass (dims what is behind), then additive glow.
       // Both are depth-tested (log depth) against bodies but never write depth.
       const drawMilkyWayMeshEntry = (entry: { parts: MilkyWayModelPartEntry[] }): void => {
-        pass.setPipeline(this.milkyWayMeshAbsorbPipeline);
-        drawMilkyWayModelEntry(entry);
-        pass.setPipeline(this.milkyWayMeshPipeline);
-        drawMilkyWayModelEntry(entry);
+        if (use(this.milkyWayMeshAbsorbPipeline)) drawMilkyWayModelEntry(entry);
+        if (use(this.milkyWayMeshPipeline)) drawMilkyWayModelEntry(entry);
       };
 
     // ── Galaxies (furthest layer) ──────────────────────────────────────────
-    if (this._showGalaxies) {
-      pass.setPipeline(this.galaxyPipeline);
+    if (this._showGalaxies && use(this.galaxyPipeline)) {
       pass.setBindGroup(0, this.galaxyBindGroup);
       drawOctants(
         this.galaxyOctants, this.scaledLimit(this._galaxyLimit), this.galaxyCount,
@@ -2886,17 +2922,16 @@ export class Renderer {
         pass.setBindGroup(0, this.mwSelfBindGroup);
         pass.draw(6, 1, 0, 0);
       }
-
-      if (this.galaxyModelCount > 0 && this.galaxyModelDraws.length > 0) {
-        pass.setPipeline(this.galaxyTexturedPipeline);
+    }
+    if (this._showGalaxies) {
+      if (this.galaxyModelCount > 0 && this.galaxyModelDraws.length > 0 && use(this.galaxyTexturedPipeline)) {
         for (const draw of this.galaxyModelDraws) {
           pass.setBindGroup(0, draw.bindGroup);
           pass.draw(6, 1, 0, draw.index);
         }
       }
 
-      if (this.galaxyTypeModelEntries.size > 0) {
-        pass.setPipeline(this.milkyWayModelPipeline);
+      if (this.galaxyTypeModelEntries.size > 0 && use(this.milkyWayModelPipeline)) {
         for (const entry of this.galaxyTypeModelEntries.values()) {
           drawMilkyWayModelEntry(entry);
         }
@@ -2904,25 +2939,24 @@ export class Renderer {
     }
 
     // ── Nebulas (inside Milky Way — between galaxies and stars) ───────────
-    if (this.nebulaCount > 0) {
-      pass.setPipeline(this.nebulaPipeline);
+    if (this.nebulaCount > 0 && use(this.nebulaPipeline)) {
       pass.setBindGroup(0, this.nebulaBindGroup);
       pass.draw(6, this.nebulaCount, 0, 0);
     }
     // ── Eta Carinae Homunculus — real NASA/ESA Hubble image billboard ─────
-    if (this.homunculusBindGroup !== null) {
-      pass.setPipeline(this.nebulaTexturedPipeline);
+    if (this.homunculusBindGroup !== null && use(this.nebulaTexturedPipeline)) {
       pass.setBindGroup(0, this.homunculusBindGroup);
       pass.draw(6, 1, 0, 0);
     }
 
     // ── Milky Way background stars (galaxy-scale LOD layer) ───────────────
-    pass.setPipeline(this.mwPipeline);
-    pass.setBindGroup(0, this.mwBindGroup);
-    drawOctants(
-      this.mwOctants, this.scaledLimit(this._mwStarLimit), this.mwStarCount,
-      () => pass.draw(6, Math.min(this.mwStarCount, this.scaledLimit(this._mwStarLimit)), 0, 0),
-    );
+    if (use(this.mwPipeline)) {
+      pass.setBindGroup(0, this.mwBindGroup);
+      drawOctants(
+        this.mwOctants, this.scaledLimit(this._mwStarLimit), this.mwStarCount,
+        () => pass.draw(6, Math.min(this.mwStarCount, this.scaledLimit(this._mwStarLimit)), 0, 0),
+      );
+    }
 
     // ── Partial galactic dust clouds — between background and foreground stars.
     // Positions are sampled from the MF2015 E(B-V) map; nearby catalog stars draw over dust.
@@ -2932,23 +2966,26 @@ export class Renderer {
       dustDrawCount > 0 &&
       this.dustOpacity() > 0.001
     ) {
-      pass.setBindGroup(0, this.dustBindGroup);
-      pass.setPipeline(this.dustImpostorPipeline);
-      pass.draw(6, dustDrawCount, 0, 0);
-      pass.setPipeline(this.dustPipeline);
-      pass.draw(6, dustDrawCount, 0, 0);
+      if (use(this.dustImpostorPipeline)) {
+        pass.setBindGroup(0, this.dustBindGroup);
+        pass.draw(6, dustDrawCount, 0, 0);
+      }
+      if (use(this.dustPipeline)) {
+        pass.setBindGroup(0, this.dustBindGroup);
+        pass.draw(6, dustDrawCount, 0, 0);
+      }
     }
 
     // ── Static catalog stars (nearby HYG) ─────────────────────────────────
-    pass.setPipeline(this.starPipeline);
-    pass.setBindGroup(0, this.starBindGroup);
-    drawOctants(
-      this.starOctants, this.scaledLimit(this._starLimit), this.starCount,
-      () => pass.draw(6, Math.min(this.starCount, this.scaledLimit(this._starLimit)), 0, 0),
-    );
+    if (use(this.starPipeline)) {
+      pass.setBindGroup(0, this.starBindGroup);
+      drawOctants(
+        this.starOctants, this.scaledLimit(this._starLimit), this.starCount,
+        () => pass.draw(6, Math.min(this.starCount, this.scaledLimit(this._starLimit)), 0, 0),
+      );
+    }
 
-    if (this.selectedStarModelActive && this.selectedStarModelVertexCount > 0) {
-      pass.setPipeline(this.starModelPipeline);
+    if (this.selectedStarModelActive && this.selectedStarModelVertexCount > 0 && use(this.starModelPipeline)) {
       pass.setBindGroup(0, this.selectedStarModelBindGroup);
       pass.setVertexBuffer(0, this.selectedStarModelVertexBuffer);
       pass.draw(this.selectedStarModelVertexCount);
@@ -2973,17 +3010,17 @@ export class Renderer {
     }
 
     // ── Constellation lines between snapped visible-star positions ─────────
-    if (this._showConstellations && this.constellationCount > 0) {
-      pass.setPipeline(this.constellationPipeline);
+    if (this._showConstellations && this.constellationCount > 0 && use(this.constellationPipeline)) {
       pass.setBindGroup(0, this.constellationBindGroup);
       pass.setVertexBuffer(0, this.constellationBuffer, 0, this.constellationCount * CONSTELLATION_FLOATS * 4);
       pass.draw(this.constellationCount);
     }
 
     // ── Bodies ────────────────────────────────────────────────────────────
-    pass.setPipeline(this.bodyPipeline);
-    pass.setBindGroup(0, this.bodyBindGroup);
-    pass.draw(6, this.bodyCount, 0, 0);
+    if (use(this.bodyPipeline)) {
+      pass.setBindGroup(0, this.bodyBindGroup);
+      pass.draw(6, this.bodyCount, 0, 0);
+    }
 
     this.bodySurfaces.draw(pass);
 
@@ -3000,7 +3037,8 @@ export class Renderer {
     this.ensureBloomTextures();
     uploadTrails();
     drawScene(this.sceneTextureView!);
-    if (this._actualBrightness) {
+    const bloomBroken = gpuDiagnostics.isBroken(this.bloomExtractPipeline) || gpuDiagnostics.isBroken(this.bloomBlurPipeline);
+    if (this._actualBrightness && !bloomBroken) {
       this.runBloomPasses(encoder);
     } else {
       this.clearBloomPass(encoder);
@@ -3010,18 +3048,130 @@ export class Renderer {
     displayUniform[7] = this._showBlackHole ? (displayUniform[7] ?? 0) : 0;
     device.queue.writeBuffer(this.blackHoleBuffer, 0, displayUniform);
 
-    const pass = encoder.beginRenderPass({
+    // Scene/bloom and presentation are separate submits: if the scene command
+    // buffer is invalid on some implementation, the canvas is still cleared and
+    // presented (black + whatever the scene texture holds) instead of never
+    // receiving a frame at all.
+    device.queue.submit([encoder.finish()]);
+
+    const presentEncoder = device.createCommandEncoder({ label: "present" });
+    const pass = presentEncoder.beginRenderPass({
       colorAttachments: [{
         view: swapView,
         clearValue: { r: 0, g: 0, b: 0, a: 1 },
         loadOp: "clear", storeOp: "store",
       }],
     });
-    pass.setPipeline(this.blackHolePipeline);
-    pass.setBindGroup(0, this.blackHoleBindGroup!);
-    pass.draw(6, 1, 0, 0);
+    const presentPipeline = this.presentPipeline();
+    if (presentPipeline) {
+      pass.setPipeline(presentPipeline);
+      pass.setBindGroup(0, this.blackHoleBindGroup!);
+      pass.draw(6, 1, 0, 0);
+    }
     pass.end();
+    device.queue.submit([presentEncoder.finish()]);
 
-    device.queue.submit([encoder.finish()]);
+    if (frameScoped) gpuDiagnostics.frameScopeEnd(device);
+    if (this.probeAtFrame >= 0 && !this.probeRunning && this.frameCount >= this.probeAtFrame) {
+      this.probeAtFrame = -1;
+      void this.runSanityProbe();
+    }
+  }
+
+  private presentPipeline(): GPURenderPipeline | null {
+    if (!gpuDiagnostics.isBroken(this.blackHolePipeline)) return this.blackHolePipeline;
+    if (!gpuDiagnostics.isBroken(this.presentFallbackPipeline)) return this.presentFallbackPipeline;
+    return null;
+  }
+
+  /** Schedules the one-time render sanity probe (runs after a few frames). */
+  requestSanityProbe(afterFrames = 5): void {
+    this.probeAtFrame = this.frameCount + Math.max(1, afterFrames);
+  }
+
+  /**
+   * Reads back a 3x3 grid of texels from the HDR scene texture and from an
+   * offscreen copy of the final present pass, and reports NaN / Inf / all-zero
+   * / constant results to gpu-diagnostics.
+   */
+  private async runSanityProbe(): Promise<void> {
+    const { device, format } = this.ctx;
+    const scene = this.sceneTexture;
+    const presentPipeline = this.presentPipeline();
+    const result: GpuProbeResult = {
+      frame: this.frameCount,
+      width: this.sceneTextureWidth,
+      height: this.sceneTextureHeight,
+      scene: null,
+      output: null,
+      outputFormat: format,
+      presentPipeline: presentPipeline === this.blackHolePipeline ? "blackhole" : "fallback",
+    };
+    if (!scene || !this.blackHoleBindGroup) {
+      result.error = "scene texture not ready";
+      gpuDiagnostics.recordProbe(result);
+      return;
+    }
+    this.probeRunning = true;
+    const width = this.sceneTextureWidth;
+    const height = this.sceneTextureHeight;
+    const points: Array<[number, number]> = [];
+    for (const fy of [0.2, 0.5, 0.8]) {
+      for (const fx of [0.2, 0.5, 0.8]) {
+        points.push([Math.min(width - 1, Math.floor(width * fx)), Math.min(height - 1, Math.floor(height * fy))]);
+      }
+    }
+    const bytes = points.length * 256;
+    let output: GPUTexture | null = null;
+    const sceneRead = device.createBuffer({ label: "probe-scene-read", size: bytes, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+    const outputRead = device.createBuffer({ label: "probe-output-read", size: bytes, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+    try {
+      output = device.createTexture({
+        label: "probe-present-copy",
+        size: { width, height },
+        format,
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+      });
+      const encoder = device.createCommandEncoder({ label: "sanity-probe" });
+      if (presentPipeline) {
+        const pass = encoder.beginRenderPass({
+          colorAttachments: [{
+            view: output.createView(),
+            clearValue: { r: 0, g: 0, b: 0, a: 1 },
+            loadOp: "clear", storeOp: "store",
+          }],
+        });
+        pass.setPipeline(presentPipeline);
+        pass.setBindGroup(0, this.blackHoleBindGroup);
+        pass.draw(6, 1, 0, 0);
+        pass.end();
+      }
+      points.forEach(([x, y], i) => {
+        encoder.copyTextureToBuffer(
+          { texture: scene, origin: { x, y } },
+          { buffer: sceneRead, offset: i * 256, bytesPerRow: 256 },
+          { width: 1, height: 1 },
+        );
+        encoder.copyTextureToBuffer(
+          { texture: output!, origin: { x, y } },
+          { buffer: outputRead, offset: i * 256, bytesPerRow: 256 },
+          { width: 1, height: 1 },
+        );
+      });
+      device.queue.submit([encoder.finish()]);
+      await Promise.all([sceneRead.mapAsync(GPUMapMode.READ), outputRead.mapAsync(GPUMapMode.READ)]);
+      result.scene = decodeProbeTexels(sceneRead.getMappedRange().slice(0), points.length, SCENE_COLOR_FORMAT);
+      result.output = decodeProbeTexels(outputRead.getMappedRange().slice(0), points.length, format);
+      sceneRead.unmap();
+      outputRead.unmap();
+    } catch (err) {
+      result.error = `probe failed: ${err instanceof Error ? err.message : String(err)}`;
+    } finally {
+      sceneRead.destroy();
+      outputRead.destroy();
+      output?.destroy();
+      this.probeRunning = false;
+    }
+    gpuDiagnostics.recordProbe(result);
   }
 }

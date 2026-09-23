@@ -1,4 +1,5 @@
 import bodySurfaceWGSL from "./body-surface.wgsl?raw";
+import { gpuDiagnostics } from "./gpu-diagnostics";
 import { type SolarSystemModelAsset } from "../catalog/solar-system-models";
 import { type Body } from "../physics/body";
 import { IDENTITY_BODY_ROTATION_BASIS, bodyRotationBasis, type BodyRotationBasis } from "../physics/rotations";
@@ -92,7 +93,7 @@ export class BodySurfaceRenderer {
     });
     device.queue.writeTexture({ texture: this.blackTexture }, new Uint8Array([0, 0, 0, 0]), { bytesPerRow: 4 }, [1, 1, 1]);
 
-    const module = device.createShaderModule({ label: "body-surface", code: bodySurfaceWGSL });
+    const module = gpuDiagnostics.createShaderModule(device, "body-surface", bodySurfaceWGSL);
     const layout = device.createPipelineLayout({ bindGroupLayouts: [this.bgl] });
     const blend: GPUBlendState = {
       color: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" },
@@ -102,7 +103,7 @@ export class BodySurfaceRenderer {
     // Back faces of the bounding box: the ray-traced surface is always in
     // front of them, also when the eye is inside the box.
     const globePrimitive: GPUPrimitiveState = { topology: "triangle-list", cullMode: "front", frontFace: "ccw" };
-    this.globePipeline = device.createRenderPipeline({
+    this.globePipeline = gpuDiagnostics.createRenderPipeline(device, {
       label: "body-surface-globe",
       layout,
       vertex: { module, entryPoint: "vs_globe" },
@@ -110,7 +111,7 @@ export class BodySurfaceRenderer {
       primitive: globePrimitive,
       depthStencil: depthWrite,
     });
-    this.globeDepthPipeline = device.createRenderPipeline({
+    this.globeDepthPipeline = gpuDiagnostics.createRenderPipeline(device, {
       label: "body-surface-globe-depth",
       layout,
       vertex: { module, entryPoint: "vs_globe" },
@@ -118,7 +119,7 @@ export class BodySurfaceRenderer {
       primitive: globePrimitive,
       depthStencil: depthWrite,
     });
-    this.ringPipeline = device.createRenderPipeline({
+    this.ringPipeline = gpuDiagnostics.createRenderPipeline(device, {
       label: "body-surface-ring",
       layout,
       vertex: { module, entryPoint: "vs_ring" },
@@ -126,7 +127,7 @@ export class BodySurfaceRenderer {
       primitive: { topology: "triangle-list", cullMode: "none" },
       depthStencil: depthWrite,
     });
-    this.ringDepthPipeline = device.createRenderPipeline({
+    this.ringDepthPipeline = gpuDiagnostics.createRenderPipeline(device, {
       label: "body-surface-ring-depth",
       layout,
       vertex: { module, entryPoint: "vs_ring" },
@@ -222,8 +223,13 @@ export class BodySurfaceRenderer {
   }
 
   private drawEntries(pass: GPURenderPassEncoder, globe: GPURenderPipeline, ring: GPURenderPipeline, minFade: number): void {
+    // A pipeline that failed to compile would invalidate the whole frame's
+    // command buffer; skip it (reported by gpu-diagnostics).
+    const globeOk = !gpuDiagnostics.isBroken(globe);
+    const ringOk = !gpuDiagnostics.isBroken(ring);
     let bound = false;
     for (const entry of this.entries.values()) {
+      if (!globeOk) break;
       if (!entry.body || entry.fade < minFade) continue;
       if (!bound) {
         pass.setPipeline(globe);
@@ -234,6 +240,7 @@ export class BodySurfaceRenderer {
     }
     let ringBound = false;
     for (const entry of this.entries.values()) {
+      if (!ringOk) break;
       if (!entry.body || entry.fade < minFade || !entry.asset.ringRadiiKm || !entry.auxTexture) continue;
       if (!ringBound) {
         pass.setPipeline(ring);
@@ -380,9 +387,7 @@ export class BodySurfaceRenderer {
   private generateMipmaps(texture: GPUTexture, format: GPUTextureFormat, levels: number): void {
     const device = this.device;
     if (!this.mipShader) {
-      this.mipShader = device.createShaderModule({
-        label: "body-surface-mip",
-        code: `
+      this.mipShader = gpuDiagnostics.createShaderModule(device, "body-surface-mip", `
           @group(0) @binding(0) var src: texture_2d<f32>;
           @group(0) @binding(1) var samp: sampler;
           struct VOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
@@ -396,12 +401,11 @@ export class BodySurfaceRenderer {
           @fragment fn fs(in: VOut) -> @location(0) vec4<f32> {
             return textureSampleLevel(src, samp, in.uv, 0.0);
           }
-        `,
-      });
+        `);
     }
     let pipeline = this.mipPipelines.get(format);
     if (!pipeline) {
-      pipeline = device.createRenderPipeline({
+      pipeline = gpuDiagnostics.createRenderPipeline(device, {
         label: `body-surface-mip-${format}`,
         layout: "auto",
         vertex: { module: this.mipShader, entryPoint: "vs" },

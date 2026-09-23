@@ -3,6 +3,7 @@ import { stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer as createViteServer } from "vite";
+import { handleClientDiagnosticsRequest } from "./client-diagnostics.mjs";
 import { sendAssetFile } from "./compressed-assets.mjs";
 import { handleHealthRequest } from "./health.mjs";
 import { handleHorizonsRequest } from "./horizons.mjs";
@@ -150,6 +151,7 @@ async function handleRequest(req, res) {
   setIsolationHeaders(res);
   if (handleVitePing(req, res)) return;
   if (handleHealthRequest(req, res)) return;
+  if (await handleClientDiagnosticsRequest(req, res)) return;
   if (await handleHorizonsRequest(req, res)) return;
   if (await handleModelAssetRequest(req, res)) return;
   if (await handleObjectInfoRequest(req, res)) return;

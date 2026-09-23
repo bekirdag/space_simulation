@@ -1,4 +1,4 @@
-import { backendFetch, readBackendJson } from "./backend";
+import { BackendUnavailableError, backendFetch, readBackendJson } from "./backend";
 
 /**
  * JPL Horizons snapshot client.
@@ -95,6 +95,8 @@ export interface HorizonsResult {
   warnings: string[];
   source: HorizonsResultSource;
   snapshot: HorizonsSnapshot;
+  /** True when the backend could not be reached and a local fallback was used. */
+  backendUnavailable?: boolean;
 }
 
 export function utcDateStr(d: Date): string { return d.toISOString().slice(0, 10); }
@@ -193,13 +195,37 @@ function backendSource(snapshot: HorizonsSnapshot, requestedDate: string): Horiz
   return status === "network" ? "jpl-network" : "backend-cache";
 }
 
+const DIRECT_HORIZONS_TIMEOUT_MS = 20_000;
+
+/**
+ * One same-origin /api/horizons request that bypasses the health probe. Used
+ * when the probe failed: a slow first connection (e.g. the iPad app's native
+ * proxy doing its first TLS handshake) must not force the offline preset.
+ */
+async function fetchHorizonsDirect(path: string, init: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), DIRECT_HORIZONS_TIMEOUT_MS);
+  try {
+    return await fetch(new URL(path, window.location.origin), { ...init, signal: controller.signal });
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
 async function readBackendCache(dateStr: string, refresh: boolean): Promise<HorizonsResult | null> {
   const params = new URLSearchParams({ date: dateStr });
   if (refresh) params.set("refresh", "1");
 
-  const response = await backendFetch(`/api/horizons?${params}`, {
-    cache: refresh ? "no-store" : "default",
-  });
+  const path = `/api/horizons?${params}`;
+  const init: RequestInit = { cache: refresh ? "no-store" : "default" };
+  let response: Response;
+  try {
+    response = await backendFetch(path, init);
+  } catch (err) {
+    if (!(err instanceof BackendUnavailableError)) throw err;
+    console.warn("CosmosMap backend health probe failed; trying /api/horizons directly once.");
+    response = await fetchHorizonsDirect(path, init);
+  }
   const payload = await readBackendJson<Partial<HorizonsSnapshot> & { message?: string }>(response);
   if (!response.ok) {
     throw new Error(payload.message || `Horizons backend returned HTTP ${response.status}`);
@@ -268,7 +294,7 @@ export async function fetchStatesForDate(
     if (fileCache) {
       onProgress?.(total, total);
       writeBrowserCache(fileCache);
-      return toResult(fileCache, "file-cache");
+      return { ...toResult(fileCache, "file-cache"), backendUnavailable: true };
     }
   }
 
@@ -276,8 +302,19 @@ export async function fetchStatesForDate(
   if (cached) {
     console.warn(`Using cached Horizons positions from ${cached.snapshot.date}.`);
     onProgress?.(total, total);
-    return toResult(cached.snapshot, "stale-cache");
+    return { ...toResult(cached.snapshot, "stale-cache"), backendUnavailable: true };
   }
 
   throw new Error("No Horizons cache is available and the CosmosMap backend could not provide one.");
+}
+
+/**
+ * Backend-only fetch (no file/browser-cache fallbacks); throws when the
+ * backend cannot provide a snapshot. Used to upgrade from an offline/stale
+ * fallback once the backend becomes reachable.
+ */
+export async function fetchBackendStatesForDate(dateStr: string): Promise<HorizonsResult> {
+  const result = await readBackendCache(dateStr, false);
+  if (!result) throw new Error("Horizons backend returned no snapshot");
+  return result;
 }

@@ -191,6 +191,8 @@ fn vs_main(
 @fragment
 fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   let d = length(in.uv);
+  // Derivatives before any discard (WebKit: discard_fragment() ends the lane).
+  let edgeAa = clamp(fwidth(d), 0.0015, 0.035);
   if d > 1.0 { discard; }
 
   // ── Crisp galaxy impostor profile ────────────────────────────────────────
@@ -202,7 +204,6 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   //   Nucleus:  very tight, models the galactic bulge / AGN
   //   Disk:     bounded stellar disk without the old soft outer blur
   let d2      = d * d;
-  let edgeAa = clamp(fwidth(d), 0.0015, 0.035);
   let edge = 1.0 - smoothstep(0.86 - edgeAa, 0.86 + edgeAa, d);
   let nucleus = exp(-d2 * 58.0);           // tight bulge
   let disk    = exp(-d2 * 5.6) * edge;     // bounded stellar disk

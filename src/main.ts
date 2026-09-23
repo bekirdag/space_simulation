@@ -18,7 +18,13 @@ import {
   type GalacticOriginState,
 } from "./physics/galactic-frame";
 import { createSecondaryBody, SYSTEM_VIEW } from "./physics/moons";
-import { fetchStatesForDate, utcDateStr, dateStrToMs, TOTAL_BODIES } from "./services/horizons";
+import {
+  fetchBackendStatesForDate,
+  fetchStatesForDate,
+  utcDateStr,
+  dateStrToMs,
+  TOTAL_BODIES,
+} from "./services/horizons";
 import { type Body } from "./physics/body";
 import { type HorizonsResult } from "./services/horizons";
 import { SECONDS_PER_YEAR, MAX_SUBSTEP_YR, BodyType } from "./physics/constants";
@@ -99,6 +105,7 @@ import sagaBlackHoleUrl from "./img/saga.jpg?url";
 import { attachTouchControls } from "./scene/touch-controls";
 import { AdaptiveQuality, loadQualityMode, saveQualityMode, type QualityMode } from "./gpu/quality";
 import { logNativeEvent } from "./ui/native-analytics";
+import { gpuDiagnostics } from "./gpu/gpu-diagnostics";
 import {
   DOUBLE_TAP_MS, DOUBLE_TAP_SLOP_PX, hasTouchInput, isCoarsePointer, isEmbeddedNativeApp, isSyntheticMouseEvent,
 } from "./ui/input-mode";
@@ -1309,6 +1316,7 @@ async function main(): Promise<void> {
     gpu = await initGPU(canvas);
   } catch (e) {
     console.error(e);
+    gpuDiagnostics.initFailure(e instanceof Error ? e.message : String(e));
     if ((window as { CosmosMapNative?: unknown }).CosmosMapNative) {
       // The browser-download advice in the default overlay makes no sense inside the iPad app.
       showFatalError(
@@ -1345,6 +1353,7 @@ async function main(): Promise<void> {
       renderDprCap = params.dprCap;
       resizeCanvas();
       renderer.setQuality(params);
+      gpuDiagnostics.setContext("quality", level);
       if (qualityStatus) qualityStatus.textContent = quality?.mode === "auto" ? level : "";
     },
   );
@@ -1354,6 +1363,8 @@ async function main(): Promise<void> {
     renderDprCap = params.dprCap;
     resizeCanvas();
     renderer.setQuality(params);
+    gpuDiagnostics.setContext("quality", quality.level);
+    gpuDiagnostics.setContext("qualityMode", quality.mode);
     if (qualityStatus) qualityStatus.textContent = quality.mode === "auto" ? quality.level : "";
     const radio = document.querySelector<HTMLInputElement>(`input[name="quality"][value="${quality.mode}"]`);
     if (radio) radio.checked = true;
@@ -1655,49 +1666,114 @@ async function main(): Promise<void> {
   }
 
   // ── Load ephemeris from Horizons (or fall back to J2000.0) ────────────────
+  // Bumped by every loadEphemeris() call; a background backend upgrade only
+  // applies if no newer date was requested meanwhile.
+  let ephemerisRequestSeq = 0;
+  let backendUpgradeTimer: number | null = null;
+  let pendingBackendUpgrade: { dateStr: string; seq: number; attempt: number } | null = null;
+  const BACKEND_UPGRADE_DELAYS_MS = [4_000, 10_000, 20_000, 45_000, 90_000, 180_000, 300_000];
+  const BACKEND_UPGRADE_MAX_ATTEMPTS = 40;
+
+  function cancelBackendUpgrade(): void {
+    if (backendUpgradeTimer !== null) window.clearTimeout(backendUpgradeTimer);
+    backendUpgradeTimer = null;
+    pendingBackendUpgrade = null;
+  }
+
+  /**
+   * The ephemeris came from the offline J2000 preset or a stale cache because
+   * the backend was unreachable: keep retrying the backend in the background
+   * and switch to real Horizons data as soon as it answers (no reload needed).
+   */
+  function scheduleBackendUpgrade(dateStr: string, seq: number, attempt = 0, delayMs?: number): void {
+    if (attempt >= BACKEND_UPGRADE_MAX_ATTEMPTS) return;
+    if (backendUpgradeTimer !== null) window.clearTimeout(backendUpgradeTimer);
+    pendingBackendUpgrade = { dateStr, seq, attempt };
+    const wait = delayMs ?? BACKEND_UPGRADE_DELAYS_MS[Math.min(attempt, BACKEND_UPGRADE_DELAYS_MS.length - 1)]!;
+    backendUpgradeTimer = window.setTimeout(() => {
+      backendUpgradeTimer = null;
+      void attemptBackendUpgrade(dateStr, seq, attempt);
+    }, wait);
+  }
+
+  async function attemptBackendUpgrade(dateStr: string, seq: number, attempt: number): Promise<void> {
+    if (seq !== ephemerisRequestSeq) return;
+    if (document.hidden || navigator.onLine === false) {
+      // Try again later without counting the attempt.
+      scheduleBackendUpgrade(dateStr, seq, attempt);
+      return;
+    }
+    let result: HorizonsResult;
+    try {
+      result = await fetchBackendStatesForDate(dateStr);
+    } catch (err) {
+      if (seq === ephemerisRequestSeq) scheduleBackendUpgrade(dateStr, seq, attempt + 1);
+      console.info(`Horizons backend still unavailable (attempt ${attempt + 1}):`, err);
+      return;
+    }
+    if (seq !== ephemerisRequestSeq) return;
+    pendingBackendUpgrade = null;
+    applyEphemerisResult(result, dateStr);
+    console.info(`CosmosMap backend reachable: switched to ${result.source} Horizons data for ${dateStr}.`);
+  }
+
+  window.addEventListener("online", () => {
+    const pending = pendingBackendUpgrade;
+    if (pending) scheduleBackendUpgrade(pending.dateStr, pending.seq, pending.attempt, 1_000);
+  });
+
+  function applyEphemerisResult(result: HorizonsResult, dateStr: string): void {
+    applyHorizons(bodies, result);
+    hud.epochMs = result.epochMs;
+    galacticOrigin = createGalacticOriginState(result.epochMs);
+    simYears = 0;
+    loadTextEl.textContent = `Calculating ${STARTUP_TRAIL_YEARS} years of starter trails...`;
+    setLoadProg(STARTUP_TRAIL_BODIES.size, STARTUP_TRAIL_BODIES.size, "bodies");
+    renderer.resetTrailSlots();
+    seedStartupTrails(trails, bodies, galacticOrigin);
+
+    // ── Advance from UTC midnight to the current second ──────────────────
+    // Horizons positions are at 00:00:00 UTC of dateStr.  Simulate forward
+    // so the displayed time and body positions match right now.
+    // At most 86 400 s ÷ 900 s/step = 96 steps — completes in milliseconds.
+    const elapsedMs = Date.now() - result.epochMs;
+    if (elapsedMs > 0 && elapsedMs < 86_400_000) {
+      loadTextEl.textContent = 'Advancing to current time of day…';
+      const elapsedYr = elapsedMs / 1000 / SECONDS_PER_YEAR;
+      const nSteps    = Math.ceil(elapsedYr / MAX_SUBSTEP_YR);
+      for (let i = 0; i < nSteps; i++) {
+        const dt = Math.min(MAX_SUBSTEP_YR, elapsedYr - i * MAX_SUBSTEP_YR);
+        stepSimulationState(bodies, galacticOrigin, dt);
+        simYears += dt;
+      }
+      trails.record(bodies);
+    }
+
+    uploadBodiesForSimulation();
+
+    sourceEl.textContent = horizonsSourceLabel(result, dateStr);
+    if (result.warnings.length) console.warn("Horizons fallbacks:", result.warnings);
+    const sun = bodies.find(b => b.name === "Sun");
+    if (sun) {
+      console.info("Sun SSB vector", {
+        positionAu: [sun.x, sun.y, sun.z],
+        velocityAuYr: [sun.vx, sun.vy, sun.vz],
+        galacticSpeedKmS: galacticSpeedKmS(galacticOrigin),
+        horizonsSource: result.source,
+      });
+    }
+  }
+
   async function loadEphemeris(dateStr: string, msg: string, hideWhenDone = true): Promise<boolean> {
+    const seq = ++ephemerisRequestSeq;
+    cancelBackendUpgrade();
     showLoading(msg);
     try {
       const result = await fetchStatesForDate(dateStr, (n, t) => setLoadProg(n, t, "bodies"));
-      applyHorizons(bodies, result);
-      hud.epochMs = result.epochMs;
-      galacticOrigin = createGalacticOriginState(result.epochMs);
-      simYears = 0;
-      loadTextEl.textContent = `Calculating ${STARTUP_TRAIL_YEARS} years of starter trails...`;
-      setLoadProg(STARTUP_TRAIL_BODIES.size, STARTUP_TRAIL_BODIES.size, "bodies");
-      renderer.resetTrailSlots();
-      seedStartupTrails(trails, bodies, galacticOrigin);
-
-      // ── Advance from UTC midnight to the current second ──────────────────
-      // Horizons positions are at 00:00:00 UTC of dateStr.  Simulate forward
-      // so the displayed time and body positions match right now.
-      // At most 86 400 s ÷ 900 s/step = 96 steps — completes in milliseconds.
-      const elapsedMs = Date.now() - result.epochMs;
-      if (elapsedMs > 0 && elapsedMs < 86_400_000) {
-        loadTextEl.textContent = 'Advancing to current time of day…';
-        const elapsedYr = elapsedMs / 1000 / SECONDS_PER_YEAR;
-        const nSteps    = Math.ceil(elapsedYr / MAX_SUBSTEP_YR);
-        for (let i = 0; i < nSteps; i++) {
-          const dt = Math.min(MAX_SUBSTEP_YR, elapsedYr - i * MAX_SUBSTEP_YR);
-          stepSimulationState(bodies, galacticOrigin, dt);
-          simYears += dt;
-        }
-        trails.record(bodies);
-      }
-
-      uploadBodiesForSimulation();
-
-      sourceEl.textContent = horizonsSourceLabel(result, dateStr);
-      if (result.warnings.length) console.warn("Horizons fallbacks:", result.warnings);
-      const sun = bodies.find(b => b.name === "Sun");
-      if (sun) {
-        console.info("Sun SSB vector", {
-          positionAu: [sun.x, sun.y, sun.z],
-          velocityAuYr: [sun.vx, sun.vy, sun.vz],
-          galacticSpeedKmS: galacticSpeedKmS(galacticOrigin),
-          horizonsSource: result.source,
-        });
-      }
+      if (seq !== ephemerisRequestSeq) return false;
+      applyEphemerisResult(result, dateStr);
+      // A same-day file cache is already exact; only upgrade stale fallbacks.
+      if (result.backendUnavailable && result.source === "stale-cache") scheduleBackendUpgrade(dateStr, seq);
       if (hideWhenDone) hideLoading();
       return true;
     } catch (err) {
@@ -1709,6 +1785,7 @@ async function main(): Promise<void> {
       seedStartupTrails(trails, bodies, galacticOrigin);
       uploadBodiesForSimulation();
       sourceEl.textContent = `J2000.0 preset (offline)`;
+      if (seq === ephemerisRequestSeq) scheduleBackendUpgrade(dateStr, seq);
       if (hideWhenDone) hideLoading();
       return false;
     }
@@ -3184,6 +3261,9 @@ async function main(): Promise<void> {
   }
 
   requestAnimationFrame(frame);
+  // One-time render sanity probe (gpu-diagnostics) once the populated scene
+  // has been drawn for a few frames.
+  renderer.requestSanityProbe(8);
   if (startupLoading) {
     requestAnimationFrame(() => {
       startupLoading = false;
