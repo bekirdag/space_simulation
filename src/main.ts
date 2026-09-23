@@ -61,7 +61,7 @@ import {
   type GalaxyBuffer,
   type NamedGalaxy,
 } from "./catalog/galaxies";
-import { galaxyModelFocusDistance, galaxyTextureModels } from "./catalog/galaxy-models";
+import { galaxyModelFocusDistance, galaxyTextureModels, nearestGalaxyDiskOccluder } from "./catalog/galaxy-models";
 import { SOLAR_SYSTEM_MODEL_ASSETS } from "./catalog/solar-system-models";
 import {
   MILKY_WAY_MODEL_OBJECTS,
@@ -79,6 +79,7 @@ import {
   loadDustMap,
 } from "./catalog/dust";
 import { NEARBY_STAR_LABELS, SGR_A_STAR_POS, type NearbyStarLabel } from "./catalog/nearby-stars";
+import { AU_PER_KPC } from "./catalog/scale";
 import { sortIntoOctants, type OctantRange } from "./gpu/sky-cull";
 import {
   constellationsToSearchResults,
@@ -140,12 +141,14 @@ const KNOWN_GALAXY_ALIASES: Record<string, readonly string[]> = {
   "m104": ["sombrero galaxy"],
   "m87": ["virgo a"],
 };
-const GENERIC_GALAXY_CLOSE_FOCUS_AU = 220;
+// Catalog-galaxy close-up distances at the shared 80 000 AU/kpc scale (scale.ts).
+const GENERIC_GALAXY_CLOSE_FOCUS_AU = 2_200;
+const GENERIC_GALAXY_CLOSE_EXPAND_AU = 9_000; // matches galaxy.wgsl closeFocus smoothstep
 const LIGHT_YEARS_PER_PARSEC = 3.26156;
 const SELECTED_NEARBY_STAR_SCREEN_WIDTH_FRACTION = 0.50;
 const CAMERA_FOV_Y = Math.PI / 4; // keep in sync with src/scene/camera.ts
 const CAMERA_NEAR_AU = 1e-8; // keep in sync with src/scene/camera.ts
-const CAMERA_FAR_AU = 50_000_000; // keep in sync with src/scene/camera.ts
+const CAMERA_FAR_AU = 500_000_000; // keep in sync with src/scene/camera.ts
 const MAP_WHEEL_ZOOM_STEPS = 10;
 const MAP_DOUBLE_CLICK_TRAVEL_SECONDS = 2.5;
 const MAP_TARGET_LOCK_BOX_PX = 10;
@@ -204,6 +207,9 @@ interface NasaObjectInfo {
   sourceUrl?: string | null;
   wikipediaUrl?: string | null;
   provider?: string;
+  /** false when no encyclopedia article could be verified (local data only). */
+  resolved?: boolean;
+  resolvedPage?: string | null;
   cacheHit?: boolean;
   stale?: boolean;
   warning?: string;
@@ -495,6 +501,24 @@ async function main(): Promise<void> {
   const objectInfoImage = document.getElementById("object-info-image") as HTMLImageElement;
   const objectInfoImageCredit = document.getElementById("object-info-image-credit") as HTMLAnchorElement;
 
+  function showFatalError(title: string, message: string): void {
+    const heading = errorOverlay.querySelector("h1");
+    const body = errorOverlay.querySelector("p");
+    if (heading) heading.textContent = title;
+    if (body) {
+      body.textContent = message + " ";
+      const reload = document.createElement("a");
+      reload.href = "#";
+      reload.textContent = "Reload";
+      reload.addEventListener("click", (event) => {
+        event.preventDefault();
+        location.reload();
+      });
+      body.appendChild(reload);
+    }
+    errorOverlay.classList.add("visible");
+  }
+
   let currentFocusInfo: FocusInfo | null = null;
   let objectInfoRequestSeq = 0;
 
@@ -610,15 +634,95 @@ async function main(): Promise<void> {
     showObjectInfoModal(false);
   }
 
+  // Labels used for unnamed catalog entries: never looked up on Wikipedia
+  // (mirrors GENERIC_OBJECT_NAMES in server/object-info.mjs).
+  const GENERIC_OBJECT_INFO_TITLES = new Set([
+    "mapped star", "milky way star", "visible star", "catalog star", "unnamed star",
+    "star", "star a", "star b", "galaxy", "unnamed galaxy", "nebula", "object",
+  ]);
+
+  function isGenericObjectInfoTitle(title: string): boolean {
+    const key = title.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    return !key || GENERIC_OBJECT_INFO_TITLES.has(key) || /^(?:galaxy|star|nebula) \d+$/.test(key);
+  }
+
+  /** The selected catalog hit behind the focus title, when there is one. */
+  function objectInfoCatalogHit(focus: FocusInfo): StarSearchResult | null {
+    const hit = nav.selectedCatalogStar;
+    return hit && hit.label === focus.title ? hit : null;
+  }
+
+  function objectInfoCatalogEntryLabel(hit: StarSearchResult | null): string {
+    if (!hit) return "";
+    const index = hit.id.match(/^(visible-star|mw-star|galaxy-?)[:-]?(\d+)$/);
+    if (index?.[1] === "visible-star") return `CosmosMap visible-star catalog entry #${index[2]}`;
+    if (index?.[1] === "mw-star") return `CosmosMap Milky Way star-field entry #${index[2]}`;
+    return `CosmosMap catalog ID ${hit.id}`;
+  }
+
+  /** Local-only description: type, distance and catalog facts, no external text. */
+  function localObjectInfoDescription(focus: FocusInfo, hit: StarSearchResult | null): string {
+    const type = normalizeObjectInfoText(focus.objectType) || "object";
+    const article = /^[aeiou]/i.test(type) ? "an" : "a";
+    const sentences: string[] = [];
+    sentences.push(isGenericObjectInfoTitle(focus.title)
+      ? `An unnamed ${type} from CosmosMap's rendered catalog data.`
+      : `${focus.title} is shown in CosmosMap as ${article} ${type}.`);
+    const entry = objectInfoCatalogEntryLabel(hit);
+    if (entry) sentences.push(`${entry}.`);
+    const subtitle = normalizeObjectInfoText(focus.subtitle);
+    if (subtitle) sentences.push(`Catalog data: ${subtitle}.`);
+    if (hit?.spectralType) sentences.push(`Spectral type: ${hit.spectralType}.`);
+    if (hit?.temperatureK) sentences.push(`Effective temperature: about ${Math.round(hit.temperatureK).toLocaleString()} K.`);
+    if (hit?.radiusSolar && Number.isFinite(hit.radiusSolar)) {
+      sentences.push(`Estimated radius: ${hit.radiusSolar.toPrecision(hit.radiusSolar < 10 ? 2 : 3)} R☉.`);
+    }
+    if (hit?.starType) sentences.push(`Rendered with the ${hit.starType.replace(/-/g, " ")} model.`);
+    sentences.push("No encyclopedia article is linked to this object, so only local catalog data is shown.");
+    return sentences.join(" ");
+  }
+
+  function localObjectInfo(focus: FocusInfo, hit: StarSearchResult | null): NasaObjectInfo {
+    return {
+      title: focus.title,
+      objectType: focus.objectType,
+      description: localObjectInfoDescription(focus, hit),
+      imageUrl: null,
+      sourceTitle: "CosmosMap catalog data",
+      sourceUrl: null,
+      wikipediaUrl: null,
+      provider: "CosmosMap",
+      resolved: false,
+    };
+  }
+
+  /**
+   * Catalog-derived lookup hints for /api/object-info: 3D model variants map to
+   * the base object of their model group ("Cassiopeia A Green Monster" ->
+   * "Cassiopeia A") and send their aliases.
+   */
+  function objectInfoLookupHints(focus: FocusInfo, hit: StarSearchResult | null): { page: string; aliases: string[] } {
+    const model = (hit?.id.startsWith("mwmodel:") ? milkyWayModelById(hit.id) : undefined) ??
+      (focus.objectType === "3D model" ? MILKY_WAY_MODEL_OBJECTS.find(item => item.name === focus.title) : undefined);
+    if (!model) return { page: "", aliases: [] };
+    const base = MILKY_WAY_MODEL_OBJECTS.find(item => item.id === model.modelGroup) ?? model;
+    return { page: base.name, aliases: [...new Set([...model.aliases, ...base.aliases])] };
+  }
+
   function renderObjectInfo(info: NasaObjectInfo, focus: FocusInfo): void {
     setObjectInfoLoading(false);
+    const hit = objectInfoCatalogHit(focus);
+    if (info.resolved === false && !info.error) info = { ...info, ...localObjectInfo(focus, hit) };
     objectInfoTitle.textContent = info.title || focus.title;
     objectInfoType.textContent = info.objectType || focus.objectType;
     objectInfoDescription.textContent = info.description || "No description was returned for this object.";
     setObjectInfoImage(info.imageUrl, info);
 
-    objectInfoSource.href = info.wikipediaUrl || info.sourceUrl || "https://en.wikipedia.org/";
-    objectInfoSource.textContent = objectInfoSourceText(info);
+    const sourceHref = info.resolved === false ? null : info.wikipediaUrl || info.sourceUrl;
+    if (sourceHref) objectInfoSource.href = sourceHref;
+    else objectInfoSource.removeAttribute("href");
+    // Local-only records have no external source to link to.
+    objectInfoSource.textContent = info.resolved === false ? "" : objectInfoSourceText(info);
 
     if (info.error) {
       setObjectInfoStatus("Object lookup failed.", true);
@@ -637,11 +741,22 @@ async function main(): Promise<void> {
     setObjectInfoLoading(true);
     showObjectInfoModal(true);
 
+    const hit = objectInfoCatalogHit(focus);
+    // Generic hits ("Mapped star", "Milky Way star", unnamed galaxies) have no
+    // encyclopedia article: show local catalog data without a lookup.
+    if (isGenericObjectInfoTitle(focus.title)) {
+      renderObjectInfo(localObjectInfo(focus, hit), focus);
+      return;
+    }
+
     const params = new URLSearchParams({
       title: focus.title,
       type: focus.objectType,
     });
     if (focus.subtitle) params.set("subtitle", focus.subtitle);
+    const hints = objectInfoLookupHints(focus, hit);
+    if (hints.page) params.set("page", hints.page);
+    if (hints.aliases.length) params.set("aliases", hints.aliases.join("|"));
 
     try {
       const response = await backendFetch(`/api/object-info?${params}`);
@@ -1168,6 +1283,13 @@ async function main(): Promise<void> {
     loadingEl.classList.add("gone");
     return;
   }
+  gpu.ctx.device.lost.then((info) => {
+    if (info.reason === "destroyed") return;
+    showFatalError(
+      "Graphics device lost",
+      `The GPU stopped responding (${info.message || "unknown reason"}). Reload the page to restart the simulation.`,
+    );
+  });
 
   const renderer = new Renderer(gpu.ctx, gpu.canvasCtx);
   renderer.init(MAX_BODIES, MAX_CATALOG_STARS, MAX_CATALOG_GALAXIES);
@@ -1829,7 +1951,7 @@ async function main(): Promise<void> {
   function frameCurrentView(): void {
     const focusedName = nav.focusedBodyName;
     if (focusedName) {
-      nav.travelToSystem(focusedName);
+      nav.travelToSystem(focusedName, false);
       return;
     }
 
@@ -2019,7 +2141,11 @@ async function main(): Promise<void> {
 
   function galaxyApparentRadiusPx(sizeMult: number, alpha: number, cameraDistance: number): number {
     const catalogRadius = MAP_TARGET_LOCK_MIN_RADIUS_PX * Math.max(sizeMult * 2.5, 0.8);
-    const t = clamp((900 - cameraDistance) / (900 - GENERIC_GALAXY_CLOSE_FOCUS_AU), 0, 1);
+    const t = clamp(
+      (GENERIC_GALAXY_CLOSE_EXPAND_AU - cameraDistance) / (GENERIC_GALAXY_CLOSE_EXPAND_AU - GENERIC_GALAXY_CLOSE_FOCUS_AU),
+      0,
+      1,
+    );
     const closeFocus = t * t * (3 - 2 * t);
     const closeRadius = closeFocus * window.innerHeight * 0.25;
     const alphaLift = clamp(alpha * 6, 0, 8);
@@ -2224,6 +2350,9 @@ async function main(): Promise<void> {
         id: `visible-star:${i}`,
         label: "Mapped star",
         subtitle: `${distancePc.toFixed(distancePc < 20 ? 1 : 0)} pc · ${distanceLy.toFixed(distanceLy < 50 ? 1 : 0)} ly`,
+        // Without this the nav falls back to "exoplanet host star" for any
+        // unprefixed id, which the info box would then report.
+        objectType: "star",
         x, y, z,
         focusDistance: starFocusDistance(visibleStarBuffer[o + 3]!),
         color: [
@@ -2273,7 +2402,7 @@ async function main(): Promise<void> {
           milkyWayStarBuffer[o + 5]!,
           milkyWayStarBuffer[o + 6]!,
         ];
-        const distanceKpc = Math.hypot(x, y, z) / 8_000;
+        const distanceKpc = Math.hypot(x, y, z) / AU_PER_KPC;
         const radiusSolar = radiusAU / SOLAR_RADIUS_AU;
         const hit: StarSearchResult = {
           id: `mw-star:${i}`,
@@ -2678,7 +2807,21 @@ async function main(): Promise<void> {
   // ── Render loop ───────────────────────────────────────────────────────────
   let lastTime = performance.now();
 
+  let frameErrorCount = 0;
   function frame(now: number): void {
+    // Schedule first so one exception cannot silently stop the render loop.
+    requestAnimationFrame(frame);
+    try {
+      renderFrame(now);
+    } catch (error) {
+      frameErrorCount++;
+      if (frameErrorCount === 1 || frameErrorCount % 600 === 0) {
+        console.error(`Frame failed (${frameErrorCount} total):`, error);
+      }
+    }
+  }
+
+  function renderFrame(now: number): void {
     const wallDt = Math.min((now - lastTime) / 1000, 0.05);
     lastTime = now;
     hud.recordFrame(wallDt);
@@ -2763,8 +2906,10 @@ async function main(): Promise<void> {
     // so cursor-zoom is re-enabled for free exploration.
     // Uses camera.distance (NOT target-to-body distance, which is always ~0
     // because updateFocusedBody() keeps target pinned to the body every frame).
+    // Only while tracking and not mid-flight/mid-wheel-goal: camera.distance is
+    // then the distance to the body, not to an unrelated previous target.
     const currentFocus = nav.focusedBodyName;
-    if (currentFocus) {
+    if (currentFocus && nav.isTrackingFocusedBody && !camera.isTravelling && !camera.hasWheelZoomGoal) {
       const systemDist = SYSTEM_VIEW[currentFocus] ?? 0.05;
       if (camera.distance > systemDist * 10) {
         nav.clearFocusedBody(); // releases lockTarget, re-enables cursor-zoom
@@ -2774,7 +2919,8 @@ async function main(): Promise<void> {
     // AUTO-SNAP: when cursor-zoom brings camera target near a planet AND
     // the camera distance is already close enough to that planet's vicinity
     // (prevents false snap when traversing through a planet's zone en-route elsewhere).
-    if (!camera.lockTarget) {
+    // Never steal an explicit (single-click) body selection.
+    if (!camera.lockTarget && !nav.focusedBodyName) {
       for (const b of bodies) {
         if (b.type !== BodyType.Planet && b.type !== BodyType.DwarfPlanet) continue;
         const systemDist  = SYSTEM_VIEW[b.name] ?? 0.05;
@@ -2786,7 +2932,7 @@ async function main(): Promise<void> {
           autoSnapSuppressedBodyName = null;
         }
         if (distToBody < snapTargetD && camera.distance < snapCameraD) {
-          nav.travelToSystem(b.name); // snaps to correct orbit showing all moons
+          nav.travelToSystem(b.name, false); // snaps to correct orbit showing all moons (keeps view angle)
           break;
         }
       }
@@ -2882,6 +3028,8 @@ async function main(): Promise<void> {
     const selectedGalaxyId = sel?.id.startsWith("galaxy:")
       ? sel.id.slice("galaxy:".length)
       : null;
+    // Close to a textured galaxy, labels of galaxies behind its disk are hidden.
+    const galaxyOccluder = showGalaxies ? nearestGalaxyDiskOccluder(camUniforms.eye) : null;
     const milkyWayLabelOpacity = labels.updateMilkyWayLabel(
       SGR_A_STAR_POS,
       camUniforms.viewProj,
@@ -2891,6 +3039,7 @@ async function main(): Promise<void> {
       focusMilkyWay,
       selectedGalaxyId === "milky-way",
       camUniforms,
+      galaxyOccluder,
     );
     labels.updateGalaxyNameLabels(
       LOCAL_GROUP_GALAXY_LABELS,
@@ -2901,6 +3050,7 @@ async function main(): Promise<void> {
       focusGalaxyLabel,
       selectedGalaxyId,
       camUniforms,
+      galaxyOccluder,
     );
     const sgrASelected = nav.selectedCatalogStar?.id === "blackhole:sgr-a";
     labels.updateGalacticCenterLabel(SGR_A_STAR_POS, camUniforms.viewProj, () => {
@@ -2926,8 +3076,6 @@ async function main(): Promise<void> {
     labels.updateLockTargetReticle(lockTarget, camUniforms.viewProj, camUniforms);
     hud.galacticSpeedKms = galacticSpeedKmS(galacticOrigin);
     hud.update(bodies.length, simYears);
-
-    requestAnimationFrame(frame);
   }
 
   requestAnimationFrame(frame);

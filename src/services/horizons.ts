@@ -169,7 +169,7 @@ function writeBrowserCache(snapshot: HorizonsSnapshot): void {
 
 async function readFileCache(dateStr: string): Promise<HorizonsSnapshot | null> {
   try {
-    const resp = await fetch(`${PUBLIC_CACHE_BASE_URL}/${dateStr}.json`, { cache: "force-cache" });
+    const resp = await fetch(`${PUBLIC_CACHE_BASE_URL}/${dateStr}.json`, { cache: "no-cache" });
     if (!resp.ok) return null;
     return normalizeSnapshot(await resp.json() as Partial<HorizonsSnapshot>, dateStr);
   } catch { return null; }

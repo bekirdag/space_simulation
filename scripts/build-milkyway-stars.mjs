@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Generates 200k Milky Way background stars for the galaxy-scale LOD layer.
 // Positions are distributed with a realistic density model (disk + bulge + spiral arms),
-// converted from galactocentric galactic → heliocentric ecliptic J2000 at 8000 AU/kpc.
+// converted from galactocentric galactic → heliocentric ecliptic J2000 at the
+// shared 80 000 AU/kpc visual scale (src/catalog/scale.ts; 80 AU/pc like the star catalog).
 //
 // Output: public/data/milkyway-stars.bin
 //         200 000 × 8 floats × 4 bytes = 6.4 MB
@@ -17,20 +18,28 @@ const OUT   = path.join(__dir, "../public/data/milkyway-stars.bin");
 mkdirSync(path.dirname(OUT), { recursive: true });
 
 const N_STARS    = 200_000;
-const KPC_TO_AU  = 8_000;   // 8 000 AU per kpc → galaxy diameter 30 kpc = 240 000 AU
-const R_SUN      = 8.5;     // kpc, Sun's galactocentric radius
+const KPC_TO_AU  = 80_000;  // 80 AU/pc (src/catalog/scale.ts) → galaxy diameter 32 kpc ≈ 2.56 M AU
+const R_SUN      = 8.178;   // kpc, Sun's galactocentric radius (GRAVITY 2019, = scale.ts)
 const SOLAR_RADIUS_AU = 0.00465047;
+const GC_CLEAR_RADIUS_KPC = 0.0003; // 0.3 visual pc = 24 AU around Sgr A*
 
 // ── Galactic → Ecliptic J2000 rotation matrix ───────────────────────────────
-// Computed from the Hipparcos/ICRS galactic→equatorial matrix (R^T) composed
-// with the equatorial→ecliptic rotation (ε = 23.4393°).
-// Verified: galactic center (1,0,0)_gal → (λ=266.8°, β=-5.5°)_ecl  ✓
-//           N galactic pole  (0,0,1)_gal → β=+29.8°  ✓
-const R = [
-  [-0.054876,  0.494109, -0.867666],
-  [-0.993911, -0.111106, -0.000312],
-  [-0.096390,  0.862326,  0.497159],
+// Same construction as GALACTIC_TO_ECLIPTIC in src/catalog/scale.ts: the
+// Hipparcos ICRS→galactic matrix transposed, then rotated equatorial→ecliptic
+// (ε = 23.4392911°). Galactic (1,0,0) → RA 266.405°, Dec −28.936° (= Sgr A*
+// label position), N galactic pole (0,0,1) → β=+29.8°.
+const ICRS_TO_GAL = [
+  [-0.0548755604162154, -0.8734370902348850, -0.4838350155487132],
+  [+0.4941094278755837, -0.4448296299600112, +0.7469822444972189],
+  [-0.8676661490190047, -0.1980763734312015, +0.4559837761750669],
 ];
+const EPS = 23.4392911 * Math.PI / 180;
+const R = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+for (let j = 0; j < 3; j++) {
+  const [x, y, z] = ICRS_TO_GAL[j];
+  const ecl = [x, y * Math.cos(EPS) + z * Math.sin(EPS), -y * Math.sin(EPS) + z * Math.cos(EPS)];
+  for (let i = 0; i < 3; i++) R[i][j] = ecl[i];
+}
 
 function galToEcl(xg, yg, zg) {
   return [
@@ -180,7 +189,12 @@ while (i < N_STARS) {
     if (rbulge > 4.0) continue;
   }
 
-  // Heliocentric galactic (Sun at (-8.5, 0, 0) galactocentric):
+  // Keep the Sgr A* neighbourhood clear. Star spacing is compressed (80 AU/pc)
+  // while the black hole is drawn at physical size, so a random star within a
+  // few visual AU lands inside the rendered accretion disk (~10 AU across).
+  if (Math.sqrt(xgc*xgc + ygc*ygc + zgc*zgc) < GC_CLEAR_RADIUS_KPC) continue;
+
+  // Heliocentric galactic (Sun at (-R_SUN, 0, 0) galactocentric):
   const xh = xgc - (-R_SUN); // = xgc + R_SUN
   const yh = ygc;
   const zh = zgc;
@@ -232,4 +246,8 @@ for (let j = 0; j < N_STARS; j++) {
   if (Math.abs(zg) < 0.5) nearPlane++;
 }
 console.log(`Stars within b<~3° of galactic plane: ${Math.round(nearPlane/N_STARS*100)}% (expect ~75–85%)`);
-console.log(`Stars in bulge region (< 1 AU from origin): ${nearBulge}`);
+console.log(`Stars within 1 AU of origin (should be 0): ${nearBulge}`);
+{
+  const gc = [R[0][0] * R_SUN * KPC_TO_AU, R[1][0] * R_SUN * KPC_TO_AU, R[2][0] * R_SUN * KPC_TO_AU];
+  console.log(`Galactic centre (Sgr A*) world AU: ${gc.map(v => v.toFixed(1)).join(", ")}`);
+}

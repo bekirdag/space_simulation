@@ -34,16 +34,31 @@ const GRID_SCALE = readGridScale();
 const OUT_W = BASE_OUT_W * GRID_SCALE;
 const OUT_H = BASE_OUT_H * GRID_SCALE;
 const DUST_FLOATS = 8;
-const MW_KPC_AU = 8_000;
-const SUN_GALACTIC_RADIUS_KPC = 8.5;
+// Shared visual scale / R0 — keep in sync with src/catalog/scale.ts. The runtime
+// (src/catalog/dust.ts) only uses the normalized direction of each cell.
+const MW_KPC_AU = 80_000;
+const SUN_GALACTIC_RADIUS_KPC = 8.178;
 const SHELL_RADIUS_AU = MW_KPC_AU * SUN_GALACTIC_RADIUS_KPC;
 const SQRT2 = Math.SQRT2;
 
-const GAL_TO_ECL = [
-  [-0.054876,  0.494109, -0.867666],
-  [-0.993911, -0.111106, -0.000312],
-  [-0.096390,  0.862326,  0.497159],
+// Galactic → ecliptic J2000, same construction as GALACTIC_TO_ECLIPTIC in
+// src/catalog/scale.ts (Hipparcos ICRS→galactic transposed, then ε = 23.4392911°).
+const ICRS_TO_GAL = [
+  [-0.0548755604162154, -0.8734370902348850, -0.4838350155487132],
+  [+0.4941094278755837, -0.4448296299600112, +0.7469822444972189],
+  [-0.8676661490190047, -0.1980763734312015, +0.4559837761750669],
 ];
+const OBLIQUITY = 23.4392911 * Math.PI / 180;
+const GAL_TO_ECL = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+for (let j = 0; j < 3; j++) {
+  const [x, y, z] = ICRS_TO_GAL[j];
+  const ecl = [
+    x,
+    y * Math.cos(OBLIQUITY) + z * Math.sin(OBLIQUITY),
+    -y * Math.sin(OBLIQUITY) + z * Math.cos(OBLIQUITY),
+  ];
+  for (let i = 0; i < 3; i++) GAL_TO_ECL[i][j] = ecl[i];
+}
 
 mkdirSync(DATA_DIR, { recursive: true });
 mkdirSync(NASA_CACHE_DIR, { recursive: true });

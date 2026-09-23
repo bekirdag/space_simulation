@@ -14,9 +14,9 @@ struct Camera {
 };
 
 struct GalaxyModel {
-  pos_radius:   vec4<f32>, // xyz center, w = vertical half-height AU
-  right_aspect: vec4<f32>, // xyz plane right, w = width/height
-  up_alpha:     vec4<f32>, // xyz plane up, w = base opacity
+  pos_radius:   vec4<f32>, // xyz center, w = texture half-height AU
+  right_aspect: vec4<f32>, // xyz plane right (major axis), w = width/height
+  up_alpha:     vec4<f32>, // xyz tilted plane up (not unit, see vs_main), w = base opacity
   lod:          vec4<f32>, // x = full-visible distance, y = fully-hidden far distance
 };
 
@@ -26,7 +26,7 @@ struct GalaxyModel {
 @group(0) @binding(3) var                galaxySmp:   sampler;
 
 const CAMERA_NEAR: f32 = 1e-8;
-const CAMERA_FAR:  f32 = 50000000.0;
+const CAMERA_FAR:  f32 = 500000000.0;
 
 struct VertexOut {
   @builtin(position) clip_pos: vec4<f32>,
@@ -105,7 +105,9 @@ fn vs_main(
     return out;
   }
 
-  let worldRadius = radius * max(aspect, 1.0);
+  // up_alpha.xyz is the (possibly tilted) billboard minor axis, scaled so its
+  // sky projection is exactly the texture half-height (renderer upload).
+  let worldRadius = radius * max(aspect, max(length(model.up_alpha.xyz), 1.0));
   let ndcX = clip_c.x / clip_c.w;
   let ndcY = clip_c.y / clip_c.w;
   let ndcRadius = worldRadius * camera.upAndFocal.w / clip_c.w;
@@ -119,7 +121,7 @@ fn vs_main(
     + uv.x * model.right_aspect.xyz * radius * aspect
     + uv.y * model.up_alpha.xyz * radius;
 
-  out.clip_pos = project_world(worldPos);
+  out.clip_pos = with_log_depth(project_world(worldPos));
   return out;
 }
 
@@ -137,4 +139,20 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   let color = tex.rgb * (0.72 + coreLift * 0.63);
   let objectBrightness = max(camera.eyeAndFlags.w, 0.0);
   return vec4<f32>(color * objectBrightness, alpha);
+}
+
+// Logarithmic depth shared with solar-system-model.wgsl / milkyway-model.wgsl /
+// render.wgsl / trail.wgsl (keep LOG_DEPTH_* in sync). The standard hyperbolic
+// depth collapses to 1.0 beyond a few AU, so every depth-tested scene layer
+// writes log2 view depth instead. Billboards keep the same clip w on all
+// corners, so z = logDepth(w) * w is exact for the whole sprite (centre depth).
+const LOG_DEPTH_K: f32 = 1e-9;
+const LOG_DEPTH_INV_RANGE: f32 = 0.016666667; // 1 / log2(1 + 1e9 / 1e-9) ~= 1 / 59.79
+
+fn logDepth(viewDepth: f32) -> f32 {
+  return clamp(log2(1.0 + max(viewDepth, 0.0) / LOG_DEPTH_K) * LOG_DEPTH_INV_RANGE, 0.0, 1.0);
+}
+
+fn with_log_depth(clip: vec4<f32>) -> vec4<f32> {
+  return vec4<f32>(clip.xy, logDepth(clip.w) * clip.w, clip.w);
 }

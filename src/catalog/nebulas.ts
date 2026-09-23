@@ -9,8 +9,14 @@
  *
  * Visual size in our compressed AU coordinate system:
  *   billboard_radius_AU = dist_AU × tan(ang_radius_rad)
- *   where dist_AU = dist_pc × 80 (AU_PER_PARSEC)
+ *   where dist_AU = dist_pc × 80 (AU_PER_PARSEC, shared scale in scale.ts)
  */
+
+import { AU_PER_PARSEC, raDecDistancePcToWorldAU } from "./scale";
+import { milkyWayModelNebulaHandoff } from "./milkyway-models";
+
+/** Billboard alpha kept (as a soft backdrop haze) when a 3D gas mesh takes over. */
+const MODEL_HANDOFF_RESIDUAL = 0.22;
 
 export const NEBULA_FLOATS = 16; // 4 × vec4 = 64 bytes per nebula
 
@@ -965,27 +971,14 @@ export const NEBULA_CATALOG: NebulaDef[] = [
 ];
 
 // ── Coordinate conversion ─────────────────────────────────────────────────────
-// Nebulas are part of the Milky Way, so they use the same scale as the MW
-// background star field: 8 AU/pc (= 8 000 AU/kpc).
-// This places them at the correct position in galaxy-scale views.
+// Nebulas share the single 80 AU/pc visual scale (scale.ts) with catalog stars,
+// the Milky Way background field, dust and Sgr A*, so e.g. the Orion Nebula
+// (412 pc) sits behind Betelgeuse (~197 pc).
 // Apparent angular size is unchanged — billboard radius scales with position,
 // so radius_au / dist_from_viewer stays constant regardless of the scale factor.
 
-const AU_PER_PARSEC = 8;   // matches build-milkyway-stars.mjs (8 000 AU/kpc)
-const EPS = 23.4393 * Math.PI / 180; // J2000 obliquity
-
 function nebulaWorldPos(ra: number, dec: number, distPc: number): [number,number,number] {
-  const r   = distPc * AU_PER_PARSEC;
-  const ra_r  = ra * Math.PI / 180;
-  const dec_r = dec * Math.PI / 180;
-  const xe = Math.cos(dec_r) * Math.cos(ra_r);
-  const ye = Math.cos(dec_r) * Math.sin(ra_r);
-  const ze = Math.sin(dec_r);
-  return [
-    xe * r,
-    ( ye * Math.cos(EPS) + ze * Math.sin(EPS)) * r,
-    (-ye * Math.sin(EPS) + ze * Math.cos(EPS)) * r,
-  ];
+  return raDecDistancePcToWorldAU(ra, dec, distPc);
 }
 
 function nebulaSlug(value: string): string {
@@ -1011,12 +1004,13 @@ function nebulaExcluded(def: NebulaDef, exclusions?: ReadonlySet<string>): boole
  * Layout per nebula (4 × vec4 = 64 bytes):
  *   vec4 pos_size:    x, y, z, billboard_radius_AU
  *   vec4 color_alpha: r, g, b, alpha
- *   vec4 params:      type (0-4), seed (unique per nebula), brightness, _pad
- *   vec4 _pad
+ *   vec4 params:      type (0-4), seed (unique per nebula), brightness, handoff near AU
+ *   vec4 _pad:        handoff far AU, handoff residual alpha, 0, 0
  */
 export function buildNebulaBuffer(exclusions?: ReadonlySet<string>): Float32Array {
+  // Model-backed nebulas stay in the buffer and crossfade with their 3D mesh.
   const catalog = exclusions && exclusions.size > 0
-    ? NEBULA_CATALOG.filter(def => !nebulaExcluded(def, exclusions))
+    ? NEBULA_CATALOG.filter(def => milkyWayModelNebulaHandoff(def.name) || !nebulaExcluded(def, exclusions))
     : NEBULA_CATALOG;
   const n   = catalog.length;
   const buf = new Float32Array(n * NEBULA_FLOATS);
@@ -1034,8 +1028,12 @@ export function buildNebulaBuffer(exclusions?: ReadonlySet<string>): Float32Arra
     buf[o+0] = x;       buf[o+1] = y;       buf[o+2] = z;    buf[o+3] = radius_au;
     buf[o+4] = col[0];  buf[o+5] = col[1];  buf[o+6] = col[2]; buf[o+7] = alpha;
     buf[o+8] = def.type; buf[o+9] = i * 137.5 % 1000;  // deterministic seed
-    buf[o+10] = 1.0;    buf[o+11] = 0;
-    // vec4 12-15: padding
+    buf[o+10] = 1.0;
+    // params.w / _pad.xy: 3D-mesh handoff (near AU, far AU, residual alpha); 0 = none.
+    const handoff = milkyWayModelNebulaHandoff(def.name);
+    buf[o+11] = handoff ? handoff.nearAU : 0;
+    buf[o+12] = handoff ? handoff.farAU : 0;
+    buf[o+13] = handoff ? MODEL_HANDOFF_RESIDUAL : 0;
   }
   return buf;
 }

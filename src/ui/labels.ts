@@ -3,6 +3,7 @@ import { BodyType } from "../physics/constants";
 import { type Mat4, type Vec3 } from "../math/mat4";
 import { NEARBY_STAR_AU_PER_PARSEC, type NearbyStarLabel } from "../catalog/nearby-stars";
 import { type ConstellationLabel, type ConstellationStarLabel } from "../catalog/constellations";
+import { CAMERA_WHEEL_PASSTHROUGH_ATTR } from "../scene/camera";
 
 // Moons fade out beyond this distance from the camera eye (AU).
 // Matches the shader's 1.5 AU soft cutoff.
@@ -25,6 +26,17 @@ const LABEL_NAV_MARGIN = 238;
 const LABEL_BOTTOM_MARGIN = 86;
 const LABEL_OUTSKIRT_GAP_PX = 24;
 const LABEL_MIN_OUTSKIRT_OFFSET_PX = 34;
+// Default label direction (up-right) used for objects at the screen centre.
+const LABEL_DEFAULT_DIR_X = 0.78;
+const LABEL_DEFAULT_DIR_Y = -0.62;
+// The outskirt direction is measured from a point this many px down-left of the
+// screen centre, so a centred (tracked) target gets a stable up-right label
+// instead of one that flips sides with every sub-pixel of motion.
+const LABEL_DIR_CENTER_BIAS_PX = 48;
+// Per-frame blend toward the new direction; hides the (unavoidable) flip when
+// an object crosses the biased origin.
+const LABEL_DIR_SMOOTHING = 0.3;
+const LABEL_DIR_STALE_MS = 250;
 const SOLAR_SYSTEM_LABEL_COLLAPSE_DISTANCE_AU = 250;
 // Near a direct 180-degree behind-camera alignment, every screen edge is arbitrary.
 const BEHIND_CAMERA_PIN_DEADZONE = 0.16;
@@ -38,11 +50,13 @@ function smoother01(value: number): number {
   return t * t * t * (t * (t * 6 - 15) + 10);
 }
 
-// Visual AU at which the MW background star disk ends (15 kpc × 8 AU/kpc).
+// Visual AU at which the MW background star disk ends (15 kpc at the shared
+// 80 AU/pc scale). Stars and the MW field now share one scale, so this cap
+// only matters for catalog stars beyond the disk edge.
 // Stars whose HYG position (80 AU/pc) exceeds this appear outside the visible
 // Milky Way when the camera zooms to galactic scale.  We cap their label
 // fade-out at this boundary so they disappear before that happens.
-const MW_DISK_VISUAL_AU     = 120_000; // 15 kpc × 8 AU/pc
+const MW_DISK_VISUAL_AU     = 15_000 * NEARBY_STAR_AU_PER_PARSEC; // 15 kpc × 80 AU/pc = 1.2 M AU
 const MW_DISK_VIRTUAL_LY    = MW_DISK_VISUAL_AU / NEARBY_STAR_AU_PER_LIGHT_YEAR; // ≈ 4 888 "visual ly"
 
 function nearbyStarShellOpacity(star: NearbyStarLabel, cameraDistanceLy: number): number {
@@ -53,7 +67,7 @@ function nearbyStarShellOpacity(star: NearbyStarLabel, cameraDistanceLy: number)
   // If the star's HYG-scale position exceeds the visual MW disk boundary, cap
   // the fade-out so the label disappears before the camera exits the disk.
   // This prevents labels from floating visually outside the Milky Way structure
-  // (e.g. Eta Carinae at 2300 pc → 184 kAU, while MW disk ends at 120 kAU).
+  // (MW disk ends at 1.2 M AU = 15 kpc).
   const starVisualAu   = star.distPc * NEARBY_STAR_AU_PER_PARSEC;
   const outsideMWDisk  = starVisualAu > MW_DISK_VISUAL_AU;
   const rawFadeOutEnd  = Math.max(fadeInEndLy + 0.50, starDistanceLy * 3.40);
@@ -70,18 +84,19 @@ function nearbyStarShellOpacity(star: NearbyStarLabel, cameraDistanceLy: number)
 
 function galaxyShellOpacity(galaxyDistanceAu: number, cameraDistanceAu: number): number {
   const d = Math.max(galaxyDistanceAu, 1);
-  const fadeInStartAu  = Math.max(220_000, d * 0.22);
-  const fadeInEndAu    = Math.max(fadeInStartAu + 80_000, d * 0.52);
-  const fadeOutStartAu = Math.max(fadeInEndAu + 220_000, d * 2.20);
-  const fadeOutEndAu   = Math.max(fadeOutStartAu + 500_000, d * 3.35);
+  // Floors are galaxy-scale (×10 for the 80 000 AU/kpc scale).
+  const fadeInStartAu  = Math.max(2_200_000, d * 0.22);
+  const fadeInEndAu    = Math.max(fadeInStartAu + 800_000, d * 0.52);
+  const fadeOutStartAu = Math.max(fadeInEndAu + 2_200_000, d * 2.20);
+  const fadeOutEndAu   = Math.max(fadeOutStartAu + 5_000_000, d * 3.35);
   const fadeIn = smoother01((cameraDistanceAu - fadeInStartAu) / (fadeInEndAu - fadeInStartAu));
   const fadeOut = 1 - smoother01((cameraDistanceAu - fadeOutStartAu) / (fadeOutEndAu - fadeOutStartAu));
   return fadeIn * fadeOut;
 }
 
 function milkyWayLabelOpacity(cameraDistanceFromCenterAu: number, milkyWayRadiusAu: number): number {
-  const startAu = Math.max(180_000, milkyWayRadiusAu * 2.15);
-  const endAu = Math.max(startAu + 120_000, milkyWayRadiusAu * 3.65);
+  const startAu = Math.max(1_800_000, milkyWayRadiusAu * 2.15);
+  const endAu = Math.max(startAu + 1_200_000, milkyWayRadiusAu * 3.65);
   return smoother01((cameraDistanceFromCenterAu - startAu) / (endAu - startAu));
 }
 
@@ -169,6 +184,17 @@ function radiusFromFocusDistance(
   return Math.max(0, (focusDistance! * fillNdc) / Math.max(cameraFrame.focalY, 1e-6));
 }
 
+function outskirtDirection(pos: ProjectedPoint, cssW: number, cssH: number): [number, number] {
+  const dirX = pos.x - (cssW * 0.5 - LABEL_DEFAULT_DIR_X * LABEL_DIR_CENTER_BIAS_PX);
+  const dirY = pos.y - (cssH * 0.5 - LABEL_DEFAULT_DIR_Y * LABEL_DIR_CENTER_BIAS_PX);
+  const len = Math.hypot(dirX, dirY);
+  if (!Number.isFinite(len) || len < 1e-3) {
+    const l = Math.hypot(LABEL_DEFAULT_DIR_X, LABEL_DEFAULT_DIR_Y);
+    return [LABEL_DEFAULT_DIR_X / l, LABEL_DEFAULT_DIR_Y / l];
+  }
+  return [dirX / len, dirY / len];
+}
+
 function offsetLabelToObjectOutskirts(
   pos: ProjectedPoint,
   radiusPx: number,
@@ -176,21 +202,11 @@ function offsetLabelToObjectOutskirts(
   cssH: number,
   labelWidth = 0,
   labelHeight = 0,
+  direction: [number, number] = outskirtDirection(pos, cssW, cssH),
 ): { x: number; y: number } {
   if (pos.pinned) return { x: pos.x, y: pos.y };
 
-  const centerX = cssW * 0.5;
-  const centerY = cssH * 0.5;
-  let dirX = pos.x - centerX;
-  let dirY = pos.y - centerY;
-  const len = Math.hypot(dirX, dirY);
-  if (len < 1e-3) {
-    dirX = 0.78;
-    dirY = -0.62;
-  } else {
-    dirX /= len;
-    dirY /= len;
-  }
+  const [dirX, dirY] = direction;
 
   const dynamicMax = clamp(Math.min(cssW, cssH) * 0.48, 220, 620);
   const offset = clamp(
@@ -289,6 +305,40 @@ function projectCameraRelative(
   return pinToViewport(nx, ny, cssW, cssH);
 }
 
+/**
+ * A focused galaxy's disk (close LOD). Labels of objects behind it are hidden
+ * so distant galaxies (and the Milky Way) do not pile up on top of it.
+ */
+export interface GalaxyDiskOccluder {
+  center: Vec3;
+  normal: Vec3;
+  radiusAU: number;
+  /** Bulge radius (AU) that also hides labels when crossed edge-on. */
+  bulgeRadiusAU: number;
+}
+
+/** True when the segment camera → point passes through the occluder disk or bulge. */
+export function galaxyDiskOccludes(eye: Vec3, point: Vec3, occ: GalaxyDiskOccluder | null): boolean {
+  if (!occ) return false;
+  const dx = point[0] - eye[0], dy = point[1] - eye[1], dz = point[2] - eye[2];
+  const segLen = Math.hypot(dx, dy, dz);
+  if (!(segLen > 0)) return false;
+  const cx = occ.center[0] - eye[0], cy = occ.center[1] - eye[1], cz = occ.center[2] - eye[2];
+  // Only objects well beyond the galaxy centre can be hidden by it.
+  const along = (cx * dx + cy * dy + cz * dz) / segLen;
+  if (along <= 0 || along >= segLen) return false;
+  // Bulge: distance of the centre from the sight line.
+  const perp2 = cx * cx + cy * cy + cz * cz - along * along;
+  if (perp2 < occ.bulgeRadiusAU * occ.bulgeRadiusAU) return true;
+  // Disk: intersect the sight line with the disk plane.
+  const denom = occ.normal[0] * dx + occ.normal[1] * dy + occ.normal[2] * dz;
+  if (Math.abs(denom) < 1e-12) return false;
+  const t = (occ.normal[0] * cx + occ.normal[1] * cy + occ.normal[2] * cz) / denom;
+  if (t <= 0 || t >= 1) return false;
+  const hx = dx * t - cx, hy = dy * t - cy, hz = dz * t - cz;
+  return hx * hx + hy * hy + hz * hz < occ.radiusAU * occ.radiusAU;
+}
+
 function projectStable(
   x: number, y: number, z: number,
   vp: Mat4, cssW: number, cssH: number,
@@ -337,8 +387,15 @@ export interface GalaxyNameLabel {
 
 export type GalaxyNameClickHandler = (galaxy: GalaxyNameLabel) => void;
 
+/** Position an absolutely/fixed placed element at fractional CSS px without layout. */
+function placeElement(el: HTMLElement, x: number, y: number, centered = false): void {
+  el.style.transform = `translate3d(${x.toFixed(2)}px, ${y.toFixed(2)}px, 0)${centered ? " translate(-50%, -50%)" : ""}`;
+}
+
 export class LabelManager {
   private container:  HTMLDivElement;
+  // Smoothed outskirt direction per label element (+ last update time).
+  private labelDirs = new WeakMap<HTMLElement, { x: number; y: number; t: number }>();
   private spans     = new Map<number, HTMLSpanElement>();
   private positions = new Map<number, Projected>(); // updated each frame
   private mouseX    = 0;
@@ -384,6 +441,7 @@ export class LabelManager {
       position: 'fixed', inset: '0',
       pointerEvents: 'none', zIndex: '5', overflow: 'hidden',
     });
+    this.container.setAttribute(CAMERA_WHEEL_PASSTHROUGH_ATTR, '');
     document.body.appendChild(this.container);
     window.addEventListener('mousemove', e => { this.mouseX = e.clientX; this.mouseY = e.clientY; });
 
@@ -400,19 +458,46 @@ export class LabelManager {
       event.preventDefault();
       event.stopPropagation();
     };
-    for (const eventType of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'click', 'dblclick', 'contextmenu']) {
+    // Releases (pointerup/mouseup) must propagate so an in-progress camera drag ends.
+    for (const eventType of ['pointerdown', 'mousedown', 'click', 'dblclick', 'contextmenu']) {
       this.starLabelEl.addEventListener(eventType, stopStarLabelEvent, { capture: true });
     }
+    this.starLabelEl.setAttribute(CAMERA_WHEEL_PASSTHROUGH_ATTR, '');
+    this.starLabelEl.style.left = '0px';
+    this.starLabelEl.style.top = '0px';
     document.body.appendChild(this.starLabelEl);
 
     this.targetReticleEl = document.createElement('div');
     this.targetReticleEl.className = 'target-reticle';
     this.targetReticleEl.style.display = 'none';
     this.targetReticleEl.setAttribute('aria-hidden', 'true');
+    this.targetReticleEl.setAttribute(CAMERA_WHEEL_PASSTHROUGH_ATTR, '');
+    this.targetReticleEl.style.left = '0px';
+    this.targetReticleEl.style.top = '0px';
     document.body.appendChild(this.targetReticleEl);
   }
 
+  /** Outskirt direction for a label, smoothed over frames to avoid side flips. */
+  private smoothedLabelDirection(el: HTMLElement, pos: ProjectedPoint, cssW: number, cssH: number): [number, number] {
+    const [tx, ty] = outskirtDirection(pos, cssW, cssH);
+    const now = performance.now();
+    const prev = this.labelDirs.get(el);
+    let x = tx;
+    let y = ty;
+    if (prev && now - prev.t < LABEL_DIR_STALE_MS) {
+      const bx = prev.x + (tx - prev.x) * LABEL_DIR_SMOOTHING;
+      const by = prev.y + (ty - prev.y) * LABEL_DIR_SMOOTHING;
+      const len = Math.hypot(bx, by);
+      if (len > 1e-3) { x = bx / len; y = by / len; }
+    }
+    this.labelDirs.set(el, { x, y, t: now });
+    return [x, y];
+  }
+
   private activateBodyLabel(sp: HTMLElement): void {
+    // Don't keep keyboard focus on the label: the global Enter shortcut (centre,
+    // then fly close) ignores focused buttons.
+    sp.blur();
     const id = Number(sp.dataset["bodyId"]);
     if (!Number.isFinite(id)) return;
     const projected = this.positions.get(id);
@@ -451,7 +536,7 @@ export class LabelManager {
     // ── Galaxy-scale check: hide ALL solar system labels beyond 100 kpc ──────
     // At 100 kpc the MW reduces to a single point; the Sun label adds clutter.
     const camDistAU  = Math.hypot(cameraEye[0], cameraEye[1], cameraEye[2]);
-    const camDistKpc = camDistAU / 8_000;
+    const camDistKpc = camDistAU / (NEARBY_STAR_AU_PER_PARSEC * 1_000); // 80 000 AU/kpc
     const beyondMilkyWay = camDistKpc > 400;
 
     // ── Solar system cluster detection ────────────────────────────────────────
@@ -484,8 +569,10 @@ export class LabelManager {
         sp.className = bodyLabelClassName(b);
         sp.textContent = b.name;
         sp.dataset["bodyId"] = String(b.id);
+        // Only presses/clicks are consumed; releases must reach the camera so drags end.
         sp.addEventListener('mousedown', event => event.stopPropagation());
-        sp.addEventListener('mouseup', event => event.stopPropagation());
+        sp.style.left = '0px';
+        sp.style.top = '0px';
         sp.addEventListener('click', event => {
           event.preventDefault();
           event.stopPropagation();
@@ -584,10 +671,10 @@ export class LabelManager {
             cssH,
             sp.offsetWidth,
             sp.offsetHeight,
+            this.smoothedLabelDirection(sp, pos, cssW, cssH),
           );
-      // Round to integer pixels — fractional positions cause sub-pixel text blur
-      sp.style.left = `${Math.round(labelPoint.x)}px`;
-      sp.style.top  = `${Math.round(labelPoint.y)}px`;
+      // Fractional px: integer rounding made labels of moving/tracked targets step 1 px.
+      placeElement(sp, labelPoint.x, labelPoint.y, pos.pinned);
 
       const dx = this.mouseX - pos.x;
       const dy = this.mouseY - pos.y;
@@ -632,9 +719,9 @@ export class LabelManager {
       cssH,
       this.starLabelEl.offsetWidth,
       this.starLabelEl.offsetHeight,
+      this.smoothedLabelDirection(this.starLabelEl, pos, cssW, cssH),
     );
-    this.starLabelEl.style.left = `${Math.round(labelPoint.x)}px`;
-    this.starLabelEl.style.top  = `${Math.round(labelPoint.y)}px`;
+    placeElement(this.starLabelEl, labelPoint.x, labelPoint.y);
   }
 
   updateLockTargetReticle(
@@ -654,8 +741,7 @@ export class LabelManager {
       return;
     }
     this.targetReticleEl.style.display = 'block';
-    this.targetReticleEl.style.left = `${Math.round(pos.x)}px`;
-    this.targetReticleEl.style.top = `${Math.round(pos.y)}px`;
+    placeElement(this.targetReticleEl, pos.x, pos.y);
   }
 
   /**
@@ -767,6 +853,7 @@ export class LabelManager {
         sp.addEventListener('click', event => {
           event.preventDefault();
           event.stopPropagation();
+          sp?.blur();
           onStarClick?.(star);
         });
         sp.addEventListener('keydown', event => {
@@ -882,6 +969,7 @@ export class LabelManager {
     onClick: () => void,
     selected = false,
     cameraFrame: BodyLabelCameraFrame | null = null,
+    occluder: GalaxyDiskOccluder | null = null,
   ): number {
     if (!visible || !this._visible) {
       if (this.milkyWayEl) this.milkyWayEl.style.display = 'none';
@@ -913,6 +1001,7 @@ export class LabelManager {
       el.addEventListener('click', event => {
         event.preventDefault();
         event.stopPropagation();
+        el.blur();
         onClick();
       });
       el.addEventListener('keydown', event => {
@@ -927,7 +1016,9 @@ export class LabelManager {
 
     const cssW = window.innerWidth;
     const cssH = window.innerHeight;
-    const pos = projectStable(worldPos[0], worldPos[1], worldPos[2], viewProj, cssW, cssH, true, cameraFrame);
+    const pos = galaxyDiskOccludes(cameraEye, worldPos, occluder)
+      ? null
+      : projectStable(worldPos[0], worldPos[1], worldPos[2], viewProj, cssW, cssH, true, cameraFrame);
     if (!pos) {
       this.milkyWayEl.style.display = 'none';
       return opacity;
@@ -950,6 +1041,7 @@ export class LabelManager {
     onGalaxyClick?: GalaxyNameClickHandler,
     selectedGalaxyId: string | null = null,
     cameraFrame: BodyLabelCameraFrame | null = null,
+    occluder: GalaxyDiskOccluder | null = null,
   ): void {
     if (!visible || !this._visible || galaxies.length === 0) {
       for (const sp of this.galaxyNameSpans.values()) sp.style.display = 'none';
@@ -995,6 +1087,7 @@ export class LabelManager {
         sp.addEventListener('click', event => {
           event.preventDefault();
           event.stopPropagation();
+          sp?.blur();
           onGalaxyClick?.(galaxy);
         });
         sp.addEventListener('keydown', event => {
@@ -1007,7 +1100,9 @@ export class LabelManager {
         this.galaxyNameSpans.set(galaxy.id, sp);
       }
 
-      const pt = projectStable(galaxy.x, galaxy.y, galaxy.z, viewProj, cssW, cssH, false, cameraFrame);
+      const pt = galaxyDiskOccludes(cameraEye, [galaxy.x, galaxy.y, galaxy.z], occluder)
+        ? null
+        : projectStable(galaxy.x, galaxy.y, galaxy.z, viewProj, cssW, cssH, false, cameraFrame);
       if (!pt) {
         sp.style.display = 'none';
         continue;
@@ -1047,6 +1142,7 @@ export class LabelManager {
       el.className = 'galactic-center-label';
       el.textContent = 'Sgr A*';
       el.addEventListener('click', () => onClick());
+      el.setAttribute(CAMERA_WHEEL_PASSTHROUGH_ATTR, '');
       // Appended to body directly so pointer-events work (label container is none)
       document.body.appendChild(el);
       this.galacticCenterEl = el;

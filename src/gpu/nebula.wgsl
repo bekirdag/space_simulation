@@ -7,7 +7,8 @@
 // Buffer layout per nebula (4 × vec4 = 64 bytes):
 //   vec4 pos_size:    xyz = ecliptic AU position, w = billboard radius AU
 //   vec4 color_alpha: rgb = emission colour, w = base alpha
-//   vec4 params:      x = type (0-4), y = seed (0-1000), z = brightness, w = _pad
+//   vec4 params:      x = type (0-4), y = seed (0-1000), z = brightness, w = handoff near AU
+//   vec4 _pad:        x = handoff far AU, y = handoff residual alpha (3D gas mesh LOD)
 //   vec4 _pad
 
 struct Camera {
@@ -59,6 +60,13 @@ fn vs_main(
   out.ntype = neb.params.x;
   out.seed  = neb.params.y;
 
+  // Nebulas with a 3D NASA/Chandra gas mesh (milkyway-model.wgsl) crossfade
+  // to it up close, keeping a faint residual haze behind the mesh.
+  if neb.params.w > 0.0 {
+    let camDist = distance(camera.eyeAndFlags.xyz, center);
+    out.alpha *= mix(neb._pad.y, 1.0, smoothstep(neb.params.w, neb._pad.x, camDist));
+  }
+
   if clip_c.w <= 0.0 || radius <= 0.0 {
     out.clip_pos = vec4(10.0, 10.0, 10.0, 1.0);
     return out;
@@ -79,7 +87,7 @@ fn vs_main(
     + uv.x * camera.rightAndMNR.xyz * radius
     + uv.y * camera.upAndFocal.xyz  * radius;
 
-  out.clip_pos = camera.viewProj * vec4(world_pos, 1.0);
+  out.clip_pos = with_log_depth(camera.viewProj * vec4(world_pos, 1.0));
   return out;
 }
 
@@ -175,4 +183,20 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   let a = clamp(shape * in.alpha * 1.2, 0.0, 1.0);
   let objectBrightness = max(camera.eyeAndFlags.w, 0.0);
   return vec4<f32>(col * a * objectBrightness, a);
+}
+
+// Logarithmic depth shared with solar-system-model.wgsl / milkyway-model.wgsl /
+// render.wgsl / trail.wgsl (keep LOG_DEPTH_* in sync). The standard hyperbolic
+// depth collapses to 1.0 beyond a few AU, so every depth-tested scene layer
+// writes log2 view depth instead. Billboards keep the same clip w on all
+// corners, so z = logDepth(w) * w is exact for the whole sprite (centre depth).
+const LOG_DEPTH_K: f32 = 1e-9;
+const LOG_DEPTH_INV_RANGE: f32 = 0.016666667; // 1 / log2(1 + 1e9 / 1e-9) ~= 1 / 59.79
+
+fn logDepth(viewDepth: f32) -> f32 {
+  return clamp(log2(1.0 + max(viewDepth, 0.0) / LOG_DEPTH_K) * LOG_DEPTH_INV_RANGE, 0.0, 1.0);
+}
+
+fn with_log_depth(clip: vec4<f32>) -> vec4<f32> {
+  return vec4<f32>(clip.xy, logDepth(clip.w) * clip.w, clip.w);
 }

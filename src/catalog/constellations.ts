@@ -1,4 +1,9 @@
-import { STAR_FLOATS, type StarSearchResult } from "./stars";
+import {
+  STAR_FLOATS,
+  equatorialBufferToEcliptic,
+  equatorialToEcliptic,
+  type StarSearchResult,
+} from "./stars";
 
 export const CONSTELLATION_FLOATS = 4; // pos xyz + alpha
 
@@ -111,11 +116,12 @@ function directionFromLonLat(lonDeg: number, latDeg: number): [number, number, n
   const lon = lonDeg * Math.PI / 180;
   const lat = latDeg * Math.PI / 180;
   const cosLat = Math.cos(lat);
-  return [
+  // GeoJSON lon/lat are RA/Dec; star positions are in the ecliptic world frame.
+  return equatorialToEcliptic(
     cosLat * Math.cos(lon),
     cosLat * Math.sin(lon),
     Math.sin(lat),
-  ];
+  );
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -279,7 +285,7 @@ function labelRadius(center: [number, number, number], featureStars: SnappedStar
 }
 
 async function loadJson<T>(url: string): Promise<T> {
-  const resp = await fetch(url, { cache: "force-cache" });
+  const resp = await fetch(url, { cache: "no-cache" });
   if (!resp.ok) throw new Error(`${url} returned HTTP ${resp.status}`);
   const contentType = resp.headers.get("content-type")?.toLowerCase() ?? "";
   if (contentType.includes("text/html")) {
@@ -290,7 +296,7 @@ async function loadJson<T>(url: string): Promise<T> {
 
 async function loadOptionalJson<T>(url: string): Promise<T | null> {
   try {
-    const resp = await fetch(url, { cache: "force-cache" });
+    const resp = await fetch(url, { cache: "no-cache" });
     if (resp.status === 404) return null;
     if (!resp.ok) throw new Error(`${url} returned HTTP ${resp.status}`);
     const contentType = resp.headers.get("content-type")?.toLowerCase() ?? "";
@@ -307,13 +313,15 @@ async function loadConstellationStarNameCache(): Promise<Map<string, Constellati
 }
 
 async function loadVisibleStarSnapshot(): Promise<Float32Array> {
-  const resp = await fetch(VISIBLE_STAR_DATA_URL, { cache: "force-cache" });
+  const resp = await fetch(VISIBLE_STAR_DATA_URL, { cache: "no-cache" });
   if (!resp.ok) throw new Error(`${VISIBLE_STAR_DATA_URL} returned HTTP ${resp.status}`);
   const buffer = await resp.arrayBuffer();
   if (buffer.byteLength % (STAR_FLOATS * 4) !== 0) {
     throw new Error("Visible star binary has an invalid stride.");
   }
-  return new Float32Array(buffer);
+  const data = new Float32Array(buffer);
+  equatorialBufferToEcliptic(data, STAR_FLOATS);
+  return data;
 }
 
 function fallbackStarName(abbreviation: string, index: number): string {

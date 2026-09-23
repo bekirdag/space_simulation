@@ -255,6 +255,8 @@ export class NavPanel {
 
   /** Public read access so main.ts can implement auto-snap/release logic. */
   get focusedBodyName(): string | null { return this._focusedBodyName; }
+  /** True while the camera target is pinned to the focused body every frame. */
+  get isTrackingFocusedBody(): boolean { return this._focusedBodyName !== null && this.focusedBodyTracksCamera; }
 
   focusedSystemMembers(): ReadonlySet<string> {
     if (!this.focusedSystemCenterName) return new Set();
@@ -279,6 +281,8 @@ export class NavPanel {
     this.setFocusedSystem(name);
     this.catalogSearch?.onFocusTitleChange?.(name, "", this.bodyObjectType(body));
     this.camera.lockTarget = trackCamera; // scroll zooms orbit radius only after the camera is tracking.
+    if (trackCamera && body) this.camera.setFollowPoint(body.x, body.y, body.z, body.radius);
+    else this.camera.clearFollowPoint();
     let focusedEl: HTMLElement | undefined;
     this.panel.querySelectorAll<HTMLElement>("[data-travel]").forEach(el => {
       const isFocused = el.dataset["travel"] === name;
@@ -298,6 +302,7 @@ export class NavPanel {
     this.clearFocusedSystem();
     this.catalogSearch?.onFocusTitleChange?.(null);
     this.camera.clearWheelZoomGoal();
+    this.camera.clearFollowPoint();
     this.camera.lockTarget = false; // re-enable zoom-toward-cursor
     this.panel.querySelectorAll<HTMLElement>("[data-travel].focused").forEach(el => {
       el.classList.remove("focused");
@@ -325,6 +330,7 @@ export class NavPanel {
     this.clearFocusedSystem();
     this.catalogSearch?.onFocusTitleChange?.(null);
     this.camera.clearWheelZoomGoal();
+    this.camera.clearFollowPoint();
     this.panel.querySelectorAll<HTMLElement>("[data-travel].focused").forEach(el => {
       el.classList.remove("focused");
     });
@@ -338,25 +344,51 @@ export class NavPanel {
       this.clearFocusedBody();
       return;
     }
+    this.camera.updateWheelZoomPoint(body.x, body.y, body.z);
     if (!this.focusedBodyTracksCamera) {
-      this.camera.updateWheelZoomPoint(body.x, body.y, body.z);
-      return;
+      // The first wheel step toward a single-clicked body re-centres the camera
+      // on it; from then on keep tracking so the body can't drift away and
+      // orbiting pivots around the body instead of the point it used to be at.
+      if (!this.camera.consumeWheelPointEngaged()) return;
+      this.focusedBodyTracksCamera = true;
+      this.camera.lockTarget = true;
     }
+    this.camera.setFollowPoint(body.x, body.y, body.z, body.radius);
     this.camera.target = [body.x, body.y, body.z];
   }
 
   /** Travel to a named body. Called from nav clicks AND canvas clicks. */
-  travelTo(name: string, mode: TravelMode = "system"): void {
+  travelTo(name: string, mode: TravelMode = "system", litView = true): void {
     const body = this.bodyByName(name);
     if (!body) return;
     const dist = this.distanceFor(name, body, mode);
     this.setFocusedBody(name);
-    this.camera.travelTo(body.x, body.y, body.z, dist, mode === "close" ? CLOSE_TRAVEL_SECONDS : 0);
+    this.camera.travelTo(
+      body.x, body.y, body.z,
+      dist,
+      mode === "close" ? CLOSE_TRAVEL_SECONDS : 0,
+      true,
+      litView ? this.sunlitFramingLight(body) : undefined,
+    );
   }
 
-  /** Travel to a planet with a zoom that shows all its moons. */
-  travelToSystem(name: string): void {
-    this.travelTo(name, "system");
+  /**
+   * Light position used to frame `body` from its day side after travel: the
+   * Sun for solar-system bodies. The Sun itself and exoplanets (lit by their
+   * own host star) keep the current framing.
+   */
+  private sunlitFramingLight(body: Body): [number, number, number] | undefined {
+    if (body.type === BodyType.Star || body.type === BodyType.Exoplanet) return undefined;
+    const sun = this.bodyByName("Sun");
+    return sun ? [sun.x, sun.y, sun.z] : undefined;
+  }
+
+  /**
+   * Travel to a planet with a zoom that shows all its moons. `litView` = false
+   * keeps the current view angle (automatic snaps, re-framing).
+   */
+  travelToSystem(name: string, litView = true): void {
+    this.travelTo(name, "system", litView);
   }
 
   /** Travel close enough for the selected body itself to fit the screen. */
@@ -369,7 +401,7 @@ export class NavPanel {
     const body = this.bodyByName(name);
     if (!body) return;
     this.setFocusedBody(name, false);
-    this.camera.setWheelZoomPointGoal(body.x, body.y, body.z, this.closeDistanceFor(body), wheelSteps);
+    this.camera.setWheelZoomPointGoal(body.x, body.y, body.z, this.closeDistanceFor(body), wheelSteps, body.radius);
   }
 
   private resetEnterKeyNavigation(): void {
@@ -399,6 +431,7 @@ export class NavPanel {
           this.closeDistanceFor(body),
           10,
           LOCK_CENTER_TRAVEL_SECONDS,
+          true,
         );
         this.camera.lockTarget = true;
         this.enterKeyCenteredLock = true;
@@ -422,6 +455,7 @@ export class NavPanel {
         selected.focusDistance,
         10,
         LOCK_CENTER_TRAVEL_SECONDS,
+        false,
       );
       this.camera.lockTarget = true;
       this.enterKeyCenteredLock = true;
@@ -688,10 +722,18 @@ export class NavPanel {
       if (isLoading) {
         empty.textContent = status;
       } else {
-        empty.innerHTML =
-          `No match for "<b>${query}</b>".<br>` +
-          `Catalog: visible bodies, named nearby stars, nebulas, constellations, known galaxies, 3D models, exoplanet hosts, planets, and Sgr A*.<br>` +
-          `Try: <em>Io, Orion, Andromeda, LMC, Sgr A*, Crab, TRAPPIST-1, Proxima</em>`;
+        // Build with text nodes: the query is user input and must not be parsed as HTML.
+        const queryEl = document.createElement("b");
+        queryEl.textContent = query;
+        const examples = document.createElement("em");
+        examples.textContent = "Io, Orion, Andromeda, LMC, Sgr A*, Crab, TRAPPIST-1, Proxima";
+        empty.append(
+          "No match for \"", queryEl, "\".",
+          document.createElement("br"),
+          "Catalog: visible bodies, named nearby stars, nebulas, constellations, known galaxies, 3D models, exoplanet hosts, planets, and Sgr A*.",
+          document.createElement("br"),
+          "Try: ", examples,
+        );
       }
       this.catalogResults.appendChild(empty);
       return;

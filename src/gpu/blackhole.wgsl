@@ -47,13 +47,25 @@ const TURBULENCE_LACUNARITY: f32 = 2.5;
 const TURBULENCE_PERSISTENCE: f32 = 0.8;
 const DISK_EDGE_SOFTNESS_INNER: f32 = 0.18;
 const DISK_EDGE_SOFTNESS_OUTER: f32 = 0.5;
-const GRAVITATIONAL_LENSING: f32 = 2.4;
 const DOPPLER_STRENGTH: f32 = 0.42;
-const RAY_STEP_SIZE: f32 = 0.85;
-const PROCEDURAL_FADE_START_RS: f32 = 5200.0;
-const PROCEDURAL_FADE_END_RS: f32 = 9000.0;
-const LOD_FADE_IN_START_RS: f32 = 850.0;
-const LOD_FADE_IN_END_RS: f32 = 6000.0;
+// Geodesics are integrated in Schwarzschild-radius units (Rs = 1), so all of
+// the procedural logic below is independent of the world's AU scale.
+const PHOTON_SPHERE_RS: f32 = 1.5;
+// Critical impact parameter 3*sqrt(3)/2 Rs: apparent radius of the shadow.
+const SHADOW_RADIUS_RS: f32 = 2.598076;
+// Rays are only integrated inside this sphere; outside it bending is tiny.
+const BOUNDING_RADIUS_RS: f32 = 116.0; // 8 x DISK_OUTER_RADIUS
+const MAX_RAY_STEPS: i32 = 220;
+const MAX_DISK_CROSSINGS: i32 = 3;
+// Image LOD: the EHT image's half-width covers this many Rs; its opaque
+// shadow is sized from SHADOW_RADIUS_RS in the same units.
+const LOD_IMAGE_HALF_RS: f32 = 12.0;
+const LOD_MIN_RADIUS_UV: f32 = 0.010;
+// Procedural -> image handover, keyed on the physical on-screen image
+// half-radius (uv units of viewport height). Always above LOD_MIN_RADIUS_UV
+// so both representations have identical size and shadow during the fade.
+const LOD_HANDOVER_START_UV: f32 = 0.020;
+const LOD_HANDOVER_END_UV: f32 = 0.011;
 const LOD_FADE_OUT_START_RS: f32 = 260000.0;
 const LOD_FADE_OUT_END_RS: f32 = 760000.0;
 
@@ -147,21 +159,21 @@ fn camera_relative(posWorld: vec3<f32>) -> vec3<f32> {
 fn project_world(posWorld: vec3<f32>) -> vec4<f32> {
   let rel = camera_relative(posWorld);
   let back = camera_back();
-  let view = vec3<f32>(
+  let viewPos = vec3<f32>(
     dot(rel, camera.rightAndMNR.xyz),
     dot(rel, camera.upAndFocal.xyz),
     dot(rel, back)
   );
   let cameraNear = 1e-8;
-  let cameraFar = 50000000.0;
+  let cameraFar = 500000000.0;
   let nf = 1.0 / (cameraNear - cameraFar);
   let aspect = max(camera.screenAndTarget.x, 0.000001);
   let focalY = camera.upAndFocal.w;
   return vec4<f32>(
-    view.x * focalY / aspect,
-    view.y * focalY,
-    cameraFar * nf * view.z + cameraFar * cameraNear * nf,
-    -view.z
+    viewPos.x * focalY / aspect,
+    viewPos.y * focalY,
+    cameraFar * nf * viewPos.z + cameraFar * cameraNear * nf,
+    -viewPos.z
   );
 }
 
@@ -290,87 +302,103 @@ fn accretion_disk_color(hitR: f32, unitXZ: vec2<f32>, time: f32, rayDir: vec3<f3
   return vec4<f32>(finalColor, finalOpacity);
 }
 
-fn raymarch_black_hole(rayPos0: vec3<f32>, rayDir0: vec3<f32>, time: f32, visualStrength: f32) -> BlackHoleSample {
-  let rs = 1.0;
-  var rayPos = rayPos0;
-  var rayDir = normalize(rayDir0);
-  var prevPos = rayPos0;
+fn black_hole_accel(x: vec3<f32>, h2: f32) -> vec3<f32> {
+  // Photon path in Schwarzschild geometry (Rs = 1): x'' = -1.5 h^2 x / r^5.
+  let r2 = max(dot(x, x), 1e-6);
+  return -1.5 * h2 * x / (r2 * r2 * sqrt(r2));
+}
+
+// camPos: camera position relative to the hole, in Rs. pixelAngle: angular
+// size of one pixel (radians), used to anti-alias the shadow edge and ring.
+fn raymarch_black_hole(camPos: vec3<f32>, rayDir0: vec3<f32>, time: f32, pixelAngle: f32) -> BlackHoleSample {
+  let dir = normalize(rayDir0);
   var color = vec3<f32>(0.0);
   var alpha = 0.0;
-  var occlusion = 0.0;
-  var minR = 100000.0;
-  var diskCrossings: i32 = 0;
-  var foregroundDiskAlpha = 0.0;
-  var captured = false;
-  var escaped = false;
+  let empty = BlackHoleSample(color, 0.0, 0.0, 1e5);
 
-  for (var i: i32 = 0; i < 72; i = i + 1) {
-    if captured || escaped || alpha > 0.99 {
-      break;
+  // Conserved impact parameter and closest-approach distance along the ray.
+  let impact = length(cross(camPos, dir));
+  let tClosest = -dot(camPos, dir);
+  let camR = length(camPos);
+  let R = BOUNDING_RADIUS_RS;
+
+  // Start marching where the ray enters the bounding sphere.
+  var tStart = 0.0;
+  if camR > R {
+    if impact >= R || tClosest <= 0.0 {
+      return empty;
     }
+    tStart = tClosest - sqrt(max(R * R - impact * impact, 0.0));
+  }
 
-    let r = length(rayPos);
+  var x = camPos + dir * tStart;
+  var v = dir;
+  let h2 = impact * impact;
+  var a = black_hole_accel(x, h2);
+  var minR = 1e5;
+  var crossings: i32 = 0;
+
+  for (var i: i32 = 0; i < MAX_RAY_STEPS; i = i + 1) {
+    let r = length(x);
     minR = min(minR, r);
-
-    if r < rs * 1.015 {
-      captured = true;
+    if alpha > 0.995 {
+      break;
+    }
+    // Inside the photon sphere and falling inward: certain capture.
+    if r < 1.0 || (r < PHOTON_SPHERE_RS && dot(x, v) < 0.0) {
+      break;
+    }
+    if r > R * 1.001 && dot(x, v) > 0.0 {
       break;
     }
 
-    if r > 115.0 && dot(rayPos, rayDir) > 0.0 {
-      escaped = true;
-      break;
-    }
+    let dt = clamp(0.08 * r, 0.02, 2.5);
+    let prev = x;
+    // Kick-drift-kick leapfrog.
+    v += a * (0.5 * dt);
+    x += v * dt;
+    a = black_hole_accel(x, h2);
+    v += a * (0.5 * dt);
 
-    let toCenter = -rayPos / max(r, 0.0001);
-    let bendStrength = rs / max(r * r, 0.0001) * RAY_STEP_SIZE * GRAVITATIONAL_LENSING * visualStrength;
-    rayDir = normalize(rayDir + toCenter * bendStrength);
-
-    prevPos = rayPos;
-    rayPos += rayDir * RAY_STEP_SIZE;
-
-    let crossedPlane = prevPos.y * rayPos.y <= 0.0 && abs(rayPos.y - prevPos.y) > 0.00001;
-    if crossedPlane && alpha < 0.99 {
-      let t = clamp(-prevPos.y / (rayPos.y - prevPos.y), 0.0, 1.0);
-      let hitPos = mix(prevPos, rayPos, t);
+    if prev.y * x.y <= 0.0 && abs(x.y - prev.y) > 1e-6 && crossings < MAX_DISK_CROSSINGS {
+      let t = clamp(-prev.y / (x.y - prev.y), 0.0, 1.0);
+      let hitPos = mix(prev, x, t);
       let hitR = length(hitPos.xz);
-      if diskCrossings < 1 && hitR > DISK_INNER_RADIUS && hitR < DISK_OUTER_RADIUS {
+      if hitR > DISK_INNER_RADIUS && hitR < DISK_OUTER_RADIUS {
         let unitXZ = hitPos.xz / max(hitR, 0.0001);
-        let disk = accretion_disk_color(hitR, unitXZ, time, rayDir);
-        let shadowDiskMask = 1.0 - smoothstep(1.62, 1.02, minR) * 0.96;
-        let diskAlpha = disk.w * shadowDiskMask;
-        let cameraSide = dot(normalize(hitPos), normalize(rayPos0));
-        let foregroundWeight = smoothstep(-0.10, 0.35, cameraSide);
-        foregroundDiskAlpha = max(foregroundDiskAlpha, diskAlpha * foregroundWeight);
-        let remainingAlpha = 1.0 - alpha;
-        color += disk.xyz * diskAlpha * remainingAlpha;
-        alpha += diskAlpha * remainingAlpha;
-        diskCrossings = diskCrossings + 1;
+        let disk = accretion_disk_color(hitR, unitXZ, time, normalize(v));
+        // Front-to-back: nearer samples already occlude later ones.
+        let w = disk.w * (1.0 - alpha);
+        color += disk.xyz * w;
+        alpha += w;
+        crossings = crossings + 1;
       }
     }
   }
 
-  let photonRing = pow(1.0 - smoothstep(0.025, 0.16, abs(minR - 1.54)), 2.0);
-  let secondaryRing = pow(1.0 - smoothstep(0.05, 0.30, abs(minR - 2.12)), 2.0);
-  var captureShadow = 0.0;
-  if captured {
-    captureShadow = 1.0;
-  }
-  let shadowInterior = max(smoothstep(1.46, 1.04, minR), captureShadow);
-  let hardCoreShadow = max(smoothstep(1.34, 1.08, minR), captureShadow);
-  let foregroundDiskProtection = smoothstep(0.015, 0.18, foregroundDiskAlpha) * 0.92;
-  let protectedOuterShadow = shadowInterior * (1.0 - foregroundDiskProtection * (1.0 - hardCoreShadow));
-  let visibleShadowInterior = max(hardCoreShadow, protectedOuterShadow);
-  color *= 1.0 - visibleShadowInterior * 0.995;
-  alpha = max(alpha, visibleShadowInterior * 0.96);
-  occlusion = max(occlusion, visibleShadowInterior);
+  // Shadow and photon ring from the exact critical impact parameter, so the
+  // ring always sits on the shadow edge regardless of step size.
+  let pixelRs = max(pixelAngle * max(tClosest, 1.0), 0.002);
+  let edgeWidth = max(pixelRs, 0.01);
+  let approaching = tClosest > 0.0 || camR < PHOTON_SPHERE_RS;
+  let shadowCov = select(0.0, 1.0 - smoothstep(SHADOW_RADIUS_RS - edgeWidth, SHADOW_RADIUS_RS + edgeWidth, impact), approaching);
 
+  let ringWidth = max(0.05, pixelRs * 0.9);
+  let ringX = (impact - SHADOW_RADIUS_RS - ringWidth * 0.6) / ringWidth;
+  // Keep the ring's integrated brightness roughly constant when it gets thin
+  // on screen instead of letting it bloom into a halo.
+  let ringEnergy = sqrt(0.05 / ringWidth);
+  let photonRing = exp(-ringX * ringX) * ringEnergy;
+  let haloX = max(impact - SHADOW_RADIUS_RS, 0.0) / max(0.9, pixelRs * 2.0);
+  let secondaryRing = exp(-haloX * haloX) * select(0.0, 1.0, impact > SHADOW_RADIUS_RS);
   let ringColor = vec3<f32>(1.0, 0.66, 0.20) * photonRing * 3.1 +
     vec3<f32>(1.0, 0.88, 0.62) * secondaryRing * 0.24;
-  color += ringColor * (1.0 - alpha * 0.35);
-  alpha = max(alpha, photonRing * 0.42 + secondaryRing * 0.18);
+  color += ringColor * (1.0 - alpha) * select(0.0, 1.0, approaching);
 
-  return BlackHoleSample(color, clamp(alpha, 0.0, 1.0), clamp(occlusion, 0.0, 1.0), minR);
+  // Shadow only adds coverage behind what is already in front of it.
+  alpha += (1.0 - alpha) * shadowCov;
+
+  return BlackHoleSample(color, clamp(alpha, 0.0, 1.0), shadowCov, minR);
 }
 
 fn apply_black_hole_scene_lensing(sceneColor: vec3<f32>, uv: vec2<f32>, centerUv: vec2<f32>, radiusUv: f32, strength: f32) -> vec3<f32> {
@@ -387,108 +415,150 @@ fn apply_black_hole_scene_lensing(sceneColor: vec3<f32>, uv: vec2<f32>, centerUv
     return sceneColor;
   }
 
-  let dir = (uv - centerUv) / max(length(uv - centerUv), 0.0001);
+  // Radial direction in aspect-corrected space, mapped back to uv units.
+  let dir = (delta / radius) / vec2<f32>(aspect, 1.0);
   let pull = min(strength * window * radiusUv * radiusUv / max(radius, 0.025), 0.12);
   let lensedUv = uv - dir * pull;
-  let lensed = sample_composite(lensedUv);
-  return mix(sceneColor, lensed, clamp(window * 0.62, 0.0, 0.82));
+  // Return only the displaced sample: the pull already tapers to zero at the
+  // window edges. Blending with the unlensed scene drew every star twice.
+  return sample_composite(lensedUv);
 }
 
-fn apply_black_hole_image_lod(sceneColor: vec3<f32>, uv: vec2<f32>, centerUv: vec2<f32>, radiusUv: f32, opacity: f32) -> vec3<f32> {
-  if opacity <= 0.001 || radiusUv <= 0.0001 {
+// Composites the distant EHT image LOD fully over sceneColor; the caller fades
+// the result. halfRadiusUv is the image half-width in viewport-height uv.
+fn apply_black_hole_image_lod(sceneColor: vec3<f32>, uv: vec2<f32>, centerUv: vec2<f32>, halfRadiusUv: f32) -> vec3<f32> {
+  if halfRadiusUv <= 0.0001 {
     return sceneColor;
   }
 
   let aspect = max(camera.screenAndTarget.x, 0.000001);
-  let delta = (uv - centerUv) * vec2<f32>(aspect, 1.0) / radiusUv;
+  let delta = (uv - centerUv) * vec2<f32>(aspect, 1.0) / halfRadiusUv;
   let r = length(delta);
   if r > 1.12 {
     return sceneColor;
   }
 
-  let imageUv = delta * 0.5 + vec2<f32>(0.5);
-  if imageUv.x < 0.0 || imageUv.x > 1.0 || imageUv.y < 0.0 || imageUv.y > 1.0 {
-    return sceneColor;
-  }
+  // Opaque shadow sized from the real critical impact parameter, feathered
+  // by about one pixel.
+  let viewportH = max(blackHole.params.z, 1.0);
+  let pixelImage = 1.0 / (viewportH * halfRadiusUv);
+  let shadowR = SHADOW_RADIUS_RS / LOD_IMAGE_HALF_RS;
+  let shadowCov = 1.0 - smoothstep(shadowR - pixelImage, shadowR + pixelImage, r);
 
-  let imageColor = textureSampleLevel(blackHoleLodTex, blackHoleLodSampler, imageUv, 0.0).rgb;
+  let imageUv = delta * 0.5 + vec2<f32>(0.5);
+  var imageColor = vec3<f32>(0.0);
+  if imageUv.x >= 0.0 && imageUv.x <= 1.0 && imageUv.y >= 0.0 && imageUv.y <= 1.0 {
+    imageColor = textureSampleLevel(blackHoleLodTex, blackHoleLodSampler, imageUv, 0.0).rgb;
+  }
   let luma = dot(imageColor, vec3<f32>(0.2126, 0.7152, 0.0722));
   let edgeFeather = 1.0 - smoothstep(0.88, 1.10, r);
-  let diskAlpha = smoothstep(0.025, 0.18, luma) * edgeFeather;
-  let shadowAlpha = (1.0 - smoothstep(0.20, 0.38, r)) * edgeFeather * 0.72;
-  let alpha = clamp(max(diskAlpha, shadowAlpha) * opacity, 0.0, 0.9);
+  let diskAlpha = smoothstep(0.025, 0.18, luma) * edgeFeather * (1.0 - shadowCov);
   let warmColor = imageColor * vec3<f32>(1.10, 0.94, 0.76);
   let hdrColor = warmColor * (2.2 + smoothstep(0.12, 0.78, luma) * 3.4);
-  return sceneColor * (1.0 - alpha) + hdrColor * alpha;
+  let behind = sceneColor * (1.0 - shadowCov);
+  return behind * (1.0 - diskAlpha) + hdrColor * diskAlpha;
 }
 
-fn black_hole_composite(sceneColor: vec3<f32>, uv: vec2<f32>) -> vec3<f32> {
+struct BlackHoleView {
+  valid:          bool,
+  centerUv:       vec2<f32>,
+  distanceRs:     f32,
+  // viewport-height uv per Rs at the hole's distance
+  uvPerRs:        f32,
+  proceduralFade: f32,
+  lodFade:        f32,
+  lodRadiusUv:    f32,
+};
+
+fn black_hole_view() -> BlackHoleView {
+  var bh: BlackHoleView;
+  bh.valid = false;
   let strength = clamp(blackHole.params.w, 0.0, 1.0);
   let eventRadiusAU = max(blackHole.pos_size.w, 0.0);
   if strength <= 0.001 || eventRadiusAU <= 0.0 {
-    return sceneColor;
+    return bh;
   }
-
   let centerRelWorld = camera_relative(blackHole.pos_size.xyz);
-  let centerDistanceAU = length(centerRelWorld);
-  let distanceRs = centerDistanceAU / eventRadiusAU;
-  if distanceRs > LOD_FADE_OUT_END_RS {
-    return sceneColor;
+  bh.distanceRs = length(centerRelWorld) / eventRadiusAU;
+  if bh.distanceRs > LOD_FADE_OUT_END_RS {
+    return bh;
   }
-
   let centerClip = project_world(blackHole.pos_size.xyz);
   if centerClip.w <= 0.0 {
+    return bh;
+  }
+  let centerNdc = centerClip.xy / max(centerClip.w, 0.000001);
+  bh.centerUv = vec2<f32>(centerNdc.x * 0.5 + 0.5, 0.5 - centerNdc.y * 0.5);
+  bh.uvPerRs = 0.5 * eventRadiusAU * camera.upAndFocal.w / max(centerClip.w, 0.000001);
+
+  let physicalLodUv = LOD_IMAGE_HALF_RS * bh.uvPerRs;
+  let handover = 1.0 - smoothstep(LOD_HANDOVER_END_UV, LOD_HANDOVER_START_UV, physicalLodUv);
+  let farFade = (1.0 - smoothstep(LOD_FADE_OUT_START_RS, LOD_FADE_OUT_END_RS, bh.distanceRs)) * strength;
+  bh.proceduralFade = (1.0 - handover) * strength;
+  bh.lodFade = handover * farFade;
+  bh.lodRadiusUv = max(physicalLodUv, LOD_MIN_RADIUS_UV);
+  bh.valid = true;
+  return bh;
+}
+
+// Analytic shadow coverage at uv (both LODs share the same shadow), used to
+// keep resampling passes such as the flight warp from leaking stars into it.
+fn black_hole_shadow_mask(uv: vec2<f32>) -> f32 {
+  let bh = black_hole_view();
+  if !bh.valid {
+    return 0.0;
+  }
+  let aspect = max(camera.screenAndTarget.x, 0.000001);
+  let screenRadius = length((uv - bh.centerUv) * vec2<f32>(aspect, 1.0));
+  let pixelUv = 1.0 / max(blackHole.params.z, 1.0);
+  let proceduralR = SHADOW_RADIUS_RS * bh.uvPerRs;
+  let lodR = SHADOW_RADIUS_RS / LOD_IMAGE_HALF_RS * bh.lodRadiusUv;
+  let proceduralCov = 1.0 - smoothstep(proceduralR - pixelUv, proceduralR + pixelUv, screenRadius);
+  let lodCov = 1.0 - smoothstep(lodR - pixelUv, lodR + pixelUv, screenRadius);
+  return max(proceduralCov * bh.proceduralFade, lodCov * bh.lodFade);
+}
+
+fn black_hole_composite(sceneColor: vec3<f32>, uv: vec2<f32>) -> vec3<f32> {
+  let bh = black_hole_view();
+  if !bh.valid {
     return sceneColor;
   }
 
-  let centerNdc = centerClip.xy / max(centerClip.w, 0.000001);
-  let centerUv = vec2<f32>(centerNdc.x * 0.5 + 0.5, 0.5 - centerNdc.y * 0.5);
-  let diskRadiusNdcY = DISK_OUTER_RADIUS * eventRadiusAU * camera.upAndFocal.w / max(centerClip.w, 0.000001);
-  let physicalDiskRadiusUv = max(diskRadiusNdcY * 0.5, 0.0);
-  let diskRadiusUv = clamp(physicalDiskRadiusUv, 0.012, 0.92);
-  let lodRadiusUv = clamp(max(physicalDiskRadiusUv * 8.0, 0.012), 0.012, 0.075);
   let aspect = max(camera.screenAndTarget.x, 0.000001);
-  let screenRadius = length((uv - centerUv) * vec2<f32>(aspect, 1.0));
+  let screenRadius = length((uv - bh.centerUv) * vec2<f32>(aspect, 1.0));
+  var result = sceneColor;
 
-  let proceduralFade = (1.0 - smoothstep(PROCEDURAL_FADE_START_RS, PROCEDURAL_FADE_END_RS, distanceRs)) * strength;
-  let lodFade = smoothstep(LOD_FADE_IN_START_RS, LOD_FADE_IN_END_RS, distanceRs) *
-    (1.0 - smoothstep(LOD_FADE_OUT_START_RS, LOD_FADE_OUT_END_RS, distanceRs)) *
-    strength;
-  let proceduralWindowRadius = select(0.0, diskRadiusUv * 3.35 + 0.12, proceduralFade > 0.001);
-  let lodWindowRadius = select(0.0, lodRadiusUv * 1.16, lodFade > 0.001);
-  let effectWindowRadius = max(proceduralWindowRadius, lodWindowRadius);
-
-  var base = sceneColor;
-  if proceduralFade > 0.001 {
-    base = apply_black_hole_scene_lensing(base, uv, centerUv, diskRadiusUv, proceduralFade);
-  }
-  if screenRadius > effectWindowRadius {
-    return base;
-  }
-  if lodFade > 0.001 {
-    base = apply_black_hole_image_lod(base, uv, centerUv, lodRadiusUv, lodFade);
-  }
-  if proceduralFade <= 0.001 {
-    return base;
+  if bh.lodFade > 0.001 && screenRadius <= bh.lodRadiusUv * 1.13 {
+    let lod = apply_black_hole_image_lod(sceneColor, uv, bh.centerUv, bh.lodRadiusUv);
+    result = mix(sceneColor, lod, bh.lodFade);
   }
 
-  let rayWorld = screen_ray(uv);
-  let rayPos = black_hole_space(-centerRelWorld) / eventRadiusAU;
-  let rayDir = black_hole_space(rayWorld);
-  let sample = raymarch_black_hole(rayPos, rayDir, blackHole.params.x, proceduralFade);
-  let effectWindow = (1.0 - smoothstep(diskRadiusUv * 2.65 + 0.08, diskRadiusUv * 3.35 + 0.12, screenRadius)) * proceduralFade;
-  let occlusion = sample.occlusion * effectWindow;
-  let emissionAlpha = sample.alpha * effectWindow;
+  if bh.proceduralFade > 0.001 {
+    let diskRadiusUv = clamp(DISK_OUTER_RADIUS * bh.uvPerRs, 0.012, 0.92);
+    var base = apply_black_hole_scene_lensing(sceneColor, uv, bh.centerUv, diskRadiusUv, 1.0);
 
-  base *= 1.0 - occlusion;
-  base = mix(base, sample.color + base * (1.0 - emissionAlpha), emissionAlpha);
-  return base + sample.color * (1.0 - emissionAlpha) * 0.20 * effectWindow;
+    let eventRadiusAU = blackHole.pos_size.w;
+    let camPos = black_hole_space(-camera_relative(blackHole.pos_size.xyz)) / eventRadiusAU;
+    // Skip the march for pixels whose ray misses the bounding sphere.
+    let sphereUv = BOUNDING_RADIUS_RS * bh.uvPerRs * 1.05;
+    if bh.distanceRs <= BOUNDING_RADIUS_RS * 1.2 || screenRadius <= sphereUv {
+      let focalY = max(camera.upAndFocal.w, 0.000001);
+      let pixelAngle = 2.0 / (focalY * max(blackHole.params.z, 1.0));
+      let rayDir = black_hole_space(screen_ray(uv));
+      let sample = raymarch_black_hole(camPos, rayDir, blackHole.params.x, pixelAngle);
+      // Front-to-back: sample.color is premultiplied, alpha covers the scene.
+      base = sample.color + base * (1.0 - sample.alpha);
+    }
+    // Fade only the output; geometry and bending stay physical.
+    result = mix(result, base, bh.proceduralFade);
+  }
+  return result;
 }
 
 fn apply_flight_warp(hdrColor: vec3<f32>, uv: vec2<f32>) -> vec3<f32> {
   let warpStrength = clamp(blackHole.flight.x, 0.0, 1.0);
   let blurStrength = clamp(blackHole.flight.y, 0.0, 1.0);
-  let base = hdrColor + sample_bloom(uv);
+  let base = hdrColor;
   if warpStrength <= 0.001 && blurStrength <= 0.001 {
     return base;
   }
@@ -510,26 +580,32 @@ fn apply_flight_warp(hdrColor: vec3<f32>, uv: vec2<f32>) -> vec3<f32> {
   let warpScale = warpAmount * (0.035 + 0.045 * radius);
   let warpedUv = center + delta * (1.0 - warpScale);
 
-  var col = mix(base, sample_composite(warpedUv), warpAmount * 0.52);
+  // Resampled taps come from the raw scene; mask them by the black-hole
+  // shadow at the tap position so they cannot reintroduce stars inside it.
+  let warpedTap = sample_composite(warpedUv) * (1.0 - black_hole_shadow_mask(warpedUv));
+  var col = mix(base, warpedTap, warpAmount * 0.52);
   var weight = 1.0;
   if blurAmount > 0.001 {
     for (var i: i32 = 1; i <= 5; i = i + 1) {
       let t = f32(i) / 5.0;
-      let tapOffset = dir * blurAmount * (pixelSpan * 2.0 + 0.070 * t);
+      let tapUv = warpedUv - dir * blurAmount * (pixelSpan * 2.0 + 0.070 * t);
       let tapWeight = (1.0 - t * 0.12) * 0.13;
-      col += sample_composite(warpedUv - tapOffset) * tapWeight;
+      col += sample_composite(tapUv) * (1.0 - black_hole_shadow_mask(tapUv)) * tapWeight;
       weight += tapWeight;
     }
   }
 
-  let forwardTap = sample_bloom(warpedUv - dir * effectAmount * 0.095);
+  let forwardUv = warpedUv - dir * effectAmount * 0.095;
+  let forwardTap = sample_bloom(forwardUv) * (1.0 - black_hole_shadow_mask(forwardUv));
   let sideGlow = smoothstep(0.22, 0.95, radius) * (1.0 - smoothstep(1.02, 1.28, radius));
   let warpTint = vec3<f32>(0.035, 0.050, 0.080) * warpAmount * sideGlow;
   return col / max(weight, 0.0001) + forwardTap * effectAmount * 0.75 + warpTint;
 }
 
 fn present_color(hdrColor: vec3<f32>, uv: vec2<f32>) -> vec4<f32> {
-  let withBlackHole = black_hole_composite(hdrColor, uv);
+  // Bloom is added before the black hole composite so the shadow occludes
+  // bloomed stars behind it instead of glowing blurry stars through it.
+  let withBlackHole = black_hole_composite(hdrColor + sample_bloom(uv), uv);
   return vec4<f32>(aces_tonemap(apply_flight_warp(withBlackHole, uv)), 1.0);
 }
 

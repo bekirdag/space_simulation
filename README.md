@@ -16,10 +16,15 @@ help from Claude and Codex 5.5.
   time controls.
 - NASA/JPL Horizons starting vectors cached for 33 simulated bodies: the Sun,
   planets, major moons, Pluto/Charon, and selected dwarf planets.
-- Solar-system planet meshes are loaded through the backend cache and rendered
-  in place of procedural planet billboards once available. Earth uses a local
-  credited GLB model by
-  [Matteo Pascale](https://www.artstation.com/matteopascale).
+- Planets, moons and dwarf planets are ray-traced (pixel-exact) spheres,
+  oriented with IAU/NAIF pck00011 rotation elements and skinned with
+  equirectangular maps: Solar System Scope (CC BY 4.0) for Earth/Moon/planets
+  and Saturn's rings, NASA/JPL/USGS public-domain mosaics (Galileo, Cassini,
+  Voyager, New Horizons, Dawn) for the moons, Pluto, Charon and Ceres, and
+  generic recoloured surfaces for Eris, Haumea (tri-axial ellipsoid) and
+  Makemake. Sources and licences per texture:
+  `public/textures/bodies/manifest.json`; rebuild with
+  `node scripts/build-body-textures.mjs`.
 - Solar-system-barycentric state data, so the Sun has a real starting position
   and velocity instead of being treated as fixed at the origin.
 - Local circular galactic-frame model that adds a small external tidal
@@ -128,9 +133,9 @@ after install:
 - `public/cache/nasa/constellation_figures_4k.tif` and
   `public/cache/nasa/constellations.meta.json`: NASA SVS Deep Star Maps 2020
   source reference for the constellation layer.
-- `src/models/earth.glb`: local Earth 3D model by
-  [Matteo Pascale](https://www.artstation.com/matteopascale), served through
-  `/api/model-assets/solar-earth`.
+- `public/textures/bodies/*.jpg|png`: content-hashed equirectangular body
+  textures (u = 0.5 at longitude 0, east to the right) with
+  `manifest.json` recording source URL, licence and credit.
 Horizons data is loaded through the local backend at `/api/horizons`. The
 backend serves `cache/nasa/horizons/<date>.json` first, seeds that runtime cache
 from committed `public/cache/horizons/<date>.json` files when available, and
@@ -153,10 +158,9 @@ astrophysical solver.
 - The Milky Way object model list exposes 46 real mesh assets from NASA 3D
   Resources. Direct GLB/STL files and archive-backed STL files are fetched
   through the local backend and cached under `cache/nasa/models/`.
-- Solar-system planet meshes are render-only visual models. The Sun currently
-  uses an emissive generated sphere because NASA's downloadable Sun package is
-  USDZ with a binary USDC scene. Earth uses Matteo Pascale's local credited
-  GLB model; the other available planet meshes use NASA GLB files.
+- Solar-system body surfaces are render-only ray-traced ellipsoids (the Sun
+  uses a procedural photosphere). Greyscale mosaics are tinted to approximate
+  colour; Voyager-era Uranian moon maps only cover the southern hemispheres.
 - Large star and galaxy catalogs are mapped visually and do not exert gravity.
 - Galaxy distances are scaled with a Local Group linear range and a logarithmic
   deep-field range so large structures remain navigable in one scene.
@@ -177,9 +181,12 @@ astrophysical solver.
 - Black-hole WebGPU raytracing reference:
   [Raytracing a Black Hole with WebGPU](https://threejsroadmap.com/blog/raytracing-a-black-hole-with-webgpu)
   by Dan Greenheck.
-- Earth 3D model by [Matteo Pascale](https://www.artstation.com/matteopascale).
 - Solar-system state vectors: NASA/JPL Horizons.
-- Planet model assets where available: NASA Science 3D Resources.
+- Planet, ring and Earth night/cloud maps:
+  [Solar System Scope](https://www.solarsystemscope.com/textures/) (CC BY 4.0).
+- Outer-planet moon, Pluto, Charon and Ceres mosaics: NASA/JPL/USGS Astrogeology
+  (Galileo, Voyager, Cassini/DLR, New Horizons, Dawn; public domain). Eris,
+  Haumea and Makemake use generic recoloured Solar System Scope textures.
 - Exoplanet host-star data: NASA Exoplanet Archive.
 - Constellation source data: NASA SVS Deep Star Maps.
 - Galactic dust source map: NASA/GSFC LAMBDA Meisner-Finkbeiner 2015 E(B-V).

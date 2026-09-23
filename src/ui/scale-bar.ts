@@ -1,10 +1,11 @@
-import { NEARBY_STAR_AU_PER_PARSEC } from "../catalog/nearby-stars";
-import { GALAXY_KPC_TO_AU } from "../catalog/galaxies";
+import { AU_PER_KPC, AU_PER_MPC, AU_PER_PARSEC } from "../catalog/scale";
 
 const AU_KM = 149_597_870.7;
 const TARGET_BAR_PX = 150;
 const SOLAR_CONTEXT_AU = 80;
-const GALACTIC_CONTEXT_AU = 10_000;
+// Stars, nebulas, the Milky Way and galaxies share one 80 AU/pc scale, so only
+// the context caption changes here. 100 000 AU ≈ 1.25 kpc (was 10 000 AU at 8 AU/pc).
+const GALACTIC_CONTEXT_AU = 100_000;
 
 interface ScaleUnit {
   label: string;
@@ -36,17 +37,12 @@ function unitFor(rawAu: number, contextDistanceAu: number): ScaleUnit {
     return { label: "AU", unitAu: 1, context: "solar scale" };
   }
 
-  if (contextDistanceAu < GALACTIC_CONTEXT_AU) {
-    const rawPc = rawAu / NEARBY_STAR_AU_PER_PARSEC;
-    if (rawPc < 0.08) return { label: "AU", unitAu: 1, context: "nearby-star scale" };
-    if (rawPc < 1_000) return { label: "pc", unitAu: NEARBY_STAR_AU_PER_PARSEC, context: "nearby-star scale" };
-    return { label: "kpc", unitAu: NEARBY_STAR_AU_PER_PARSEC * 1_000, context: "nearby-star scale" };
-  }
-
-  const rawKpc = rawAu / GALAXY_KPC_TO_AU;
-  if (rawKpc < 0.08) return { label: "pc", unitAu: GALAXY_KPC_TO_AU / 1_000, context: "galactic scale" };
-  if (rawKpc < 1_000) return { label: "kpc", unitAu: GALAXY_KPC_TO_AU, context: "galactic scale" };
-  return { label: "Mpc", unitAu: GALAXY_KPC_TO_AU * 1_000, context: "galactic scale" };
+  const context = contextDistanceAu < GALACTIC_CONTEXT_AU ? "nearby-star scale" : "galactic scale";
+  const rawPc = rawAu / AU_PER_PARSEC;
+  if (rawPc < 0.08) return { label: "AU", unitAu: 1, context };
+  if (rawPc < 1_000) return { label: "pc", unitAu: AU_PER_PARSEC, context };
+  if (rawPc < 500_000) return { label: "kpc", unitAu: AU_PER_KPC, context };
+  return { label: "Mpc", unitAu: AU_PER_MPC, context };
 }
 
 export class ScaleBar {

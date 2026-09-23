@@ -41,8 +41,24 @@ fn bright_pass(color: vec3<f32>) -> vec3<f32> {
   return color * (contribution / max(luma, 0.0001));
 }
 
+// Must match BLOOM_SCALE in renderer.ts (bloom targets are 1/4 resolution).
+const BLOOM_DOWNSAMPLE: i32 = 4;
+
 @fragment
 fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
-  let color = textureSampleLevel(sceneTex, sceneSampler, in.uv, 0.0).rgb;
-  return vec4<f32>(bright_pass(color), 1.0);
+  // Box-downsample the full 4x4 footprint of this bloom texel and apply the
+  // bright pass per scene pixel. A single bilinear tap only saw 4 of the 16
+  // pixels, so point-like stars fed bloom only when they crossed that 2x2
+  // window and their halos winked on/off while the camera rotated.
+  let sceneSize = vec2<i32>(textureDimensions(sceneTex));
+  let base = vec2<i32>(floor(in.clip_pos.xy)) * BLOOM_DOWNSAMPLE;
+  let maxCoord = sceneSize - vec2<i32>(1);
+  var sum = vec3<f32>(0.0);
+  for (var y = 0; y < BLOOM_DOWNSAMPLE; y++) {
+    for (var x = 0; x < BLOOM_DOWNSAMPLE; x++) {
+      let coord = clamp(base + vec2<i32>(x, y), vec2<i32>(0), maxCoord);
+      sum += bright_pass(textureLoad(sceneTex, coord, 0).rgb);
+    }
+  }
+  return vec4<f32>(sum / f32(BLOOM_DOWNSAMPLE * BLOOM_DOWNSAMPLE), 1.0);
 }

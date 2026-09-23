@@ -1,6 +1,22 @@
 import { type StarSearchResult } from "./stars";
+import { AU_PER_PARSEC, raDecDistancePcToWorldAU } from "./scale";
 
 export type MilkyWayModelFormat = "glb";
+
+/**
+ * Glowing-gas look for the NASA/Chandra isosurface meshes (milkyway-model.wgsl
+ * fs_glow). `color` on the model is the outer / blast-wave colour, `inner` the
+ * ejecta colour toward the centre; textured parts keep their element colours.
+ */
+export interface MilkyWayModelGlow {
+  inner: [number, number, number];
+  /** HDR emission multiplier (additive; bloom threshold is ~1.1 luma). */
+  gain: number;
+  /** Fresnel exponent: higher = thinner, sharper limb-brightened shells. */
+  rimPower: number;
+  /** Emission of faces seen head-on relative to grazing (0..1). */
+  headOn: number;
+}
 
 export interface MilkyWayModelObject {
   id: string;
@@ -21,6 +37,7 @@ export interface MilkyWayModelObject {
   loadDistanceAU: number;
   color: [number, number, number];
   opacity: number;
+  glow: MilkyWayModelGlow;
   textureUrl?: string;
   textureSource?: string;
   textureSourceUrl?: string;
@@ -43,6 +60,7 @@ interface ModelDef {
   radiusAU?: number;
   color: [number, number, number];
   opacity?: number;
+  glow?: Partial<MilkyWayModelGlow>;
   textureUrl?: string;
   textureSource?: string;
   textureSourceUrl?: string;
@@ -50,8 +68,10 @@ interface ModelDef {
   aliases?: string[];
 }
 
-const AU_PER_PARSEC = 8;
-const EPS = 23.4393 * Math.PI / 180;
+// Shared 80 AU/pc scale (scale.ts). The AU clamps below were tuned at the old
+// 8 AU/pc Milky Way scale and are multiplied by 10 (SCALE_AU) so fades and
+// focus distances trigger at the same physical distances as before.
+const SCALE_AU = 10;
 const MODEL_FOCUS_NDC_RADIUS = 0.5; // diameter fills roughly half the viewport height
 const CAMERA_FOCAL_Y = 1 / Math.tan(Math.PI / 8);
 
@@ -60,23 +80,13 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 function worldPos(raDeg: number, decDeg: number, distancePc: number): [number, number, number] {
-  const r = distancePc * AU_PER_PARSEC;
-  const ra = raDeg * Math.PI / 180;
-  const dec = decDeg * Math.PI / 180;
-  const xe = Math.cos(dec) * Math.cos(ra);
-  const ye = Math.cos(dec) * Math.sin(ra);
-  const ze = Math.sin(dec);
-  return [
-    xe * r,
-    (ye * Math.cos(EPS) + ze * Math.sin(EPS)) * r,
-    (-ye * Math.sin(EPS) + ze * Math.cos(EPS)) * r,
-  ];
+  return raDecDistancePcToWorldAU(raDeg, decDeg, distancePc);
 }
 
 function radiusFromAngularSize(distancePc: number, diameterArcmin: number): number {
   const distanceAU = distancePc * AU_PER_PARSEC;
   const angularRadius = (diameterArcmin / 2) / 60 * Math.PI / 180;
-  return Math.max(6, distanceAU * Math.tan(angularRadius));
+  return Math.max(6 * SCALE_AU, distanceAU * Math.tan(angularRadius));
 }
 
 function slugSearch(value: string): string {
@@ -84,15 +94,15 @@ function slugSearch(value: string): string {
 }
 
 function focusDistanceForRadius(radiusAU: number): number {
-  return clamp((radiusAU * CAMERA_FOCAL_Y) / MODEL_FOCUS_NDC_RADIUS, 16, 12_000);
+  return clamp((radiusAU * CAMERA_FOCAL_Y) / MODEL_FOCUS_NDC_RADIUS, 16 * SCALE_AU, 12_000 * SCALE_AU);
 }
 
 function toModel(def: ModelDef): MilkyWayModelObject {
   const [x, y, z] = worldPos(def.ra, def.dec, def.distancePc);
   const radiusAU = def.radiusAU ?? radiusFromAngularSize(def.distancePc, def.diameterArcmin ?? 12);
   const focusDistance = focusDistanceForRadius(radiusAU);
-  const fadeNearAU = clamp(radiusAU * 12, 120, 12_000);
-  const fadeFarAU = clamp(radiusAU * 48, fadeNearAU + 80, 42_000);
+  const fadeNearAU = clamp(radiusAU * 12, 120 * SCALE_AU, 12_000 * SCALE_AU);
+  const fadeFarAU = clamp(radiusAU * 48, fadeNearAU + 80 * SCALE_AU, 42_000 * SCALE_AU);
 
   const model: MilkyWayModelObject = {
     id: def.id,
@@ -111,6 +121,12 @@ function toModel(def: ModelDef): MilkyWayModelObject {
     loadDistanceAU: fadeFarAU * 1.18,
     color: def.color,
     opacity: def.opacity ?? 0.78,
+    glow: {
+      inner: def.glow?.inner ?? def.color,
+      gain: def.glow?.gain ?? 1,
+      rimPower: def.glow?.rimPower ?? 2.2,
+      headOn: def.glow?.headOn ?? 0.05,
+    },
     aliases: def.aliases ?? [],
   };
   if (def.textureUrl) model.textureUrl = def.textureUrl;
@@ -120,6 +136,8 @@ function toModel(def: ModelDef): MilkyWayModelObject {
   return model;
 }
 
+// BP Tauri (NASA "3D Models/BP Tauri") was removed: its disk is a solid
+// capped cylinder that reads as a glass can even when drawn as glowing gas.
 const DEFINITIONS: ModelDef[] = [
   {
     id: "crab-nebula",
@@ -133,7 +151,8 @@ const DEFINITIONS: ModelDef[] = [
     dec: 22.01,
     distancePc: 2000,
     diameterArcmin: 6,
-    color: [0.58, 0.76, 1.0],
+    color: [0.36, 0.48, 1.0],
+    glow: { inner: [0.72, 0.82, 1.0], gain: 0.9 },
     aliases: ["M1", "Taurus A"],
   },
   {
@@ -148,7 +167,8 @@ const DEFINITIONS: ModelDef[] = [
     dec: 58.81,
     distancePc: 3400,
     diameterArcmin: 5,
-    color: [0.82, 0.62, 1.0],
+    color: [0.28, 0.50, 1.0],
+    glow: { inner: [0.50, 0.42, 1.0], gain: 0.75 },
     aliases: ["Cas A"],
   },
   {
@@ -163,7 +183,8 @@ const DEFINITIONS: ModelDef[] = [
     dec: 58.81,
     distancePc: 3400,
     diameterArcmin: 5,
-    color: [0.56, 1.0, 0.72],
+    color: [1.0, 0.46, 0.26],
+    glow: { inner: [0.45, 1.0, 0.55], gain: 0.75 },
     opacity: 0.62,
     aliases: ["Cas A 2023", "Green Monster"],
   },
@@ -179,7 +200,8 @@ const DEFINITIONS: ModelDef[] = [
     dec: 58.81,
     distancePc: 3400,
     diameterArcmin: 5,
-    color: [1.0, 0.62, 0.44],
+    color: [0.78, 0.32, 1.0],
+    glow: { inner: [1.0, 0.36, 0.46], gain: 1.0 },
     opacity: 0.64,
     aliases: ["Cas A 2025", "Cas A iron"],
   },
@@ -195,7 +217,8 @@ const DEFINITIONS: ModelDef[] = [
     dec: -59.32,
     distancePc: 6000,
     diameterArcmin: 8,
-    color: [0.55, 0.80, 1.0],
+    color: [0.40, 0.60, 1.0],
+    glow: { inner: [1.0, 0.74, 0.34], gain: 1.0 },
     aliases: ["G292", "G292.0 1.8"],
   },
   {
@@ -210,25 +233,12 @@ const DEFINITIONS: ModelDef[] = [
     dec: 30.8,
     distancePc: 740,
     diameterArcmin: 230,
-    color: [0.48, 0.9, 1.0],
+    color: [0.32, 0.86, 1.0],
+    glow: { inner: [1.0, 0.34, 0.46], gain: 1.15, headOn: 0.04 },
     opacity: 0.45,
     aliases: ["Veil Nebula", "NGC 6960"],
   },
-  {
-    id: "bp-tauri",
-    name: "BP Tauri",
-    modelGroup: "bp-tauri",
-    objectType: "T Tauri star",
-    format: "glb",
-    source: "NASA Science / Chandra",
-    sourceUrl: "https://science.nasa.gov/3d-resources/bp-tauri/",
-    ra: 64.816,
-    dec: 29.108,
-    distancePc: 129,
-    radiusAU: 34,
-    color: [1.0, 0.52, 0.42],
-    aliases: ["BP Tau"],
-  },
+
 ];
 
 export const MILKY_WAY_MODEL_OBJECTS: MilkyWayModelObject[] = DEFINITIONS.map(toModel);
@@ -255,13 +265,38 @@ export function milkyWayModelSearchResults(): StarSearchResult[] {
   return MILKY_WAY_MODEL_OBJECTS.map(milkyWayModelToSearchResult);
 }
 
-const MODEL_BACKED_NEBULA_NAMES = [
-  "Crab Nebula (M1)",
-  "G184.6-5.8 (Crab surroundings)",
-  "Cassiopeia A",
-  "G292.0+1.8",
-  "Cygnus Loop (G74.0-8.5)",
+// 2D catalog nebulas (nebulas.ts) that have a 3D gas mesh here. They are
+// excluded from search / context-menu hits (the model entry supersedes them),
+// but their billboard stays in the GPU buffer and hands over to the mesh up
+// close (milkyWayModelNebulaHandoff) so far views still show the remnant.
+const MODEL_BACKED_NEBULAE: ReadonlyArray<readonly [nebulaName: string, modelGroup: string]> = [
+  ["Crab Nebula (M1)", "crab-nebula"],
+  ["G184.6-5.8 (Crab surroundings)", "crab-nebula"],
+  ["Cassiopeia A", "cassiopeia-a"],
+  ["G292.0+1.8", "g292-supernova-remnant"],
+  ["Cygnus Loop (G74.0-8.5)", "cygnus-loop-supernova"],
 ];
+const MODEL_BACKED_NEBULA_NAMES = MODEL_BACKED_NEBULAE.map(([name]) => name);
+
+export interface MilkyWayModelNebulaHandoff {
+  /** Camera distance (AU) at/below which the mesh is fully shown. */
+  nearAU: number;
+  /** Camera distance (AU) at/above which only the 2D billboard is shown. */
+  farAU: number;
+}
+
+/**
+ * Crossfade range for a 2D catalog nebula backed by a 3D gas mesh: the
+ * billboard dims toward a faint residual haze while the mesh fades in
+ * (same range as the mesh LOD in milkyway-model.wgsl vs_main).
+ */
+export function milkyWayModelNebulaHandoff(nebulaName: string): MilkyWayModelNebulaHandoff | null {
+  const entry = MODEL_BACKED_NEBULAE.find(([name]) => name === nebulaName);
+  if (!entry) return null;
+  const model = MILKY_WAY_MODEL_OBJECTS.find(candidate => candidate.modelGroup === entry[1]);
+  if (!model) return null;
+  return { nearAU: model.fadeNearAU, farAU: model.fadeFarAU };
+}
 
 export function milkyWayModelNebulaExclusionSlugs(): Set<string> {
   const slugs = new Set(MODEL_BACKED_NEBULA_NAMES.map(slugSearch));

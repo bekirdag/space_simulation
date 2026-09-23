@@ -12,13 +12,16 @@ const MOON_ANGLE_FACTOR = 0.02;
 const MIN_RECORD_DIST_AU = 1e-6;
 
 const COORDS = 3;
-export const TRAIL_VTXFLOATS = 8;
+// posHigh xyz, age, color rgb, pad, posLow xyz, pad (see trail.wgsl).
+export const TRAIL_VTXFLOATS = 12;
 
 // Bytes reserved in the GPU buffer for one body's trail.
 export const TRAIL_SLOT_BYTES = TRAIL_LEN * TRAIL_VTXFLOATS * 4;
 
 export class TrailSystem {
-  private positions = new Map<number, Float32Array>();
+  // f64 history: f32 storage loses ~300 km at Saturn's distance, which shows
+  // as jitter/offset when zoomed onto moons (ISSUES A6).
+  private positions = new Map<number, Float64Array>();
   private segments  = new Map<number, Float32Array>();
   private heads     = new Map<number, number>();
   private counts    = new Map<number, number>();
@@ -100,11 +103,11 @@ export class TrailSystem {
       }
 
       if (!this.positions.has(b.id)) {
-        let positions: Float32Array;
+        let positions: Float64Array;
         let segments: Float32Array;
         let cache: Float32Array;
         try {
-          positions = new Float32Array(TRAIL_LEN * COORDS);
+          positions = new Float64Array(TRAIL_LEN * COORDS);
           segments = new Float32Array(TRAIL_LEN);
           cache = new Float32Array(TRAIL_LEN * TRAIL_VTXFLOATS);
         } catch (error) {
@@ -176,14 +179,26 @@ export class TrailSystem {
       const src = ((head - count + i) % TRAIL_LEN + TRAIL_LEN) % TRAIL_LEN;
       const age = i / (count - 1);
       const o   = i * TRAIL_VTXFLOATS;
-      cache[o + 0] = buf[src * COORDS + 0]!;
-      cache[o + 1] = buf[src * COORDS + 1]!;
-      cache[o + 2] = buf[src * COORDS + 2]!;
+      const x = buf[src * COORDS + 0]!;
+      const y = buf[src * COORDS + 1]!;
+      const z = buf[src * COORDS + 2]!;
+      // High/low f32 split: the shader subtracts the equally split eye, so the
+      // camera-relative position keeps ~f64 precision (relative-to-eye).
+      const hx = Math.fround(x);
+      const hy = Math.fround(y);
+      const hz = Math.fround(z);
+      cache[o + 0] = hx;
+      cache[o + 1] = hy;
+      cache[o + 2] = hz;
       cache[o + 3] = age;
       cache[o + 4] = color[0];
       cache[o + 5] = color[1];
       cache[o + 6] = color[2];
       cache[o + 7] = 0;
+      cache[o + 8] = x - hx;
+      cache[o + 9] = y - hy;
+      cache[o + 10] = z - hz;
+      cache[o + 11] = 0;
     }
     // Return a view of exactly count vertices — no allocation, no copy.
     return cache.subarray(0, count * TRAIL_VTXFLOATS);

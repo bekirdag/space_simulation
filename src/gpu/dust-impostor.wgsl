@@ -112,7 +112,7 @@ fn vs_main(
   let worldPos = center
     + rotated.x * camera.rightAndMNR.xyz * radius * sx
     + rotated.y * camera.upAndFocal.xyz * radius * sy;
-  out.clip_pos = camera.viewProj * vec4<f32>(worldPos, 1.0);
+  out.clip_pos = with_log_depth(camera.viewProj * vec4<f32>(worldPos, 1.0));
   return out;
 }
 
@@ -193,4 +193,20 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   let darkMix = clamp(shape * (0.22 + density * 0.20), 0.0, 0.50);
   let darkCore = mix(albedo, shadowTint, darkMix);
   return vec4<f32>(darkCore, alpha);
+}
+
+// Logarithmic depth shared with solar-system-model.wgsl / milkyway-model.wgsl /
+// render.wgsl / trail.wgsl (keep LOG_DEPTH_* in sync). The standard hyperbolic
+// depth collapses to 1.0 beyond a few AU, so every depth-tested scene layer
+// writes log2 view depth instead. Billboards keep the same clip w on all
+// corners, so z = logDepth(w) * w is exact for the whole sprite (centre depth).
+const LOG_DEPTH_K: f32 = 1e-9;
+const LOG_DEPTH_INV_RANGE: f32 = 0.016666667; // 1 / log2(1 + 1e9 / 1e-9) ~= 1 / 59.79
+
+fn logDepth(viewDepth: f32) -> f32 {
+  return clamp(log2(1.0 + max(viewDepth, 0.0) / LOG_DEPTH_K) * LOG_DEPTH_INV_RANGE, 0.0, 1.0);
+}
+
+fn with_log_depth(clip: vec4<f32>) -> vec4<f32> {
+  return vec4<f32>(clip.xy, logDepth(clip.w) * clip.w, clip.w);
 }

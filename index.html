@@ -2326,15 +2326,20 @@
             <li>Black-hole WebGPU raytracing reference: <a href="https://threejsroadmap.com/blog/raytracing-a-black-hole-with-webgpu" target="_blank" rel="noopener">Raytracing a Black Hole with WebGPU</a> by Dan Greenheck.</li>
           </ul>
 
-          <h3>3D Model Credits</h3>
+          <h3>Planet &amp; Moon Surface Maps</h3>
           <ul>
-            <li>Earth 3D model by <a href="https://www.artstation.com/matteopascale" target="_blank" rel="noopener">Matteo Pascale</a>.</li>
+            <li>Earth (day, night lights, clouds), Moon, Mercury, Venus, Mars, Jupiter, Saturn and its rings, Uranus, Neptune: <a href="https://www.solarsystemscope.com/textures/" target="_blank" rel="noopener">Solar System Scope</a> textures (CC BY 4.0), based on NASA imagery.</li>
+            <li>Io, Europa, Ganymede, Callisto: NASA/JPL Galileo SSI + Voyager global mosaics via <a href="https://astrogeology.usgs.gov/" target="_blank" rel="noopener">USGS Astrogeology</a> (public domain).</li>
+            <li>Mimas, Enceladus, Tethys, Dione, Rhea, Iapetus, Titan: NASA/JPL/Space Science Institute Cassini ISS mosaics (DLR/USGS, public domain).</li>
+            <li>Miranda, Ariel, Umbriel, Titania, Oberon, Triton: NASA/JPL/USGS Voyager 2 mosaics (public domain; unimaged hemispheres filled with a flat tone).</li>
+            <li>Pluto, Charon: NASA/JHUAPL/SwRI New Horizons mosaics (USGS, public domain). Ceres: NASA/JPL-Caltech/UCLA/MPS/DLR/IDA Dawn mosaic (public domain).</li>
+            <li>Eris, Haumea, Makemake have no spacecraft imagery: generic surfaces recoloured from Solar System Scope fictional textures (CC BY 4.0).</li>
+            <li>Greyscale mosaics are tinted to approximate colour. Full list: <a href="/textures/bodies/manifest.json" target="_blank" rel="noopener">texture manifest</a>.</li>
           </ul>
 
           <h3>Data And Public Sources</h3>
           <ul>
             <li>Solar-system state vectors: NASA/JPL Horizons.</li>
-            <li>Planet model assets where available: NASA Science 3D Resources.</li>
             <li>Exoplanet host stars: NASA Exoplanet Archive.</li>
             <li>Constellation source data: NASA SVS Deep Star Maps.</li>
             <li>Galactic dust source map: NASA/GSFC LAMBDA Meisner-Finkbeiner 2015 E(B-V).</li>
@@ -2362,7 +2367,7 @@
             <li>Nearby visible stars use a 100,000-star HYG 4.2 render buffer.</li>
             <li>Exoplanet host stars are searchable from a NASA Exoplanet Archive snapshot.</li>
             <li>Constellation lines and names use cached NASA SVS Deep Star Maps source data.</li>
-            <li>Earth's 3D model uses a local credited GLB by <a href="https://www.artstation.com/matteopascale" target="_blank" rel="noopener">Matteo Pascale</a>; other solar-system planet models use NASA Science 3D Resources where available.</li>
+            <li>Planets, moons and dwarf planets are ray-traced spheres (Haumea a tri-axial ellipsoid) skinned with equirectangular NASA/USGS/Solar System Scope maps and oriented with IAU/NAIF pck00011 rotation elements; Eris, Haumea and Makemake use generic surfaces and an approximate spin axis.</li>
             <li>Galactic dust uses procedural cloud instances seeded from the NASA/GSFC LAMBDA Meisner-Finkbeiner 2015 E(B-V) all-sky dust map; the public reddening directions are projected through a Milky Way disk model, not rendered as a Sun-centered shell or treated as true 3D extinction distances.</li>
             <li>Galaxy rendering combines real named galaxy entries with procedural deep-field fill.</li>
           </ul>

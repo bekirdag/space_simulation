@@ -7,7 +7,7 @@ import galaxyTexturedWGSL from "./galaxy-textured.wgsl?raw";
 import nebulaWGSL         from "./nebula.wgsl?raw";
 import nebulaTexturedWGSL from "./nebula-textured.wgsl?raw";
 import milkyWayModelWGSL  from "./milkyway-model.wgsl?raw";
-import solarSystemModelWGSL from "./solar-system-model.wgsl?raw";
+import { BodySurfaceRenderer } from "./body-surfaces";
 import dustImpostorWGSL from "./dust-impostor.wgsl?raw";
 import dustWGSL     from "./dust.wgsl?raw";
 import bloomExtractWGSL from "./bloom-extract.wgsl?raw";
@@ -17,11 +17,11 @@ import constellationWGSL from "./constellation.wgsl?raw";
 import trailWGSL    from "./trail.wgsl?raw";
 import { type GPUContext } from "./device";
 import { type Body, BODY_FLOATS } from "../physics/body";
-import { IDENTITY_BODY_ROTATION_BASIS, bodyRotationBasis } from "../physics/rotations";
 import { STAR_FLOATS } from "../catalog/stars";
 import { type StarModelTypeId, starModelTypeIndex } from "../catalog/star-types";
 import { MW_FLOATS } from "../catalog/milkyway";
 import { GALAXY_FLOATS } from "../catalog/galaxies";
+import { AU_PER_KPC, GALACTIC_CENTER_WORLD_AU } from "../catalog/scale";
 import { GALAXY_MODEL_FLOATS, type GalaxyTextureModel } from "../catalog/galaxy-models";
 import { type MilkyWayModelObject } from "../catalog/milkyway-models";
 import { type SolarSystemModelAsset } from "../catalog/solar-system-models";
@@ -47,10 +47,9 @@ import { BackendUnavailableError, backendFetch } from "../services/backend";
 // Camera uniform: mat4 (64) + right/min vec4 + up/focal vec4 + eye vec4 + screen/target vec4 + eye-offset vec4 = 144 bytes
 const CAMERA_BYTES = 144;
 const CAMERA_NEAR = 1e-8;
-const CAMERA_FAR = 50_000_000;
+const CAMERA_FAR = 500_000_000; // keep in sync with src/scene/camera.ts and shader CAMERA_FAR
 const BLACK_HOLE_BYTES = 48;
 const MILKY_WAY_MODEL_UNIFORM_BYTES = 64;
-const SOLAR_SYSTEM_MODEL_UNIFORM_BYTES = 112;
 const MILKY_WAY_MODEL_MATERIAL_BYTES = 48;
 const STAR_MODEL_UNIFORM_BYTES = 48;
 const MODEL_DEPTH_FORMAT: GPUTextureFormat = "depth24plus";
@@ -62,10 +61,18 @@ const SCENE_DEPTH_DISABLED: GPUDepthStencilState = {
   depthWriteEnabled: false,
   depthCompare: "always",
 };
+// Log-depth test without writes (all depth-tested scene shaders share the
+// LOG_DEPTH_* mapping): background layers and trails are hidden behind bodies,
+// solar-system meshes and 3D structure models that write depth first.
+const SCENE_DEPTH_TEST: GPUDepthStencilState = {
+  format: MODEL_DEPTH_FORMAT,
+  depthWriteEnabled: false,
+  depthCompare: "less-equal",
+};
 const TEXTURED_GALAXY_MODEL_CAPACITY = 32;
 const DUST_CLOUD_UNIFORM_BYTES = 16;
 const DUST_DEFAULT_TRANSPARENCY = 0.55;
-const TRAIL_SCREEN_UNIFORM_BYTES = 16;
+const TRAIL_SCREEN_UNIFORM_BYTES = 48; // screen vec4 + eyeHigh vec4 + eyeLow vec4
 const TRAIL_THICKNESS_INSTANCES = 5;
 const TRAIL_THICKNESS_PX = 2;
 const MILKY_WAY_MODEL_RETRY_MS = 120_000;
@@ -96,22 +103,25 @@ interface GalaxyTypeModelEntry {
   vertexCount: number;
 }
 
-interface SolarSystemModelEntry {
-  id: string;
-  bodyName: string;
-  emissive: number;
-  fallbackColor: [number, number, number];
-  uniformBuffer: GPUBuffer;
-  parts: MilkyWayModelPartEntry[];
-  textures: GPUTexture[];
-  vertexCount: number;
-}
-
 interface MilkyWayModelPartEntry {
   vertexBuffer: GPUBuffer;
+  /** Uint32 triangle-list index buffer; null draws `vertexCount` vertices directly. */
+  indexBuffer: GPUBuffer | null;
+  indexCount: number;
   materialBuffer: GPUBuffer;
   bindGroup: GPUBindGroup;
   vertexCount: number;
+}
+
+function drawModelPart(pass: GPURenderPassEncoder, part: MilkyWayModelPartEntry): void {
+  pass.setBindGroup(0, part.bindGroup);
+  pass.setVertexBuffer(0, part.vertexBuffer);
+  if (part.indexBuffer) {
+    pass.setIndexBuffer(part.indexBuffer, "uint32");
+    pass.drawIndexed(part.indexCount);
+  } else {
+    pass.draw(part.vertexCount);
+  }
 }
 
 export interface SelectedStarModel {
@@ -150,10 +160,16 @@ function crossVec3(
   ];
 }
 
+// Keep in sync with milkyway-model.wgsl fs_main (galaxy morphology meshes).
+const GALAXY_MESH_SPHEROID_ALPHA_FLAG = 2;
+
 function galaxyNormal(model: GalaxyTextureModel): Vec3 {
-  return normalizeVec3(crossVec3(model.right, model.up));
+  return normalizeVec3(model.planeNormal);
 }
 
+// Galaxy morphology meshes live in the (inclined) disk frame, in units of the
+// texture half-height: u along the major axis (`right`), v along the in-plane
+// minor axis (`planeUp`), w along the disk normal.
 function galaxyLocalPoint(
   model: GalaxyTextureModel,
   u: number,
@@ -162,10 +178,22 @@ function galaxyLocalPoint(
   normal = galaxyNormal(model),
 ): Vec3 {
   return [
-    model.right[0] * u + model.up[0] * v + normal[0] * w,
-    model.right[1] * u + model.up[1] * v + normal[1] * w,
-    model.right[2] * u + model.up[2] * v + normal[2] * w,
+    model.right[0] * u + model.planeUp[0] * v + normal[0] * w,
+    model.right[1] * u + model.planeUp[1] * v + normal[1] * w,
+    model.right[2] * u + model.planeUp[2] * v + normal[2] * w,
   ];
+}
+
+// The photo is the disk as seen from the Sun, so every mesh vertex samples it
+// at its sky-plane projection (projective texturing along the line of sight).
+// This keeps the photo undistorted from the Sun's side, matches the billboard
+// LOD, and never wraps the whole image around a sphere.
+function galaxySkyUv(model: GalaxyTextureModel, u: number, v: number, w: number): readonly [number, number] {
+  const skyV = v * Math.cos(model.inclination) - w * Math.sin(model.inclination);
+  return [
+    clamp(0.5 + u / (2 * model.aspect), 0.001, 0.999),
+    clamp(0.5 - skyV * 0.5, 0.001, 0.999),
+  ] as const;
 }
 
 function pushGalaxyMeshVertex(
@@ -199,7 +227,8 @@ function galaxyDiskVertex(
   radius: number,
   angle: number,
   options: {
-    aspect?: number;
+    /** In-plane major/minor ratio relative to a circular disk (irregular shapes). */
+    shape?: number;
     radiusScale?: number;
     armCount?: number;
     twist?: number;
@@ -211,30 +240,36 @@ function galaxyDiskVertex(
     color?: readonly [number, number, number];
   },
 ) {
-  const aspect = options.aspect ?? model.aspect;
-  const radiusScale = options.radiusScale ?? 1;
+  const extent = model.diskExtent * (options.radiusScale ?? 1);
+  const shape = options.shape ?? 1;
   const armCount = options.armCount ?? 2;
   const twist = options.twist ?? 5.4;
   const theta = angle + (options.angleOffset ?? 0);
   const c = Math.cos(theta);
   const s = Math.sin(theta);
   const arm = 0.5 + 0.5 * Math.cos(theta * armCount - radius * twist);
-  const warp = Math.sin(theta * 2.0 + radius * 4.4) * radius * 0.018;
-  const dustRuffle = Math.sin(theta * 5.0 + radius * 9.0) * radius * 0.007;
-  const halfThickness = (options.thickness ?? 0.03) * (0.2 + (1 - radius) * 0.8);
-  const u = (options.offsetU ?? 0) + c * radius * aspect * radiusScale;
-  const v = (options.offsetV ?? 0) + s * radius * radiusScale;
-  const w = warp + dustRuffle + (arm - 0.5) * halfThickness;
+  // Small out-of-plane relief (warp + arm thickness) relative to the disk size.
+  const warp = Math.sin(theta * 2.0 + radius * 4.4) * radius * 0.012;
+  // Relief vanishes at the centre: all r = 0 vertices share one point, so any
+  // angle-dependent offset there turns the central fan into a star/kite shape.
+  const centreFlat = clamp(radius / 0.2, 0, 1);
+  const halfThickness = (options.thickness ?? 0.03) * (0.2 + (1 - radius) * 0.8) * centreFlat;
+  const u = (options.offsetU ?? 0) * model.diskExtent + c * radius * extent * shape;
+  const v = (options.offsetV ?? 0) * model.diskExtent + s * radius * extent;
+  const w = (warp + (arm - 0.5) * halfThickness) * model.diskExtent;
   const normal = galaxyNormal(model);
   const pos = galaxyLocalPoint(model, u, v, w, normal);
-  const edgeFade = Math.pow(clamp(1 - radius, 0, 1), 0.7);
-  const armLift = 0.72 + arm * 0.32;
-  const alpha = clamp((options.alphaScale ?? 1) * (0.16 + edgeFade * 0.9) * armLift, 0, 1);
+  // Soft rim; the photo's own luminance (shader mask) shapes the galaxy, the
+  // procedural arm term only adds a faint 3D brightness modulation.
+  const rim = clamp((1 - radius) / 0.28, 0, 1);
+  const edgeFade = rim * rim * (3 - 2 * rim);
+  const armLift = 0.88 + arm * 0.12;
+  const alpha = clamp((options.alphaScale ?? 1) * edgeFade * armLift, 0, 1);
   const base = options.color ?? [1, 1, 1];
   return {
     pos,
     normal,
-    uv: [0.5 + c * radius * 0.5, 0.5 - s * radius * 0.5] as const,
+    uv: galaxySkyUv(model, u, v, w),
     color: [base[0], base[1], base[2], alpha] as const,
   };
 }
@@ -264,18 +299,25 @@ function addGalaxyDiskMesh(
 
 function addGalaxyBarMesh(out: number[], model: GalaxyTextureModel): void {
   addGalaxyDiskMesh(out, model, {
-    aspect: Math.max(2.4, model.aspect * 1.8),
-    radiusScale: 0.32,
+    shape: 2.2,
+    radiusScale: 0.18,
     armCount: 1,
     twist: 0.5,
-    thickness: 0.055,
-    alphaScale: 0.82,
+    thickness: 0.05,
+    alphaScale: 0.55,
     color: [1.0, 0.92, 0.74],
     rings: 14,
     segments: 48,
   });
 }
 
+/**
+ * Bulge / spheroid in the disk frame. Scales are fractions of the disk radius:
+ * x along the major axis, y along the in-plane minor axis, z along the disk
+ * normal. Vertex alpha is offset by GALAXY_MESH_SPHEROID_ALPHA_FLAG so
+ * milkyway-model.wgsl fs_main fades it towards the silhouette (soft glow)
+ * from any view direction.
+ */
 function addGalaxyEllipsoidMesh(
   out: number[],
   model: GalaxyTextureModel,
@@ -284,24 +326,31 @@ function addGalaxyEllipsoidMesh(
   const normal = galaxyNormal(model);
   const latBands = 20;
   const lonBands = 48;
+  const extent = model.diskExtent;
   const color = options.color ?? [1.0, 0.9, 0.72];
   const vertex = (lat: number, lon: number) => {
-    const v = lat / latBands;
-    const u = lon / lonBands;
-    const theta = v * Math.PI;
-    const phi = (1 - u) * Math.PI * 2;
+    const theta = lat / latBands * Math.PI;
+    const phi = lon / lonBands * Math.PI * 2;
     const sinTheta = Math.sin(theta);
-    const lx = Math.cos(phi) * sinTheta * options.xScale;
-    const ly = Math.cos(theta) * options.zScale;
-    const lz = Math.sin(phi) * sinTheta * options.yScale;
-    const pos = galaxyLocalPoint(model, lx, lz, ly, normal);
-    const n = normalizeVec3(galaxyLocalPoint(model, lx / options.xScale, lz / options.yScale, ly / options.zScale, normal));
-    const edge = Math.sqrt(lx * lx + lz * lz);
-    const alpha = clamp(options.alphaScale * (0.35 + (1 - edge) * 0.55), 0, 1);
+    const ux = Math.cos(phi) * sinTheta;
+    const uy = Math.sin(phi) * sinTheta;
+    const uz = Math.cos(theta);
+    const lu = ux * options.xScale * extent;
+    const lv = uy * options.yScale * extent;
+    const lw = uz * options.zScale * extent;
+    const pos = galaxyLocalPoint(model, lu, lv, lw, normal);
+    const n = normalizeVec3(galaxyLocalPoint(
+      model,
+      ux / options.xScale,
+      uy / options.yScale,
+      uz / options.zScale,
+      normal,
+    ));
+    const alpha = GALAXY_MESH_SPHEROID_ALPHA_FLAG + clamp(options.alphaScale, 0, 1);
     return {
       pos,
       normal: n,
-      uv: [u, v] as const,
+      uv: galaxySkyUv(model, lu, lv, lw),
       color: [color[0], color[1], color[2], alpha] as const,
     };
   };
@@ -320,105 +369,102 @@ function addGalaxyEllipsoidMesh(
 
 function buildGalaxyTypeMesh(model: GalaxyTextureModel): GalaxyMeshBuild {
   const packed: number[] = [];
+  // Every part samples the photo at its sky projection (galaxySkyUv), so the
+  // parts only add 3D depth to the photo: a thin disk in the inclined plane
+  // plus a soft spheroid for bulges / elliptical bodies.
   switch (model.morphology) {
     case "barred-spiral":
-      addGalaxyDiskMesh(packed, model, { armCount: 2, twist: 7.2, thickness: 0.038, alphaScale: 0.92 });
+      addGalaxyDiskMesh(packed, model, { armCount: 2, twist: 7.2, thickness: 0.03, alphaScale: 0.92 });
       addGalaxyBarMesh(packed, model);
+      addGalaxyEllipsoidMesh(packed, model, {
+        xScale: 0.12,
+        yScale: 0.12,
+        zScale: 0.07,
+        alphaScale: 0.5,
+        color: [1.0, 0.9, 0.72],
+      });
       break;
     case "lenticular":
       addGalaxyDiskMesh(packed, model, {
         armCount: 1,
         twist: 1.2,
-        thickness: 0.024,
-        alphaScale: 0.72,
-        color: [1.0, 0.92, 0.72],
+        thickness: 0.02,
+        alphaScale: 0.8,
+        color: [1.0, 0.94, 0.8],
       });
       addGalaxyEllipsoidMesh(packed, model, {
-        xScale: 0.38,
-        yScale: 0.38,
-        zScale: 0.18,
-        alphaScale: 0.82,
-        color: [1.0, 0.87, 0.62],
+        xScale: 0.42,
+        yScale: 0.42,
+        zScale: 0.3,
+        alphaScale: 0.62,
+        color: [1.0, 0.9, 0.72],
       });
       break;
     case "elliptical":
       addGalaxyEllipsoidMesh(packed, model, {
-        xScale: Math.max(1.1, model.aspect * 0.9),
-        yScale: 0.88,
-        zScale: 0.55,
-        alphaScale: 0.92,
-        color: [1.0, 0.86, 0.62],
+        xScale: 1.0,
+        yScale: 0.9,
+        zScale: 0.85,
+        alphaScale: 0.7,
+        color: [1.0, 0.92, 0.78],
       });
       break;
     case "irregular":
+      // One slightly thick disk: the photo carries all the irregular structure
+      // (extra offset sub-disks showed up as pale kite-shaped overlays).
       addGalaxyDiskMesh(packed, model, {
-        aspect: Math.max(1.05, model.aspect * 0.95),
         armCount: 3,
         twist: 3.2,
-        thickness: 0.085,
-        alphaScale: 0.55,
-        color: [0.78, 0.86, 1.0],
+        thickness: 0.06,
+        alphaScale: 0.85,
         rings: 20,
         segments: 64,
-      });
-      addGalaxyDiskMesh(packed, model, {
-        aspect: Math.max(0.85, model.aspect * 0.7),
-        radiusScale: 0.58,
-        armCount: 2,
-        twist: -4.0,
-        thickness: 0.14,
-        offsetU: 0.18,
-        offsetV: -0.08,
-        angleOffset: 0.7,
-        alphaScale: 0.44,
-        color: [1.0, 0.72, 0.45],
-        rings: 14,
-        segments: 48,
       });
       break;
     case "edge-on-starburst":
       addGalaxyDiskMesh(packed, model, {
-        aspect: Math.max(4.5, model.aspect * 3.5),
-        radiusScale: 0.58,
         armCount: 1,
         twist: 0.8,
-        thickness: 0.018,
-        alphaScale: 0.72,
-        color: [1.0, 0.78, 0.55],
+        thickness: 0.02,
+        alphaScale: 0.85,
         rings: 18,
         segments: 72,
       });
       addGalaxyEllipsoidMesh(packed, model, {
-        xScale: 0.24,
-        yScale: 0.08,
-        zScale: 0.18,
-        alphaScale: 0.88,
-        color: [1.0, 0.58, 0.34],
+        xScale: 0.2,
+        yScale: 0.2,
+        zScale: 0.1,
+        alphaScale: 0.55,
+        color: [1.0, 0.82, 0.66],
       });
       break;
     case "interacting":
       addGalaxyDiskMesh(packed, model, {
         armCount: 2,
         twist: 6.8,
-        thickness: 0.04,
-        offsetU: -0.18,
-        alphaScale: 0.75,
+        thickness: 0.03,
+        alphaScale: 0.9,
         rings: 24,
         segments: 72,
       });
       addGalaxyDiskMesh(packed, model, {
-        aspect: Math.max(1.0, model.aspect * 0.78),
-        radiusScale: 0.44,
+        radiusScale: 0.36,
         armCount: 2,
         twist: -4.8,
-        thickness: 0.042,
-        offsetU: 0.64,
+        thickness: 0.04,
+        offsetU: 0.62,
         offsetV: 0.28,
         angleOffset: 0.9,
-        alphaScale: 0.62,
-        color: [0.8, 0.9, 1.0],
+        alphaScale: 0.4,
         rings: 18,
         segments: 56,
+      });
+      addGalaxyEllipsoidMesh(packed, model, {
+        xScale: 0.12,
+        yScale: 0.12,
+        zScale: 0.07,
+        alphaScale: 0.5,
+        color: [1.0, 0.9, 0.72],
       });
       break;
     case "spiral":
@@ -426,15 +472,15 @@ function buildGalaxyTypeMesh(model: GalaxyTextureModel): GalaxyMeshBuild {
       addGalaxyDiskMesh(packed, model, {
         armCount: 2,
         twist: 7.0,
-        thickness: 0.036,
-        alphaScale: 0.86,
+        thickness: 0.03,
+        alphaScale: 0.92,
       });
       addGalaxyEllipsoidMesh(packed, model, {
-        xScale: 0.22,
-        yScale: 0.22,
-        zScale: 0.12,
-        alphaScale: 0.78,
-        color: [1.0, 0.88, 0.65],
+        xScale: 0.17,
+        yScale: 0.17,
+        zScale: 0.1,
+        alphaScale: 0.6,
+        color: [1.0, 0.9, 0.72],
       });
       break;
   }
@@ -455,6 +501,14 @@ function projectionOnlyMatrix(focalY: number, aspect: number): Float32Array {
     0, 0, CAMERA_FAR * nf, -1,
     0, 0, CAMERA_FAR * CAMERA_NEAR * nf, 0,
   ]);
+}
+
+/** f64 xyz → [high.xyz, 0, low.xyz, 0] f32 pairs for relative-to-eye shaders. */
+function splitHighLow(v: readonly number[]): number[] {
+  const hx = Math.fround(v[0] ?? 0);
+  const hy = Math.fround(v[1] ?? 0);
+  const hz = Math.fround(v[2] ?? 0);
+  return [hx, hy, hz, 0, (v[0] ?? 0) - hx, (v[1] ?? 0) - hy, (v[2] ?? 0) - hz, 0];
 }
 
 function dot3(ax: number, ay: number, az: number, bx: number, by: number, bz: number): number {
@@ -534,7 +588,7 @@ async function fetchValidatedModelAsset(
   };
 
   try {
-    return await fetchOnce(assetUrl, "force-cache");
+    return await fetchOnce(assetUrl, "no-cache");
   } catch (error) {
     if (!(error instanceof ModelAssetResponseError) || !error.retryable) throw error;
     return await fetchOnce(cacheBustedModelAssetUrl(assetUrl), "reload");
@@ -554,7 +608,7 @@ async function fetchStaticModelAsset(
   };
 
   try {
-    return await fetchOnce(assetUrl, "force-cache");
+    return await fetchOnce(assetUrl, "no-cache");
   } catch (error) {
     if (!(error instanceof ModelAssetResponseError) || !error.retryable) throw error;
     return await fetchOnce(cacheBustedModelAssetUrl(assetUrl), "reload");
@@ -563,6 +617,7 @@ async function fetchStaticModelAsset(
 
 export class Renderer {
   private bodyPipeline!:    GPURenderPipeline;
+  private bodyDepthPrepassPipeline!: GPURenderPipeline;
   private starPipeline!:    GPURenderPipeline;
   private starModelPipeline!: GPURenderPipeline;
   private mwPipeline!:      GPURenderPipeline;
@@ -571,7 +626,10 @@ export class Renderer {
   private nebulaPipeline!:          GPURenderPipeline;
   private nebulaTexturedPipeline!:  GPURenderPipeline;
   private milkyWayModelPipeline!:   GPURenderPipeline;
-  private solarSystemModelPipeline!: GPURenderPipeline;
+  private milkyWayMeshPipeline!:    GPURenderPipeline;
+  private milkyWayMeshAbsorbPipeline!: GPURenderPipeline;
+  /** Textured, ray-traced solar-system body surfaces (body-surfaces.ts). */
+  private bodySurfaces!: BodySurfaceRenderer;
   private dustImpostorPipeline!: GPURenderPipeline;
   private dustPipeline!:    GPURenderPipeline;
   private bloomExtractPipeline!: GPURenderPipeline;
@@ -618,9 +676,6 @@ export class Renderer {
   private milkyWayModelFailedAt = new Map<string, number>();
   private milkyWayModelBackendRetryAt = 0;
   private activeMilkyWayModelId: string | null = null;
-  private solarSystemModelEntries = new Map<string, SolarSystemModelEntry>();
-  private solarSystemModelLoading = new Set<string>();
-  private solarSystemModelFailedAt = new Map<string, number>();
   private dustBindGroup!:   GPUBindGroup;
   private bloomExtractBindGroup: GPUBindGroup | null = null;
   private bloomBlurHBindGroup:   GPUBindGroup | null = null;
@@ -957,7 +1012,22 @@ export class Renderer {
         }],
       },
       primitive: { topology: "triangle-list" },
-      depthStencil: SCENE_DEPTH_DISABLED,
+      // Tested against the core-disc pre-pass below (fs_main biases its core
+      // depth a hair nearer) so bodies behind another body's disc are hidden.
+      depthStencil: SCENE_DEPTH_TEST,
+    });
+    // Depth-only pre-pass: sprite bodies' physical discs as sphere impostors,
+    // drawn first so stars/galaxies/dust/constellations/trails behind them fail.
+    this.bodyDepthPrepassPipeline = device.createRenderPipeline({
+      label: "body-depth-prepass-pipeline",
+      layout: device.createPipelineLayout({ bindGroupLayouts: [bodyBGL] }),
+      vertex:   { module: bodyShader, entryPoint: "vs_main" },
+      fragment: {
+        module: bodyShader, entryPoint: "fs_depth",
+        targets: [{ format: sceneFormat, writeMask: 0 }],
+      },
+      primitive: { topology: "triangle-list" },
+      depthStencil: { format: MODEL_DEPTH_FORMAT, depthWriteEnabled: true, depthCompare: "less-equal" },
     });
 
     // ── Selected-star uniform (xyz pos + w=active flag, 16 bytes) ─────────────
@@ -1057,7 +1127,7 @@ export class Renderer {
         }],
       },
       primitive: { topology: "triangle-list" },
-      depthStencil: SCENE_DEPTH_DISABLED,
+      depthStencil: SCENE_DEPTH_TEST,
     });
 
     // ── Selected star close-LOD 3D surface model ───────────────────────────
@@ -1105,7 +1175,7 @@ export class Renderer {
         }],
       },
       primitive: { topology: "triangle-list", cullMode: "back" },
-      depthStencil: SCENE_DEPTH_DISABLED,
+      depthStencil: SCENE_DEPTH_TEST,
     });
 
     // ── Milky Way background star pipeline ────────────────────────────────
@@ -1141,7 +1211,7 @@ export class Renderer {
         }],
       },
       primitive: { topology: "triangle-list" },
-      depthStencil: SCENE_DEPTH_DISABLED,
+      depthStencil: SCENE_DEPTH_TEST,
     });
 
     // ── Galaxy pipeline ────────────────────────────────────────────────────
@@ -1186,7 +1256,7 @@ export class Renderer {
         }],
       },
       primitive: { topology: "triangle-list" },
-      depthStencil: SCENE_DEPTH_DISABLED,
+      depthStencil: SCENE_DEPTH_TEST,
     });
 
     // ── Textured close-LOD galaxy model pipeline ───────────────────────────
@@ -1215,7 +1285,7 @@ export class Renderer {
         }],
       },
       primitive: { topology: "triangle-list" },
-      depthStencil: SCENE_DEPTH_DISABLED,
+      depthStencil: SCENE_DEPTH_TEST,
     });
 
     // ── Nebula pipeline (alpha blend — drawn BEFORE stars, AFTER galaxies) ───
@@ -1250,7 +1320,7 @@ export class Renderer {
         }],
       },
       primitive: { topology: "triangle-list" },
-      depthStencil: SCENE_DEPTH_DISABLED,
+      depthStencil: SCENE_DEPTH_TEST,
     });
 
     // ── Homunculus (textured) pipeline — real NASA Hubble image of Eta Carinae
@@ -1279,7 +1349,7 @@ export class Renderer {
         }],
       },
       primitive: { topology: "triangle-list" },
-      depthStencil: SCENE_DEPTH_DISABLED,
+      depthStencil: SCENE_DEPTH_TEST,
     });
 
     // ── Milky Way object 3D models — lazy NASA/Chandra mesh LOD ───────────
@@ -1344,44 +1414,73 @@ export class Renderer {
         }],
       },
       primitive: { topology: "triangle-list" },
-      depthStencil: SCENE_DEPTH_DISABLED,
+      // Galaxy morphology meshes: fs_main writes log depth; tested, not written.
+      depthStencil: SCENE_DEPTH_TEST,
     });
 
-    const solarSystemModelShader = device.createShaderModule({ code: solarSystemModelWGSL });
-    this.solarSystemModelPipeline = device.createRenderPipeline({
-      label: "solar-system-model-pipeline",
+    // NASA/Chandra close-LOD meshes: emission isosurfaces drawn as glowing gas
+    // (fs_glow, additive). Log depth via frag_depth is tested so opaque solar
+    // bodies still hide the gas, but it is never written (gas is translucent).
+    const milkyWayMeshVertexState: GPUVertexState = {
+      module: milkyWayModelShader,
+      entryPoint: "vs_main",
+      buffers: [{
+        arrayStride: MILKY_WAY_MODEL_VERTEX_FLOATS * 4,
+        attributes: [
+          { shaderLocation: 0, offset: 0,     format: "float32x3" },
+          { shaderLocation: 1, offset: 3 * 4, format: "float32x3" },
+          { shaderLocation: 2, offset: 6 * 4, format: "float32x2" },
+          { shaderLocation: 3, offset: 8 * 4, format: "float32x4" },
+        ],
+      }],
+    };
+    // Gas extinction pass (before the glow): multiplicatively dims whatever is
+    // behind the gas (stars, dust, nebulae) per crossed shell layer, so the
+    // remnant reads as a translucent medium rather than a see-through outline.
+    // Multiplication commutes, so this is order-independent too.
+    this.milkyWayMeshAbsorbPipeline = device.createRenderPipeline({
+      label: "milky-way-mesh-absorb-pipeline",
       layout: device.createPipelineLayout({ bindGroupLayouts: [this.milkyWayModelBGL] }),
-      vertex: {
-        module: solarSystemModelShader,
-        entryPoint: "vs_main",
-        buffers: [{
-          arrayStride: MILKY_WAY_MODEL_VERTEX_FLOATS * 4,
-          attributes: [
-            { shaderLocation: 0, offset: 0,     format: "float32x3" },
-            { shaderLocation: 1, offset: 3 * 4, format: "float32x3" },
-            { shaderLocation: 2, offset: 6 * 4, format: "float32x2" },
-            { shaderLocation: 3, offset: 8 * 4, format: "float32x4" },
-          ],
-        }],
-      },
+      vertex: milkyWayMeshVertexState,
       fragment: {
-        module: solarSystemModelShader,
-        entryPoint: "fs_main",
+        module: milkyWayModelShader,
+        entryPoint: "fs_absorb",
         targets: [{
           format: sceneFormat,
           blend: {
-            color: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" },
-            alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" },
+            color: { srcFactor: "zero", dstFactor: "one-minus-src-alpha", operation: "add" },
+            alpha: { srcFactor: "zero", dstFactor: "one", operation: "add" },
           },
         }],
       },
-      primitive: { topology: "triangle-list", cullMode: "back" },
+      primitive: { topology: "triangle-list", cullMode: "none" },
+      depthStencil: SCENE_DEPTH_TEST,
+    });
+    this.milkyWayMeshPipeline = device.createRenderPipeline({
+      label: "milky-way-mesh-pipeline",
+      layout: device.createPipelineLayout({ bindGroupLayouts: [this.milkyWayModelBGL] }),
+      vertex: milkyWayMeshVertexState,
+      fragment: {
+        module: milkyWayModelShader,
+        entryPoint: "fs_glow",
+        // Optically thin glowing gas: purely additive, order-independent.
+        targets: [{
+          format: sceneFormat,
+          blend: {
+            color: { srcFactor: "one", dstFactor: "one", operation: "add" },
+            alpha: { srcFactor: "zero", dstFactor: "one", operation: "add" },
+          },
+        }],
+      },
+      primitive: { topology: "triangle-list", cullMode: "none" },
       depthStencil: {
         format: MODEL_DEPTH_FORMAT,
-        depthWriteEnabled: true,
+        depthWriteEnabled: false,
         depthCompare: "less-equal",
       },
     });
+
+    this.bodySurfaces = new BodySurfaceRenderer(device, this.cameraBuffer, sceneFormat, MODEL_DEPTH_FORMAT);
 
     // ── Partial galactic dust cloud pipeline ───────────────────────────────
     this.dustBGL = device.createBindGroupLayout({
@@ -1416,7 +1515,7 @@ export class Renderer {
         }],
       },
       primitive: { topology: "triangle-list" },
-      depthStencil: SCENE_DEPTH_DISABLED,
+      depthStencil: SCENE_DEPTH_TEST,
     });
 
     const dustShader = device.createShaderModule({ code: dustWGSL });
@@ -1435,7 +1534,7 @@ export class Renderer {
         }],
       },
       primitive: { topology: "triangle-list" },
-      depthStencil: SCENE_DEPTH_DISABLED,
+      depthStencil: SCENE_DEPTH_TEST,
     });
 
     // ── HDR bloom post-process: bright-pass + separable blur ──────────────
@@ -1542,7 +1641,7 @@ export class Renderer {
         }],
       },
       primitive: { topology: "line-list" },
-      depthStencil: SCENE_DEPTH_DISABLED,
+      depthStencil: SCENE_DEPTH_TEST,
     });
 
     // ── Trail pipeline ─────────────────────────────────────────────────────
@@ -1567,25 +1666,29 @@ export class Renderer {
       vertex: {
         module: trailShader, entryPoint: "vs_main",
         buffers: [{
-          arrayStride: TRAIL_VTXFLOATS * 4, // 32 bytes per vertex
+          arrayStride: TRAIL_VTXFLOATS * 4, // 48 bytes per vertex
           attributes: [
-            { shaderLocation: 0, offset: 0,      format: "float32x3" }, // pos xyz
+            { shaderLocation: 0, offset: 0,      format: "float32x3" }, // pos high xyz
             { shaderLocation: 1, offset: 3 * 4,  format: "float32"   }, // age
             { shaderLocation: 2, offset: 4 * 4,  format: "float32x3" }, // color rgb
+            { shaderLocation: 3, offset: 8 * 4,  format: "float32x3" }, // pos low xyz
           ],
         }],
       },
       fragment: {
         module: trailShader, entryPoint: "fs_main",
+        // Drawn into the HDR scene (so bloom/black-hole composite apply);
+        // the shader outputs premultiplied, inverse-tone-mapped colour.
         targets: [{
-          format,
+          format: sceneFormat,
           blend: {
-            color: { srcFactor: "src-alpha", dstFactor: "one-minus-src-alpha", operation: "add" },
-            alpha: { srcFactor: "one",       dstFactor: "one-minus-src-alpha", operation: "add" },
+            color: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" },
+            alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" },
           },
         }],
       },
       primitive: { topology: "line-strip" },
+      depthStencil: SCENE_DEPTH_TEST,
     });
   }
 
@@ -1669,9 +1772,11 @@ export class Renderer {
       data[o + 5] = model.right[1];
       data[o + 6] = model.right[2];
       data[o + 7] = model.aspect;
-      data[o + 8] = model.up[0];
-      data[o + 9] = model.up[1];
-      data[o + 10] = model.up[2];
+      // Tilted billboard plane: `billboardUp` scaled so its sky projection is
+      // exactly the texture's ±1 half-height (galaxy-textured.wgsl).
+      data[o + 8] = model.billboardUp[0] * model.billboardUpExtent;
+      data[o + 9] = model.billboardUp[1] * model.billboardUpExtent;
+      data[o + 10] = model.billboardUp[2] * model.billboardUpExtent;
       data[o + 11] = model.opacity;
       data[o + 12] = model.fadeNearAU;
       data[o + 13] = model.fadeFarAU;
@@ -1698,7 +1803,7 @@ export class Renderer {
     for (let i = 0; i < usable.length; i++) {
       const model = usable[i]!;
       try {
-        const resp = await fetch(model.textureUrl, { cache: "force-cache" });
+        const resp = await fetch(model.textureUrl, { cache: "no-cache" });
         if (!resp.ok) {
           console.warn(`Galaxy texture fetch failed for ${model.name}: ${resp.status}`);
           continue;
@@ -1765,7 +1870,7 @@ export class Renderer {
 
   async loadEtaCarinaTexture(url: string): Promise<void> {
     try {
-      const resp   = await fetch(url, { cache: "force-cache" });
+      const resp   = await fetch(url, { cache: "no-cache" });
       if (!resp.ok) { console.warn(`Eta Carinae texture fetch failed: ${resp.status}`); return; }
       const blob   = await resp.blob();
       const bitmap = await createImageBitmap(blob, { colorSpaceConversion: "none" });
@@ -1801,7 +1906,7 @@ export class Renderer {
   }
 
   async loadBlackHoleLodTexture(url: string): Promise<void> {
-    const resp = await fetch(url, { cache: "force-cache" });
+    const resp = await fetch(url, { cache: "no-cache" });
     if (!resp.ok) throw new Error(`Sgr A* LOD image ${resp.status}`);
 
     const blob = await resp.blob();
@@ -1828,90 +1933,11 @@ export class Renderer {
     console.info(`Sgr A* distant LOD image loaded (${width}x${height})`);
   }
 
-  async loadSolarSystemModels(models: readonly SolarSystemModelAsset[]): Promise<void> {
-    await Promise.allSettled(models.map(model => this.ensureSolarSystemModelLoaded(model)));
-    const loaded = models.filter(model => this.solarSystemModelEntries.has(model.bodyName)).length;
-    console.info(`Loaded ${loaded}/${models.length} solar-system 3D body models.`);
-  }
-
-  async ensureSolarSystemModelLoaded(model: SolarSystemModelAsset): Promise<void> {
-    if (this.solarSystemModelEntries.has(model.bodyName) || this.solarSystemModelLoading.has(model.id)) return;
-    if (this.solarSystemModelFailedAt.has(model.id)) return;
-    this.solarSystemModelLoading.add(model.id);
-    try {
-      const mesh = model.format === "procedural-sphere"
-        ? createUvSphereMesh(16, 32)
-        : await (async (format: ParsedModelFormat) => {
-          const buffer = await fetchValidatedModelAsset(model.assetUrl, { format });
-          return parseMilkyWayModel(buffer, format);
-        })(model.format);
-      if (mesh.vertexCount <= 0) throw new Error("empty mesh");
-
-      const { device } = this.ctx;
-      const uniformBuffer = device.createBuffer({
-        label: `solar-system-model-uniform-${model.id}`,
-        size: SOLAR_SYSTEM_MODEL_UNIFORM_BYTES,
-        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-      });
-      const textures = mesh.textures.map((texture, index) => {
-        const gpuTexture = this.createMilkyWayModelTexture(texture.bitmap, `solar-system-model-texture-${model.id}-${index}`);
-        texture.bitmap.close();
-        return gpuTexture;
-      });
-      const parts: MilkyWayModelPartEntry[] = mesh.parts.map((part, index) => {
-        const vertexBuffer = device.createBuffer({
-          label: `solar-system-model-vertices-${model.id}-${index}`,
-          size: part.vertices.byteLength,
-          usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-        });
-        device.queue.writeBuffer(vertexBuffer, 0, part.vertices as GPUAllowSharedBufferSource);
-        const materialBuffer = this.createSolarSystemModelMaterialBuffer(model, part.material, index);
-        const texture = part.material.textureIndex >= 0
-          ? textures[part.material.textureIndex] ?? this.milkyWayModelWhiteTexture
-          : this.milkyWayModelWhiteTexture;
-        return {
-          vertexBuffer,
-          materialBuffer,
-          bindGroup: device.createBindGroup({
-            label: `solar-system-model-bg-${model.id}-${index}`,
-            layout: this.milkyWayModelBGL,
-            entries: [
-              { binding: 0, resource: { buffer: this.cameraBuffer } },
-              { binding: 1, resource: { buffer: uniformBuffer } },
-              { binding: 2, resource: { buffer: materialBuffer } },
-              { binding: 3, resource: texture.createView() },
-              { binding: 4, resource: this.milkyWayModelSampler },
-            ],
-          }),
-          vertexCount: part.vertexCount,
-        };
-      });
-
-      this.solarSystemModelEntries.set(model.bodyName, {
-        id: model.id,
-        bodyName: model.bodyName,
-        emissive: model.emissive ?? 0,
-        fallbackColor: model.fallbackColor,
-        uniformBuffer,
-        parts,
-        textures,
-        vertexCount: mesh.vertexCount,
-      });
-      console.info(
-        `Loaded ${model.bodyName} solar-system model: ${mesh.usedTriangleCount.toLocaleString()} / ${mesh.sourceTriangleCount.toLocaleString()} triangles.`,
-      );
-    } catch (e) {
-      this.solarSystemModelFailedAt.set(model.id, Date.now());
-      if (e instanceof BackendUnavailableError) return;
-      if (e instanceof RangeError) {
-        console.info(`Skipped solar-system model ${model.bodyName} because the browser could not allocate its mesh buffers.`);
-        return;
-      }
-      console.warn(`Failed to load solar-system model ${model.bodyName}:`, e);
-      throw e;
-    } finally {
-      this.solarSystemModelLoading.delete(model.id);
-    }
+  loadSolarSystemModels(models: readonly SolarSystemModelAsset[]): Promise<void> {
+    // Surfaces are ray-traced impostors; textures load lazily per body.
+    this.bodySurfaces.setAssets(models);
+    console.info(`Registered ${models.length} textured solar-system body surfaces.`);
+    return Promise.resolve();
   }
 
   ensureVisibleMilkyWayModels(models: readonly MilkyWayModelObject[], eye: readonly [number, number, number]): void {
@@ -1980,6 +2006,7 @@ export class Renderer {
           usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
         });
         device.queue.writeBuffer(vertexBuffer, 0, part.vertices as GPUAllowSharedBufferSource);
+        const indexBuffer = this.createModelIndexBuffer(part.indices, `milky-way-model-indices-${model.id}-${index}`);
         const material = this.materialWithExternalTexture(part.material, externalTextureIndex);
         const materialBuffer = this.createMilkyWayModelMaterialBuffer(model, material, index);
         const texture = material.textureIndex >= 0
@@ -1987,6 +2014,8 @@ export class Renderer {
           : this.milkyWayModelWhiteTexture;
         return {
           vertexBuffer,
+          indexBuffer,
+          indexCount: indexBuffer ? part.indexCount : 0,
           materialBuffer,
           bindGroup: device.createBindGroup({
             label: `milky-way-model-bg-${model.id}-${index}`,
@@ -2033,7 +2062,7 @@ export class Renderer {
   ): Promise<number> {
     if (!model.textureUrl) return -1;
     try {
-      const resp = await fetch(model.textureUrl, { cache: "force-cache" });
+      const resp = await fetch(model.textureUrl, { cache: "no-cache" });
       if (!resp.ok) throw new Error(`texture ${resp.status}`);
       const blob = await resp.blob();
       const bitmap = await createImageBitmap(blob);
@@ -2061,6 +2090,17 @@ export class Renderer {
       useProcedural: Math.min(material.useProcedural, 0.12),
       textureEmission: 0.85,
     };
+  }
+
+  private createModelIndexBuffer(indices: Uint32Array | null, label: string): GPUBuffer | null {
+    if (!indices || indices.length < 3) return null;
+    const buffer = this.ctx.device.createBuffer({
+      label,
+      size: indices.byteLength,
+      usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
+    });
+    this.ctx.device.queue.writeBuffer(buffer, 0, indices as GPUAllowSharedBufferSource);
+    return buffer;
   }
 
   private createMilkyWayModelTexture(bitmap: ImageBitmap, label: string): GPUTexture {
@@ -2125,6 +2165,8 @@ export class Renderer {
       vertexCount: mesh.vertexCount,
       parts: [{
         vertexBuffer,
+        indexBuffer: null,
+        indexCount: 0,
         materialBuffer,
         bindGroup,
         vertexCount: mesh.vertexCount,
@@ -2169,14 +2211,22 @@ export class Renderer {
       size: MILKY_WAY_MODEL_MATERIAL_BYTES,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
+    const [br, bg, bb, ba] = material.baseColor;
+    // Untextured exports with a neutral grey default material ("Default OBJ",
+    // 0.8 grey) take the catalog tint so they do not read as grey spheres.
+    const neutralUntextured = material.useTexture < 0.5 && material.useVertexColor < 0.5 &&
+      Math.max(br, bg, bb) - Math.min(br, bg, bb) < 0.05;
+    const tint = Math.max(0.35, Math.max(br, bg, bb));
     const baseColor: [number, number, number, number] = material.useProcedural > 0.5
       ? [
-        model.color[0] ?? material.baseColor[0],
-        model.color[1] ?? material.baseColor[1],
-        model.color[2] ?? material.baseColor[2],
-        material.baseColor[3],
+        model.color[0] ?? br,
+        model.color[1] ?? bg,
+        model.color[2] ?? bb,
+        ba,
       ]
-      : material.baseColor;
+      : neutralUntextured
+        ? [model.color[0] * tint, model.color[1] * tint, model.color[2] * tint, ba]
+        : material.baseColor;
     const data = new Float32Array(MILKY_WAY_MODEL_MATERIAL_BYTES / 4);
     data[0] = baseColor[0];
     data[1] = baseColor[1];
@@ -2192,83 +2242,6 @@ export class Renderer {
     data[11] = material.textureEmission;
     device.queue.writeBuffer(buffer, 0, data);
     return buffer;
-  }
-
-  private createSolarSystemModelMaterialBuffer(
-    model: SolarSystemModelAsset,
-    material: ParsedMilkyWayMaterial,
-    partIndex: number,
-  ): GPUBuffer {
-    const { device } = this.ctx;
-    const buffer = device.createBuffer({
-      label: `solar-system-model-material-${model.id}-${partIndex}`,
-      size: MILKY_WAY_MODEL_MATERIAL_BYTES,
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
-    const baseColor = material.baseColor;
-    const data = new Float32Array(MILKY_WAY_MODEL_MATERIAL_BYTES / 4);
-    data[0] = baseColor[0];
-    data[1] = baseColor[1];
-    data[2] = baseColor[2];
-    data[3] = baseColor[3];
-    data[4] = material.emissive[0];
-    data[5] = material.emissive[1];
-    data[6] = material.emissive[2];
-    data[7] = Math.max(material.emissive[3], model.emissive ?? 0);
-    data[8] = material.useTexture;
-    data[9] = model.format === "procedural-sphere" || model.bodyName === "Sun" ? 1 : material.useProcedural;
-    data[10] = material.useVertexColor;
-    data[11] = material.textureEmission;
-    device.queue.writeBuffer(buffer, 0, data);
-    return buffer;
-  }
-
-  private updateSolarSystemModelUniforms(bodies: readonly Body[]): void {
-    if (this.solarSystemModelEntries.size <= 0) return;
-    const byName = new Map<string, Body>();
-    for (const body of bodies) byName.set(body.name, body);
-    const sun = byName.get("Sun");
-
-    for (const entry of this.solarSystemModelEntries.values()) {
-      const body = byName.get(entry.bodyName);
-      if (!body) continue;
-      let lx = 1;
-      let ly = 0;
-      let lz = 0;
-      if (sun && entry.bodyName !== "Sun") {
-        lx = sun.x - body.x;
-        ly = sun.y - body.y;
-        lz = sun.z - body.z;
-        const len = Math.hypot(lx, ly, lz) || 1;
-        lx /= len; ly /= len; lz /= len;
-      }
-      const basis = bodyRotationBasis(entry.bodyName, this.simulationTimeMs) ?? IDENTITY_BODY_ROTATION_BASIS;
-      const data = new Float32Array(SOLAR_SYSTEM_MODEL_UNIFORM_BYTES / 4);
-      data[0] = body.x;
-      data[1] = body.y;
-      data[2] = body.z;
-      data[3] = body.radius;
-      data[4] = lx;
-      data[5] = ly;
-      data[6] = lz;
-      data[7] = entry.bodyName === "Sun" ? 1 : 0;
-      data[8] = entry.fallbackColor[0];
-      data[9] = entry.fallbackColor[1];
-      data[10] = entry.fallbackColor[2];
-      data[11] = 1;
-      data[12] = entry.emissive;
-      data[13] = basis.primeMeridianDeg;
-      data[16] = basis.right[0];
-      data[17] = basis.right[1];
-      data[18] = basis.right[2];
-      data[20] = basis.up[0];
-      data[21] = basis.up[1];
-      data[22] = basis.up[2];
-      data[24] = basis.axis[0];
-      data[25] = basis.axis[1];
-      data[26] = basis.axis[2];
-      this.ctx.device.queue.writeBuffer(entry.uniformBuffer, 0, data);
-    }
   }
 
   private pruneMilkyWayModelFailures(): void {
@@ -2338,6 +2311,7 @@ export class Renderer {
   }
 
   uploadBodies(bodies: Body[], visibility: ReadonlyMap<number, number> = new Map()): void {
+    this.bodySurfaces.update(bodies, this.simulationTimeMs, this.cameraUniforms, this.viewportHeight);
     this.bodyCount = bodies.length;
     const data = new Float32Array(bodies.length * BODY_FLOATS);
     const cam = this.cameraUniforms;
@@ -2372,12 +2346,11 @@ export class Renderer {
       data[o+4]=b.vx; data[o+5]=b.vy; data[o+6]=b.vz; data[o+7]=b.radius;
       // vec4 acc_type (x=brightness; y=reference observer distance AU; z=render visibility; w=type)
       data[o+8]=brightness.display; data[o+9]=brightness.observerDistanceAU; data[o+10]=visibility.get(b.id) ?? 1; data[o+11]=b.type;
-      if (this.solarSystemModelEntries.has(b.name)) data[o+10] = 0;
+      data[o+10] = (data[o+10] ?? 1) * this.bodySurfaces.spriteVisibility(b.name);
       // vec4 col_id
       data[o+12]=b.color[0]; data[o+13]=b.color[1]; data[o+14]=b.color[2]; data[o+15]=b.id;
     }
     this.ctx.device.queue.writeBuffer(this.bodyBuffer, 0, data);
-    this.updateSolarSystemModelUniforms(bodies);
   }
 
   private bodyBrightnessFactor(): BodyBrightnessSample {
@@ -2392,9 +2365,9 @@ export class Renderer {
     const brightnessEffects = this._actualBrightness ? 1 : 0;
     const legacyApparentBoost = 0;
 
-    // MW individual stars disappear when camera > 400 kpc (3 200 000 AU).
+    // MW individual stars disappear when camera > 400 kpc (32 000 000 AU at 80 000 AU/kpc).
     // Transition: fully visible at 360 kpc → invisible at 400 kpc.
-    const camKpc     = this._cameraDistanceFromSun / 8_000;
+    const camKpc     = this._cameraDistanceFromSun / AU_PER_KPC;
     const mwStarFade = Math.max(0, Math.min(1, (400 - camKpc) / 40));
 
     // MW self (single galaxy blob) fades IN as individual stars fade OUT.
@@ -2406,13 +2379,13 @@ export class Renderer {
     this.ctx.device.queue.writeBuffer(this.galaxyLodBuffer, 0, new Float32Array([legacyApparentBoost, brightnessEffects, 0, 0]));
 
     // Update MW self billboard: centred on Sgr A* (galactic centre) not the Sun.
-    // The Sun is 8.5 kpc from the galactic centre; placing the blob at the
+    // The Sun is R0 = 8.178 kpc from the galactic centre; placing the blob at the
     // galactic centre gives the correct visual anchor for the whole galaxy.
-    // Position = R_gal_to_ecl × (8.5 kpc, 0, 0) × 8000 AU/kpc ≈ (-3 732, -67 586, -6 555) AU
+    // Position = GALACTIC_CENTER_WORLD_AU (scale.ts) = Sgr A* ≈ (-35 902, -650 198, -63 119) AU
     if (this.mwSelfBuffer) {
       this.ctx.device.queue.writeBuffer(
         this.mwSelfBuffer, 0,
-        new Float32Array([-3732, -67586, -6555, 5.0, 1.0, 0.90, 0.70, this._mwSelfAlpha]),
+        new Float32Array([...GALACTIC_CENTER_WORLD_AU, 5.0, 1.0, 0.90, 0.70, this._mwSelfAlpha]),
       );
     }
   }
@@ -2448,11 +2421,15 @@ export class Renderer {
     data[4] = model.fadeNearAU;
     data[5] = model.fadeFarAU;
     data[6] = model.opacity;
-    data[7] = 0;
+    data[7] = model.glow.rimPower;
     data[8] = model.color[0];
     data[9] = model.color[1];
     data[10] = model.color[2];
-    data[11] = 0;
+    data[11] = model.glow.gain;
+    data[12] = model.glow.inner[0];
+    data[13] = model.glow.inner[1];
+    data[14] = model.glow.inner[2];
+    data[15] = model.glow.headOn;
     this.ctx.device.queue.writeBuffer(entry.uniformBuffer, 0, data);
   }
 
@@ -2767,6 +2744,7 @@ export class Renderer {
       2 / this.viewportHeight,
       TRAIL_THICKNESS_PX,
       0,
+      ...splitHighLow(uniforms.eye),
     ]));
     this.writeDustUniform();
   }
@@ -2824,6 +2802,17 @@ export class Renderer {
         },
       });
 
+      // ── Occluder depth pre-pass (log depth, colour writes off) ─────────────
+      // Solar-system meshes and sprite-body discs write depth first so every
+      // depth-tested layer below (galaxies, nebulae, MW stars, dust, catalog
+      // stars, constellations, trails) is hidden behind them (ISSUES I1).
+      this.bodySurfaces.drawDepthPrepass(pass);
+      if (this.bodyCount > 0) {
+        pass.setPipeline(this.bodyDepthPrepassPipeline);
+        pass.setBindGroup(0, this.bodyBindGroup);
+        pass.draw(6, this.bodyCount, 0, 0);
+      }
+
       // Helper: draw all octants of a catalog, or fall back to full draw.
       // Per-instance WGSL culling is deliberately used for frustum rejection;
       // a whole-octant CPU mask can cut off visible Milky Way or galaxy regions.
@@ -2849,11 +2838,15 @@ export class Renderer {
       };
 
       const drawMilkyWayModelEntry = (entry: { parts: MilkyWayModelPartEntry[] }): void => {
-        for (const part of entry.parts) {
-          pass.setBindGroup(0, part.bindGroup);
-          pass.setVertexBuffer(0, part.vertexBuffer);
-          pass.draw(part.vertexCount);
-        }
+        for (const part of entry.parts) drawModelPart(pass, part);
+      };
+      // Glowing gas: extinction pass (dims what is behind), then additive glow.
+      // Both are depth-tested (log depth) against bodies but never write depth.
+      const drawMilkyWayMeshEntry = (entry: { parts: MilkyWayModelPartEntry[] }): void => {
+        pass.setPipeline(this.milkyWayMeshAbsorbPipeline);
+        drawMilkyWayModelEntry(entry);
+        pass.setPipeline(this.milkyWayMeshPipeline);
+        drawMilkyWayModelEntry(entry);
       };
 
     // ── Galaxies (furthest layer) ──────────────────────────────────────────
@@ -2902,22 +2895,6 @@ export class Renderer {
       pass.draw(6, 1, 0, 0);
     }
 
-    // ── NASA/Chandra object meshes — close LOD only, shader fades by camera distance.
-    if (this.milkyWayModelEntries.size > 0) {
-      pass.setPipeline(this.milkyWayModelPipeline);
-      if (this.activeMilkyWayModelId) {
-        const activeEntry = this.milkyWayModelEntries.get(this.activeMilkyWayModelId);
-        if (activeEntry) drawMilkyWayModelEntry(activeEntry);
-      } else {
-        const drawnGroups = new Set<string>();
-        for (const entry of this.milkyWayModelEntries.values()) {
-          if (drawnGroups.has(entry.modelGroup)) continue;
-          drawnGroups.add(entry.modelGroup);
-          drawMilkyWayModelEntry(entry);
-        }
-      }
-    }
-
     // ── Milky Way background stars (galaxy-scale LOD layer) ───────────────
     pass.setPipeline(this.mwPipeline);
     pass.setBindGroup(0, this.mwBindGroup);
@@ -2956,6 +2933,24 @@ export class Renderer {
       pass.draw(this.selectedStarModelVertexCount);
     }
 
+    // ── NASA/Chandra gas meshes — close LOD only, shader fades by camera distance.
+    // Drawn after the star/dust layers so the extinction pass can dim the stars
+    // behind the remnant (foreground stars inside the camera-to-remnant gap are
+    // rare at these kpc distances and get dimmed too; accepted trade-off).
+    if (this.milkyWayModelEntries.size > 0) {
+      if (this.activeMilkyWayModelId) {
+        const activeEntry = this.milkyWayModelEntries.get(this.activeMilkyWayModelId);
+        if (activeEntry) drawMilkyWayMeshEntry(activeEntry);
+      } else {
+        const drawnGroups = new Set<string>();
+        for (const entry of this.milkyWayModelEntries.values()) {
+          if (drawnGroups.has(entry.modelGroup)) continue;
+          drawnGroups.add(entry.modelGroup);
+          drawMilkyWayMeshEntry(entry);
+        }
+      }
+    }
+
     // ── Constellation lines between snapped visible-star positions ─────────
     if (this._showConstellations && this.constellationCount > 0) {
       pass.setPipeline(this.constellationPipeline);
@@ -2969,20 +2964,17 @@ export class Renderer {
     pass.setBindGroup(0, this.bodyBindGroup);
     pass.draw(6, this.bodyCount, 0, 0);
 
-    if (this.solarSystemModelEntries.size > 0) {
-      pass.setPipeline(this.solarSystemModelPipeline);
-      for (const entry of this.solarSystemModelEntries.values()) {
-        for (const part of entry.parts) {
-          pass.setBindGroup(0, part.bindGroup);
-          pass.setVertexBuffer(0, part.vertexBuffer);
-          pass.draw(part.vertexCount);
-        }
-      }
-    }
+    this.bodySurfaces.draw(pass);
+
+    // ── Orbit trails: in the HDR scene after opaque bodies, depth-tested so
+    // segments behind a body are hidden and the black-hole composite covers
+    // them (ISSUES C6/I6); segments in front of a body still draw over it.
+    drawTrails(pass);
 
       pass.end();
     };
 
+    this.bodySurfaces.prepareFrame(this.cameraUniforms);
     this.ensureSceneTexture();
     this.ensureBloomTextures();
     uploadTrails();
@@ -3007,7 +2999,6 @@ export class Renderer {
     pass.setPipeline(this.blackHolePipeline);
     pass.setBindGroup(0, this.blackHoleBindGroup!);
     pass.draw(6, 1, 0, 0);
-    drawTrails(pass);
     pass.end();
 
     device.queue.submit([encoder.finish()]);

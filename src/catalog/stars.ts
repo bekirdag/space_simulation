@@ -1,9 +1,12 @@
 import { classifyStarModelType, type StarModelTypeId } from "./star-types";
+import { AU_PER_PARSEC, equatorialToEcliptic } from "./scale";
+
+// Shared 80 AU/pc visual scale and equatorial→ecliptic rotation live in scale.ts.
+export { AU_PER_PARSEC, equatorialToEcliptic };
 
 export const STAR_FLOATS = 8;
 export const DEFAULT_VISIBLE_STAR_COUNT = 100_000;
 const FALLBACK_VISIBLE_STAR_COUNT = 12_000;
-export const AU_PER_PARSEC = 80;
 export const SOLAR_RADIUS_AU = 0.00465047;
 
 const EXOPLANET_HOST_DATA_URL = "/data/exoplanet-hosts.json";
@@ -13,6 +16,19 @@ const SUN_TEMPERATURE_K = 5778;
 const MIN_STELLAR_RADIUS_SOLAR = 0.01;
 const MAX_STELLAR_RADIUS_SOLAR = 1800;
 export const STAR_DEDUPE_POSITION_TOLERANCE_AU = 0.05;
+
+// Star catalogs (HYG x/y/z, RA/Dec tables) are equatorial J2000, but the world
+// frame is ecliptic J2000 (Horizons REF_PLANE=ECLIPTIC; Milky Way field,
+// nebulas, dust and Sgr A* are all ecliptic). Rotate about +X by the obliquity.
+
+/** Rotate xyz of every instance (first three floats) from equatorial to ecliptic, in place. */
+export function equatorialBufferToEcliptic(data: Float32Array<ArrayBufferLike>, floatsPerInstance: number): void {
+  for (let o = 0; o + 2 < data.length; o += floatsPerInstance) {
+    const [, y, z] = equatorialToEcliptic(0, data[o + 1]!, data[o + 2]!);
+    data[o + 1] = y;
+    data[o + 2] = z;
+  }
+}
 
 export type StarBuffer = Float32Array<ArrayBufferLike>;
 
@@ -470,11 +486,11 @@ function catalogPosition(raDeg: number, decDeg: number, distancePc: number | nul
   const visualPc = clamp(distancePc ?? 850, 1.2, 1_500);
   const r = visualPc * AU_PER_PARSEC;
   const cosDec = Math.cos(dec);
-  return [
+  return equatorialToEcliptic(
     r * cosDec * Math.cos(ra),
     r * cosDec * Math.sin(ra),
     r * Math.sin(dec),
-  ];
+  );
 }
 
 function hostToCatalogStar(record: ExoplanetHostRecord, index: number): CatalogStar {
@@ -566,14 +582,16 @@ export function createVisibleStarField(count = DEFAULT_VISIBLE_STAR_COUNT): Star
 
 export async function loadVisibleStarField(): Promise<VisibleStarLoad> {
   try {
-    const response = await fetch(VISIBLE_STAR_DATA_URL, { cache: "force-cache" });
+    const response = await fetch(VISIBLE_STAR_DATA_URL, { cache: "no-cache" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const buffer = await response.arrayBuffer();
     if (buffer.byteLength % (STAR_FLOATS * 4) !== 0) {
       throw new Error("Visible star binary has an invalid stride.");
     }
+    const data = new Float32Array(buffer);
+    equatorialBufferToEcliptic(data, STAR_FLOATS);
     return {
-      data: new Float32Array(buffer),
+      data,
       source: "HYG 4.2 local binary snapshot with nearby-anchor de-duplication and physical stellar radii",
     };
   } catch (error) {
@@ -716,7 +734,7 @@ export function combineStarBuffers(...buffers: StarBuffer[]): StarBuffer {
 
 export async function loadExoplanetHostStars(): Promise<StarCatalogLoad> {
   try {
-    const response = await fetch(EXOPLANET_HOST_DATA_URL, { cache: "force-cache" });
+    const response = await fetch(EXOPLANET_HOST_DATA_URL, { cache: "no-cache" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const records = await response.json() as ExoplanetHostRecord[];
     const stars = records

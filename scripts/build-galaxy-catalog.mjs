@@ -19,7 +19,7 @@
  *   [4-6] RGB colour
  *   [7]   alpha
  *
- * Scale: 8 000 AU/kpc (same as MW background catalog)
+ * Scale: 80 000 AU/kpc (shared 80 AU/pc scale, src/catalog/scale.ts)
  *   - linear through 2 Mpc (Local Group proportions)
  *   - log₂ beyond 2 Mpc (navigable deep field)
  */
@@ -39,11 +39,11 @@ const PROTECTED_COUNT  = 10_000;    // nearest galaxies kept without thinning
 const MOCK_GRID        = 64;        // lognormal density grid per axis (64³ = 262k cells)
 const MOCK_N_WAVES     = 600;       // plane waves for power-spectrum approximation
 
-const GALAXY_SCALE_VERSION     = "local-group-linear-log-v2";
-const GALAXY_KPC_TO_AU         = 8_000;
+const GALAXY_SCALE_VERSION     = "local-group-linear-log-v3"; // = src/catalog/galaxies.ts
+const GALAXY_KPC_TO_AU         = 80_000;
 const GALAXY_MPC_TO_AU         = GALAXY_KPC_TO_AU * 1_000;
 const GALAXY_LINEAR_LIMIT_MPC  = 2;
-const GALAXY_LOG_SCALE_AU      = 1_200_000;
+const GALAXY_LOG_SCALE_AU      = 12_000_000;
 const GALAXY_LINEAR_LIMIT_AU   = GALAXY_LINEAR_LIMIT_MPC * GALAXY_MPC_TO_AU;
 const EPS = 23.4393 * Math.PI / 180;
 const H0  = 70;

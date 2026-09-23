@@ -8,13 +8,17 @@
  *   [7]   alpha
  */
 
+import { AU_PER_KPC, AU_PER_MPC, raDecToEclipticUnit } from "./scale";
+
 export const GALAXY_FLOATS = 8;
-export const GALAXY_SCALE_VERSION = "local-group-linear-log-v2";
-export const GALAXY_KPC_TO_AU = 8_000; // matches the Milky Way background scale
-export const GALAXY_MPC_TO_AU = GALAXY_KPC_TO_AU * 1_000;
+// v3: shared 80 000 AU/kpc scale (scale.ts). v2 binaries (8 000 AU/kpc) are
+// rescaled at load time — see remapGalaxyScale().
+export const GALAXY_SCALE_VERSION = "local-group-linear-log-v3";
+export const GALAXY_KPC_TO_AU = AU_PER_KPC; // same scale as stars, nebulas, MW field, Sgr A*
+export const GALAXY_MPC_TO_AU = AU_PER_MPC;
 export const GALAXY_LINEAR_LIMIT_MPC = 2;
 export const GALAXY_LOG_INTERVAL_MPC = 2;
-export const GALAXY_LOG_SCALE_AU = 1_200_000;
+export const GALAXY_LOG_SCALE_AU = 12_000_000;
 export const GALAXY_LINEAR_LIMIT_AU = GALAXY_LINEAR_LIMIT_MPC * GALAXY_MPC_TO_AU;
 export const MILKY_WAY_DIAMETER_AU = 30.7 * GALAXY_KPC_TO_AU;
 export const MILKY_WAY_RADIUS_AU = MILKY_WAY_DIAMETER_AU * 0.5;
@@ -22,7 +26,6 @@ export const MILKY_WAY_RADIUS_AU = MILKY_WAY_DIAMETER_AU * 0.5;
 const LEGACY_GALAXY_BASE_AU = 200_000;
 const LEGACY_GALAXY_LOG_SCALE_AU = 50_000;
 const LEGACY_GALAXY_REFERENCE_MPC = 0.01;
-const EPS = 23.4393 * Math.PI / 180;
 
 export type GalaxyBuffer = Float32Array;
 
@@ -53,6 +56,9 @@ interface GalaxyMeta {
   distanceScaleVersion?: string;
   galaxyBaseAU?: number;
   galaxyLogScaleAU?: number;
+  mpcToAU?: number;
+  linearLimitMpc?: number;
+  logScaleAU?: number;
 }
 
 interface LocalGroupGalaxySource {
@@ -74,20 +80,10 @@ export function galaxyVisualDistanceAU(mpc: number): number {
   return GALAXY_LINEAR_LIMIT_AU + GALAXY_LOG_SCALE_AU * Math.log2(beyond + 1);
 }
 
-function d2r(deg: number): number {
-  return deg * Math.PI / 180;
-}
-
 function galaxyRaDecToWorldAU(ra: number, dec: number, distMpc: number): [number, number, number] {
   const r = galaxyVisualDistanceAU(distMpc);
-  const xe = Math.cos(d2r(dec)) * Math.cos(d2r(ra));
-  const ye = Math.cos(d2r(dec)) * Math.sin(d2r(ra));
-  const ze = Math.sin(d2r(dec));
-  return [
-    xe * r,
-    (ye * Math.cos(EPS) + ze * Math.sin(EPS)) * r,
-    (-ye * Math.sin(EPS) + ze * Math.cos(EPS)) * r,
-  ];
+  const [x, y, z] = raDecToEclipticUnit(ra, dec);
+  return [x * r, y * r, z * r];
 }
 
 // All labeled nearby galaxies injected at runtime. The binary catalog (galaxies-100k.bin)
@@ -165,7 +161,7 @@ export const LOCAL_GROUP_GALAXY_LABELS: LocalGroupGalaxyLabel[] = LOCAL_GROUP_SO
     name: source.name,
     dist: source.dist,
     x, y, z,
-    focusDistance: Math.min(10_000, Math.max(500, r * 0.02)),
+    focusDistance: Math.min(100_000, Math.max(5_000, r * 0.02)),
     color: source.color,
     size: source.size,
     alpha: source.alpha,
@@ -174,7 +170,7 @@ export const LOCAL_GROUP_GALAXY_LABELS: LocalGroupGalaxyLabel[] = LOCAL_GROUP_SO
 
 async function loadGalaxyMeta(): Promise<GalaxyMeta | null> {
   try {
-    const resp = await fetch("/data/galaxies-100k.meta.json", { cache: "force-cache" });
+    const resp = await fetch("/data/galaxies-100k.meta.json", { cache: "no-cache" });
     if (!resp.ok) return null;
     return await resp.json() as GalaxyMeta;
   } catch {
@@ -193,7 +189,21 @@ function legacyMpcFromVisualAU(radiusAU: number, meta: GalaxyMeta | null): numbe
   return Math.max(0, LEGACY_GALAXY_REFERENCE_MPC * (2 ** exponent - 1));
 }
 
-function remapLegacyGalaxyDistances(input: Float32Array, meta: GalaxyMeta | null): GalaxyBuffer {
+// Inverse of the linear-then-log₂ mapping used by the v2+ build script, with the
+// scale parameters recorded in that binary's meta file (v2: 8 000 AU/kpc).
+function linearLogMpcFromVisualAU(radiusAU: number, meta: GalaxyMeta | null): number {
+  const mpcToAU = meta?.mpcToAU ?? 8_000_000;
+  const linearLimitMpc = meta?.linearLimitMpc ?? GALAXY_LINEAR_LIMIT_MPC;
+  const logScaleAU = meta?.logScaleAU ?? 1_200_000;
+  const linearLimitAU = linearLimitMpc * mpcToAU;
+  if (radiusAU <= linearLimitAU) return radiusAU / mpcToAU;
+  return linearLimitMpc + GALAXY_LOG_INTERVAL_MPC * (2 ** ((radiusAU - linearLimitAU) / logScaleAU) - 1);
+}
+
+function remapGalaxyDistances(
+  input: Float32Array,
+  mpcFromVisualAU: (radiusAU: number) => number,
+): GalaxyBuffer {
   const output = new Float32Array(input);
   for (let o = 0; o < output.length; o += GALAXY_FLOATS) {
     const x = output[o]!;
@@ -202,8 +212,7 @@ function remapLegacyGalaxyDistances(input: Float32Array, meta: GalaxyMeta | null
     const radius = Math.hypot(x, y, z);
     if (!Number.isFinite(radius) || radius <= 0) continue;
 
-    const mpc = legacyMpcFromVisualAU(radius, meta);
-    const scaledRadius = galaxyVisualDistanceAU(mpc);
+    const scaledRadius = galaxyVisualDistanceAU(mpcFromVisualAU(radius));
     const scale = scaledRadius / radius;
     if (!Number.isFinite(scale) || scale <= 0) continue;
 
@@ -212,6 +221,10 @@ function remapLegacyGalaxyDistances(input: Float32Array, meta: GalaxyMeta | null
     output[o + 2] = z * scale;
   }
   return output;
+}
+
+function remapLegacyGalaxyDistances(input: Float32Array, meta: GalaxyMeta | null): GalaxyBuffer {
+  return remapGalaxyDistances(input, radius => legacyMpcFromVisualAU(radius, meta));
 }
 
 function addLocalGroupAnchors(data: GalaxyBuffer, names: NamedGalaxy[]): GalaxyLoad {
@@ -257,8 +270,8 @@ function addLocalGroupAnchors(data: GalaxyBuffer, names: NamedGalaxy[]): GalaxyL
 
 export async function loadGalaxyCatalog(): Promise<GalaxyLoad> {
   const [binResp, nameResp, meta] = await Promise.all([
-    fetch("/data/galaxies-100k.bin", { cache: "force-cache" }),
-    fetch("/data/galaxy-names.json", { cache: "force-cache" }),
+    fetch("/data/galaxies-100k.bin", { cache: "no-cache" }),
+    fetch("/data/galaxy-names.json", { cache: "no-cache" }),
     loadGalaxyMeta(),
   ]);
 
@@ -275,12 +288,21 @@ export async function loadGalaxyCatalog(): Promise<GalaxyLoad> {
   }
 
   const raw = new Float32Array(buf);
-  const remapLegacy = meta?.distanceScaleVersion !== GALAXY_SCALE_VERSION;
-  const data = remapLegacy ? remapLegacyGalaxyDistances(raw, meta) : raw;
+  const version = meta?.distanceScaleVersion;
+  // The shipped binary is v2 (8 000 AU/kpc); its build needs network access
+  // (VizieR/Simbad), so it is rescaled to the shared 80 000 AU/kpc scale here
+  // instead of being regenerated. For v2 this is exactly a ×10 radial scale.
+  const remapLinearLog = version === "local-group-linear-log-v2";
+  const remapLegacy = !remapLinearLog && version !== GALAXY_SCALE_VERSION;
+  const data = remapLinearLog
+    ? remapGalaxyDistances(raw, radius => linearLogMpcFromVisualAU(radius, meta))
+    : remapLegacy ? remapLegacyGalaxyDistances(raw, meta) : raw;
   const withLocalGroup = addLocalGroupAnchors(data, names);
-  const scaleLabel = remapLegacy
-    ? "legacy binary remapped to Local Group-linear scale"
-    : GALAXY_SCALE_VERSION;
+  const scaleLabel = remapLinearLog
+    ? `${version} binary rescaled to ${GALAXY_SCALE_VERSION}`
+    : remapLegacy
+      ? "legacy binary remapped to Local Group-linear scale"
+      : GALAXY_SCALE_VERSION;
 
   return {
     data: withLocalGroup.data,

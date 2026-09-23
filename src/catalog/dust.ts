@@ -1,4 +1,10 @@
 import { NEBULA_FLOATS } from "./nebulas";
+import {
+  AU_PER_KPC,
+  GALACTIC_CENTER_DISTANCE_KPC,
+  eclipticToGalactic,
+  heliocentricGalacticKpcToWorldAU,
+} from "./scale";
 
 // Partial Milky Way dust clouds generated from the NASA/GSFC LAMBDA
 // Meisner-Finkbeiner 2015 E(B-V) all-sky Galactic dust map.
@@ -15,8 +21,8 @@ export const DUST_CLOUD_COUNT = 48_000;
 export const DUST_CLOUD_DEFAULT_DRAW_COUNT = 24_000;
 export const DUST_CLOUD_CAPACITY = DUST_CLOUD_COUNT;
 export const DUST_MAP_FLOATS = 8;
-export const DUST_MILKY_WAY_KPC_TO_AU = 8_000;
-export const DUST_SUN_GALACTIC_RADIUS_KPC = 8.5;
+export const DUST_MILKY_WAY_KPC_TO_AU = AU_PER_KPC; // shared 80 000 AU/kpc scale (scale.ts)
+export const DUST_SUN_GALACTIC_RADIUS_KPC = GALACTIC_CENTER_DISTANCE_KPC;
 export const DUST_GALAXY_RADIUS_KPC = 16.5;
 export const DUST_GALAXY_HALF_HEIGHT_KPC = 1.6;
 export const DUST_GALAXY_HALF_HEIGHT_AU = DUST_GALAXY_HALF_HEIGHT_KPC * DUST_MILKY_WAY_KPC_TO_AU;
@@ -28,8 +34,9 @@ const DUST_MAP_DATA_URL = "/data/dust-map-mf2015.bin";
 const DUST_MAP_META_URL = "/data/dust-map-mf2015.meta.json";
 const DUST_MAP_MIN_ALPHA = 0.006;
 const DUST_MAP_ALPHA_RANGE = 0.080;
-const DUST_CLOUD_MIN_RADIUS_AU = 180;
-const DUST_CLOUD_MAX_RADIUS_AU = 950;
+// Tuned at the old 8 000 AU/kpc scale; ×10 keeps the same physical cloud sizes.
+const DUST_CLOUD_MIN_RADIUS_AU = 1_800;
+const DUST_CLOUD_MAX_RADIUS_AU = 9_500;
 const DUST_CLOUD_LOW_MEMORY_COUNT = 6_000;
 const DUST_DISK_SAMPLE_HALF_HEIGHT_KPC = 0.52;
 const DUST_VERTICAL_SCALE_KPC = 0.12;
@@ -37,11 +44,6 @@ const DUST_DIRECTION_LON_BINS = 360;
 const DUST_DIRECTION_LAT_BINS = 160;
 
 const TAU = Math.PI * 2;
-const GAL_TO_ECL = [
-  [-0.054876,  0.494109, -0.867666],
-  [-0.993911, -0.111106, -0.000312],
-  [-0.096390,  0.862326,  0.497159],
-] as const;
 
 function srgbChannelToLinear(channel: number): number {
   return channel <= 0.04045
@@ -87,7 +89,7 @@ export interface DustMapBuffer {
 }
 
 export async function loadDustMap(): Promise<DustMapBuffer> {
-  const res = await fetch(DUST_MAP_DATA_URL, { cache: "force-cache" });
+  const res = await fetch(DUST_MAP_DATA_URL, { cache: "no-cache" });
   if (!res.ok) throw new Error(`Failed to fetch ${DUST_MAP_DATA_URL}: ${res.status}`);
   const buf = await res.arrayBuffer();
   if (buf.byteLength % (DUST_MAP_FLOATS * 4) !== 0) {
@@ -96,7 +98,7 @@ export async function loadDustMap(): Promise<DustMapBuffer> {
 
   let source = "NASA/GSFC LAMBDA Meisner-Finkbeiner 2015 E(B-V) dust map";
   try {
-    const metaRes = await fetch(DUST_MAP_META_URL, { cache: "force-cache" });
+    const metaRes = await fetch(DUST_MAP_META_URL, { cache: "no-cache" });
     if (metaRes.ok) {
       const meta = await metaRes.json() as { sourceName?: string; cellCount?: number };
       source = meta.sourceName ?? source;
@@ -132,23 +134,14 @@ function normalize3(x: number, y: number, z: number): [number, number, number] {
 }
 
 function galacticCartesianToEclipticAU(xgc: number, ygc: number, zgc: number): [number, number, number] {
-  const xh = xgc + DUST_SUN_GALACTIC_RADIUS_KPC;
-  const yh = ygc;
-  const zh = zgc;
-  return [
-    (GAL_TO_ECL[0][0] * xh + GAL_TO_ECL[0][1] * yh + GAL_TO_ECL[0][2] * zh) * DUST_MILKY_WAY_KPC_TO_AU,
-    (GAL_TO_ECL[1][0] * xh + GAL_TO_ECL[1][1] * yh + GAL_TO_ECL[1][2] * zh) * DUST_MILKY_WAY_KPC_TO_AU,
-    (GAL_TO_ECL[2][0] * xh + GAL_TO_ECL[2][1] * yh + GAL_TO_ECL[2][2] * zh) * DUST_MILKY_WAY_KPC_TO_AU,
-  ];
+  return heliocentricGalacticKpcToWorldAU(xgc + DUST_SUN_GALACTIC_RADIUS_KPC, ygc, zgc);
 }
 
 function eclipticToGalacticDirection(xe: number, ye: number, ze: number): [number, number, number] {
+  // Only the direction of each dust-map cell is used, so the map binary's
+  // legacy 68 000 AU shell radius (8 000 AU/kpc) needs no regeneration.
   const [x, y, z] = normalize3(xe, ye, ze);
-  return normalize3(
-    GAL_TO_ECL[0][0] * x + GAL_TO_ECL[1][0] * y + GAL_TO_ECL[2][0] * z,
-    GAL_TO_ECL[0][1] * x + GAL_TO_ECL[1][1] * y + GAL_TO_ECL[2][1] * z,
-    GAL_TO_ECL[0][2] * x + GAL_TO_ECL[1][2] * y + GAL_TO_ECL[2][2] * z,
-  );
+  return normalize3(...eclipticToGalactic(x, y, z));
 }
 
 function armBoost(radiusKpc: number, theta: number): number {

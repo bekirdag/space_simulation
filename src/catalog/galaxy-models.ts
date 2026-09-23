@@ -5,8 +5,20 @@ import {
 } from "./galaxies";
 
 export const GALAXY_MODEL_FLOATS = 16;
-const GALAXY_MODEL_FOCUS_RADIUS_MULTIPLIER = 0.55;
-const GALAXY_MODEL_LOD_RADIUS_MULTIPLIER = 1.15;
+// Distances below are multiples of the galaxy's major radius R. Focus frames
+// the whole disk (45° vertical FOV: R subtends ~60% of the half-height at 1.9R)
+// from outside; the morphology mesh is the close LOD, the photo billboard the
+// mid LOD, and the procedural catalog blob takes over far away.
+const GALAXY_MODEL_FOCUS_RADIUS_MULTIPLIER = 1.9;
+const GALAXY_MESH_FADE_NEAR_RADII = 3.2;
+const GALAXY_MESH_FADE_FAR_RADII = 7.0;
+const GALAXY_BILLBOARD_FADE_IN_NEAR_RADII = 2.6;
+const GALAXY_BILLBOARD_FADE_IN_FAR_RADII = 5.5;
+const GALAXY_BILLBOARD_FADE_OUT_NEAR_RADII = 8.0;
+const GALAXY_BILLBOARD_FADE_OUT_FAR_RADII = 30.0;
+// The billboard plane is tilted towards the true disk plane, but no more than
+// this, so edge-on galaxies do not become long smeared planes seen face-on.
+const GALAXY_BILLBOARD_MAX_TILT_DEG = 60;
 
 export const GALAXY_MORPHOLOGY_TYPES = [
   {
@@ -59,10 +71,26 @@ export interface GalaxyTextureModel {
   x: number;
   y: number;
   z: number;
+  /** Texture half-height in AU (the mesh/billboard local unit). */
   radiusAU: number;
+  /** Texture width / height; the texture width spans the galaxy diameter. */
   aspect: number;
+  /** Sky-plane basis as seen from the Sun: right = texture +u (major axis), up = texture +v. */
   right: readonly [number, number, number];
   up: readonly [number, number, number];
+  /** Disk inclination (radians, 0 = face-on to the Sun), tilted about `right`. */
+  inclination: number;
+  /** In-plane minor axis of the tilted disk (sky projection = up·cos i). */
+  planeUp: readonly [number, number, number];
+  /** Disk-plane normal. */
+  planeNormal: readonly [number, number, number];
+  /** Disk radius in local units (texture half-heights): min(aspect, 1/cos i). */
+  diskExtent: number;
+  /** Billboard in-plane half-height in local units (texture v spans ±1 in the sky). */
+  billboardUpExtent: number;
+  /** Billboard plane minor axis (tilted by min(i, GALAXY_BILLBOARD_MAX_TILT_DEG)). */
+  billboardUp: readonly [number, number, number];
+  majorRadiusAU: number;
   opacity: number;
   fadeNearAU: number;
   fadeFarAU: number;
@@ -86,6 +114,8 @@ interface GalaxyTextureModelDef {
   opacity: number;
   meshOpacity?: number;
   rotationDeg?: number;
+  /** True disk inclination (0 = face-on). The photo is projected onto the tilted disk. */
+  inclinationDeg?: number;
 }
 
 const TEXTURED_GALAXY_DEFS: GalaxyTextureModelDef[] = [
@@ -99,6 +129,7 @@ const TEXTURED_GALAXY_DEFS: GalaxyTextureModelDef[] = [
     aspect: 1.25,
     opacity: 0.72,
     rotationDeg: -12,
+    inclinationDeg: 35,
   },
   {
     id: "smc",
@@ -110,17 +141,22 @@ const TEXTURED_GALAXY_DEFS: GalaxyTextureModelDef[] = [
     aspect: 1.25,
     opacity: 0.68,
     rotationDeg: 7,
+    inclinationDeg: 40,
   },
   {
     id: "andromeda",
     morphology: "spiral",
-    textureUrl: "/textures/galaxies/andromeda-m31.jpg",
+    // Full PHAT+PHAST mosaic, re-centred on the nucleus and levelled so the
+    // major axis is horizontal (the old 1280x1024 wallpaper crop had the
+    // nucleus in a corner and jagged black mosaic edges across the middle).
+    textureUrl: "/textures/galaxies/andromeda-m31-phast.jpg",
     sourceUrl: "https://esahubble.org/images/heic2501a/",
     credit: "NASA, ESA, B. Williams (University of Washington)",
-    diameterKpc: 67.0,
-    aspect: 1.25,
-    opacity: 0.82,
+    diameterKpc: 46.6,
+    aspect: 3.875,
+    opacity: 0.86,
     rotationDeg: -18,
+    inclinationDeg: 77,
   },
   {
     id: "triangulum",
@@ -132,6 +168,7 @@ const TEXTURED_GALAXY_DEFS: GalaxyTextureModelDef[] = [
     aspect: 1.25,
     opacity: 0.78,
     rotationDeg: 21,
+    inclinationDeg: 55,
   },
   {
     id: "ngc-253",
@@ -143,6 +180,7 @@ const TEXTURED_GALAXY_DEFS: GalaxyTextureModelDef[] = [
     aspect: 1.25,
     opacity: 0.72,
     rotationDeg: -8,
+    inclinationDeg: 76,
   },
   {
     id: "m81",
@@ -154,6 +192,7 @@ const TEXTURED_GALAXY_DEFS: GalaxyTextureModelDef[] = [
     aspect: 1.25,
     opacity: 0.72,
     rotationDeg: 16,
+    inclinationDeg: 59,
   },
   {
     id: "m82",
@@ -165,6 +204,7 @@ const TEXTURED_GALAXY_DEFS: GalaxyTextureModelDef[] = [
     aspect: 1.25,
     opacity: 0.78,
     rotationDeg: -22,
+    inclinationDeg: 80,
   },
   {
     id: "m101",
@@ -176,6 +216,7 @@ const TEXTURED_GALAXY_DEFS: GalaxyTextureModelDef[] = [
     aspect: 1.25,
     opacity: 0.74,
     rotationDeg: 9,
+    inclinationDeg: 18,
   },
   {
     id: "m83",
@@ -184,9 +225,10 @@ const TEXTURED_GALAXY_DEFS: GalaxyTextureModelDef[] = [
     sourceUrl: "https://science.nasa.gov/asset/hubble/spiral-galaxy-m83/",
     credit: "NASA, ESA and The Hubble Heritage Team (STScI/AURA)",
     diameterKpc: 15.3,
-    aspect: 1.25,
+    aspect: 2000 / 1300, // m83.jpg is 2000x1300
     opacity: 0.74,
     rotationDeg: 12,
+    inclinationDeg: 24,
   },
   {
     id: "m51",
@@ -198,6 +240,7 @@ const TEXTURED_GALAXY_DEFS: GalaxyTextureModelDef[] = [
     aspect: 1.25,
     opacity: 0.76,
     rotationDeg: -5,
+    inclinationDeg: 22,
   },
   {
     id: "m104",
@@ -209,6 +252,7 @@ const TEXTURED_GALAXY_DEFS: GalaxyTextureModelDef[] = [
     aspect: 1.25,
     opacity: 0.78,
     rotationDeg: 0,
+    inclinationDeg: 84,
   },
   {
     id: "m87",
@@ -221,6 +265,7 @@ const TEXTURED_GALAXY_DEFS: GalaxyTextureModelDef[] = [
     opacity: 0.70,
     meshOpacity: 0.78,
     rotationDeg: -4,
+    inclinationDeg: 0,
   },
 ];
 
@@ -281,14 +326,30 @@ export function galaxyTextureModels(): GalaxyTextureModel[] {
     if (!label) return [];
 
     const majorRadiusAU = Math.max(1, def.diameterKpc * GALAXY_KPC_TO_AU * 0.5);
-    const radiusAU = majorRadiusAU / Math.max(0.2, def.aspect);
-    const focusDistance = Math.max(900, majorRadiusAU * GALAXY_MODEL_FOCUS_RADIUS_MULTIPLIER);
-    const lodDistance = Math.max(900, majorRadiusAU * GALAXY_MODEL_LOD_RADIUS_MULTIPLIER);
-    const meshFadeNearAU = Math.max(focusDistance * 2.7, majorRadiusAU * 1.5);
-    const meshFadeFarAU = Math.max(focusDistance * 5.8, majorRadiusAU * 3.3);
-    const billboardFadeInNearAU = Math.max(focusDistance * 1.25, majorRadiusAU * 0.7);
-    const billboardFadeInFarAU = Math.max(focusDistance * 2.9, majorRadiusAU * 1.65);
+    const aspect = Math.max(0.2, def.aspect);
+    const radiusAU = majorRadiusAU / aspect;
+    const focusDistance = Math.max(9_000, majorRadiusAU * GALAXY_MODEL_FOCUS_RADIUS_MULTIPLIER);
+    const meshFadeNearAU = majorRadiusAU * GALAXY_MESH_FADE_NEAR_RADII;
+    const meshFadeFarAU = majorRadiusAU * GALAXY_MESH_FADE_FAR_RADII;
+    const billboardFadeInNearAU = majorRadiusAU * GALAXY_BILLBOARD_FADE_IN_NEAR_RADII;
+    const billboardFadeInFarAU = majorRadiusAU * GALAXY_BILLBOARD_FADE_IN_FAR_RADII;
     const { right, up } = basisForLabel(label, def.rotationDeg ?? 0);
+    const skyNormal = normalize(cross(right, up));
+
+    // The photo is the sky projection of the disk as seen from the Sun. Tilting
+    // the disk plane about the major axis by the real inclination and
+    // projecting the photo back onto it along the line of sight reproduces the
+    // photo exactly from the Sun's side and gives a proper 3D disk elsewhere.
+    const inclination = Math.min(89, Math.max(0, def.inclinationDeg ?? 0)) * Math.PI / 180;
+    const tiltUp = (angle: number): [number, number, number] => normalize([
+      up[0] * Math.cos(angle) + skyNormal[0] * Math.sin(angle),
+      up[1] * Math.cos(angle) + skyNormal[1] * Math.sin(angle),
+      up[2] * Math.cos(angle) + skyNormal[2] * Math.sin(angle),
+    ]);
+    const planeUp = tiltUp(inclination);
+    const planeNormal = normalize(cross(right, planeUp));
+    const diskExtent = Math.min(aspect, 1 / Math.max(Math.cos(inclination), 1e-3));
+    const billboardTilt = Math.min(inclination, GALAXY_BILLBOARD_MAX_TILT_DEG * Math.PI / 180);
 
     return [{
       id: def.id,
@@ -302,12 +363,19 @@ export function galaxyTextureModels(): GalaxyTextureModel[] {
       y: label.y,
       z: label.z,
       radiusAU,
-      aspect: def.aspect,
+      aspect,
       right,
       up,
+      inclination,
+      planeUp,
+      planeNormal,
+      diskExtent,
+      billboardUpExtent: 1 / Math.cos(billboardTilt),
+      billboardUp: tiltUp(billboardTilt),
+      majorRadiusAU,
       opacity: def.opacity,
-      fadeNearAU: lodDistance * 1.15,
-      fadeFarAU: lodDistance * 5.2,
+      fadeNearAU: majorRadiusAU * GALAXY_BILLBOARD_FADE_OUT_NEAR_RADII,
+      fadeFarAU: majorRadiusAU * GALAXY_BILLBOARD_FADE_OUT_FAR_RADII,
       billboardFadeInNearAU,
       billboardFadeInFarAU,
       meshRadiusAU: radiusAU,
@@ -323,4 +391,34 @@ export function galaxyTextureModels(): GalaxyTextureModel[] {
 export function galaxyModelFocusDistance(id: string): number | null {
   const model = galaxyTextureModels().find(item => item.id === id);
   return model?.focusDistance ?? null;
+}
+
+/**
+ * Disk (and bulge) of the nearest textured galaxy that is visible as a disk from
+ * `eye`, for hiding labels of objects behind it (labels.ts galaxyDiskOccludes).
+ */
+export function nearestGalaxyDiskOccluder(eye: readonly [number, number, number]): {
+  center: [number, number, number];
+  normal: [number, number, number];
+  radiusAU: number;
+  bulgeRadiusAU: number;
+} | null {
+  let best: GalaxyTextureModel | null = null;
+  let bestDist = Infinity;
+  for (const model of galaxyTextureModels()) {
+    const dist = Math.hypot(eye[0] - model.x, eye[1] - model.y, eye[2] - model.z);
+    // Mesh or tilted billboard still shows a sizeable disk out to fadeNearAU.
+    if (dist < model.fadeNearAU && dist < bestDist) {
+      best = model;
+      bestDist = dist;
+    }
+  }
+  if (!best) return null;
+  const diskRadiusAU = best.diskExtent * best.radiusAU;
+  return {
+    center: [best.x, best.y, best.z],
+    normal: [best.planeNormal[0], best.planeNormal[1], best.planeNormal[2]],
+    radiusAU: diskRadiusAU * 0.85,
+    bulgeRadiusAU: diskRadiusAU * (best.morphology === "elliptical" ? 0.8 : 0.22),
+  };
 }

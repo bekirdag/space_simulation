@@ -9,3 +9,4 @@ cache/tmp/
 cache/wikimedia/object-info/
 public/cache/nasa/*.fits
 public/cache/nasa/*.fits.gz
+cache/textures/src/

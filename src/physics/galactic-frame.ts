@@ -1,4 +1,5 @@
 import { type Body } from "./body";
+import { GALACTIC_CENTER_DISTANCE_PC, galacticToEcliptic } from "../catalog/scale";
 
 type Vec3 = { x: number; y: number; z: number };
 
@@ -10,12 +11,19 @@ const MODEL_EPOCH_MS = Date.UTC(2000, 0, 1, 12);
 
 // Local galactic reference model. JPL Horizons is solar-system scoped; this
 // model supplies a stable external frame without moving GPU coordinates to
-// billion-AU galactocentric values.
+// billion-AU galactocentric values. Physical (not visual) AU. The orbit lies in
+// the real galactic plane: the Sun sits at −R0 along the galactic-centre
+// direction (the same direction as the Sgr A* marker) and moves towards l=90°
+// (clockwise seen from the north galactic pole). Axes are ecliptic J2000.
 export const GALACTIC_FRAME = {
   name: "local circular galactic frame",
-  radiusAu: 8_178 * PARSEC_AU,
+  radiusAu: GALACTIC_CENTER_DISTANCE_PC * PARSEC_AU,
   circularSpeedAuYr: 240 * KM_S_TO_AU_YR,
 } as const;
+
+// Galactic X (towards the centre) and Y (direction of rotation, l=90°) in ecliptic axes.
+const GALACTIC_X = galacticToEcliptic(1, 0, 0);
+const GALACTIC_Y = galacticToEcliptic(0, 1, 0);
 
 export interface GalacticOriginState {
   x: number; y: number; z: number;
@@ -34,14 +42,15 @@ export function createGalacticOriginState(epochMs = MODEL_EPOCH_MS): GalacticOri
   const theta = omega * dtYr;
   const c = Math.cos(theta);
   const s = Math.sin(theta);
+  const R = GALACTIC_FRAME.radiusAu;
+  const V = GALACTIC_FRAME.circularSpeedAuYr;
 
+  // Galactocentric position of the Sun: r = R(−cosθ X + sinθ Y), v = V(sinθ X + cosθ Y).
+  const pos = (i: 0 | 1 | 2) => R * (-c * GALACTIC_X[i] + s * GALACTIC_Y[i]);
+  const vel = (i: 0 | 1 | 2) => V * (s * GALACTIC_X[i] + c * GALACTIC_Y[i]);
   return {
-    x: GALACTIC_FRAME.radiusAu * c,
-    y: GALACTIC_FRAME.radiusAu * s,
-    z: 0,
-    vx: -GALACTIC_FRAME.circularSpeedAuYr * s,
-    vy:  GALACTIC_FRAME.circularSpeedAuYr * c,
-    vz: 0,
+    x: pos(0), y: pos(1), z: pos(2),
+    vx: vel(0), vy: vel(1), vz: vel(2),
   };
 }
 

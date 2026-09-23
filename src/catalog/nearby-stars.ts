@@ -8,8 +8,8 @@
 //   Tier 2  (50–400 pc)  — arm stars, Betelgeuse, Antares, Canopus …
 //   Tier 3  (400+ pc)    — very distant landmarks, Deneb, Rigel …
 //
-// Positions are in compressed equatorial J2000 render AU (AU_PER_PARSEC = 80).
-// This matches the HYG x/y/z render buffer and exoplanet-host catalog stars.
+// Positions are in compressed ecliptic J2000 render AU (AU_PER_PARSEC = 80),
+// rotated from RA/Dec like the HYG render buffer and exoplanet-host catalog stars.
 
 import {
   classifyStarModelType,
@@ -17,10 +17,12 @@ import {
 } from "./star-types";
 import {
   colorFromSpectralType,
+  equatorialToEcliptic,
   starColorFromBv,
   stellarRadiusSolarFromPhotometry,
   stellarRenderRadiusAU,
 } from "./stars";
+import { AU_PER_PARSEC, GALACTIC_CENTER_WORLD_AU } from "./scale";
 
 export interface NearbyStarLabel {
   name:   string;
@@ -38,7 +40,7 @@ export interface NearbyStarLabel {
   starType?: StarModelTypeId;
 }
 
-export const NEARBY_STAR_AU_PER_PARSEC = 80; // must match build-visible-stars.mjs
+export const NEARBY_STAR_AU_PER_PARSEC = AU_PER_PARSEC; // shared 80 AU/pc scale (scale.ts, build-visible-stars.mjs)
 const APc = NEARBY_STAR_AU_PER_PARSEC;
 
 function p(ra: number, dec: number, d: number): [number, number, number] {
@@ -47,7 +49,7 @@ function p(ra: number, dec: number, d: number): [number, number, number] {
   const xe = d * Math.cos(dc) * Math.cos(r);
   const ye = d * Math.cos(dc) * Math.sin(r);
   const ze = d * Math.sin(dc);
-  return [xe * APc, ye * APc, ze * APc];
+  return equatorialToEcliptic(xe * APc, ye * APc, ze * APc);
 }
 
 interface NearbyStarPhotometry {
@@ -140,18 +142,12 @@ function visualColorForStar(name: string): [number, number, number] {
 }
 
 // ── Galactic centre — Sgr A* ─────────────────────────────────────────────────
-// The Milky Way background star field uses 8 000 AU/kpc (build-milkyway-stars.mjs).
-// The Sun sits at R_SUN = 8.5 kpc from the galactic centre in that model, so
-// the visual centre of the galaxy is at heliocentric galactic (8.5, 0, 0) kpc.
-// Convert to ecliptic J2000 using the same R_gal_to_ecl matrix as the build script.
-// Result: ≈ (−3 732, −67 586, −6 555) AU — the dense core of the MW star field.
-const MW_KPC_AU = 8_000;
-const _gcx = 8.5 * MW_KPC_AU; // heliocentric galactic X, 68 000 AU
-export const SGR_A_STAR_POS: [number, number, number] = [
-  -0.054876 * _gcx,   // ≈ -3 732 AU
-  -0.993911 * _gcx,   // ≈ -67 586 AU
-  -0.096390 * _gcx,   // ≈ -6 555 AU
-];
+// Everything shares the 80 AU/pc scale (scale.ts). Sgr A* sits R0 = 8.178 kpc
+// (GRAVITY 2019) along the galactic-centre direction (RA 266.405°,
+// Dec −28.936°), rotated into the ecliptic world frame with the same
+// galactic→ecliptic matrix as build-milkyway-stars.mjs and dust.ts.
+// Result: ≈ (−35 902, −650 198, −63 119) AU — the core of the MW star field.
+export const SGR_A_STAR_POS: [number, number, number] = GALACTIC_CENTER_WORLD_AU;
 
 function s(
   name: string, ra: number, dec: number, d: number, tier: number,

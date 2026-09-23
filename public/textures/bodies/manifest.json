@@ -1,0 +1,524 @@
+{
+  "generatedBy": "scripts/build-body-textures.mjs",
+  "convention": "equirectangular, u=0.5 at longitude 0, east to the right, north up",
+  "textures": {
+    "earth": {
+      "url": "/textures/bodies/earth.20cbdc721e.jpg",
+      "sources": [
+        {
+          "url": "https://www.solarsystemscope.com/textures/download/8k_earth_daymap.jpg",
+          "credit": "Solar System Scope (INOVE)",
+          "license": "CC BY 4.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+          "page": "https://www.solarsystemscope.com/textures/",
+          "note": "Based on NASA Blue Marble imagery"
+        }
+      ],
+      "processing": []
+    },
+    "earth-aux": {
+      "url": "/textures/bodies/earth-aux.72983cf4c7.jpg",
+      "sources": [
+        {
+          "url": "https://www.solarsystemscope.com/textures/download/8k_earth_nightmap.jpg",
+          "credit": "Solar System Scope (INOVE)",
+          "license": "CC BY 4.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+          "page": "https://www.solarsystemscope.com/textures/",
+          "note": "Based on NASA Black Marble imagery"
+        },
+        {
+          "url": "https://www.solarsystemscope.com/textures/download/8k_earth_clouds.jpg",
+          "credit": "Solar System Scope (INOVE)",
+          "license": "CC BY 4.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+          "page": "https://www.solarsystemscope.com/textures/"
+        }
+      ],
+      "processing": []
+    },
+    "moon": {
+      "url": "/textures/bodies/moon.bfc3e41d57.jpg",
+      "sources": [
+        {
+          "url": "https://www.solarsystemscope.com/textures/download/8k_moon.jpg",
+          "credit": "Solar System Scope (INOVE)",
+          "license": "CC BY 4.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+          "page": "https://www.solarsystemscope.com/textures/",
+          "note": "Based on NASA LRO imagery"
+        }
+      ],
+      "processing": []
+    },
+    "mercury": {
+      "url": "/textures/bodies/mercury.76b41a1883.jpg",
+      "sources": [
+        {
+          "url": "https://www.solarsystemscope.com/textures/download/8k_mercury.jpg",
+          "credit": "Solar System Scope (INOVE)",
+          "license": "CC BY 4.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+          "page": "https://www.solarsystemscope.com/textures/",
+          "note": "Based on NASA MESSENGER imagery"
+        }
+      ],
+      "processing": []
+    },
+    "venus": {
+      "url": "/textures/bodies/venus.2604f72fc4.jpg",
+      "sources": [
+        {
+          "url": "https://www.solarsystemscope.com/textures/download/4k_venus_atmosphere.jpg",
+          "credit": "Solar System Scope (INOVE)",
+          "license": "CC BY 4.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+          "page": "https://www.solarsystemscope.com/textures/"
+        }
+      ],
+      "processing": []
+    },
+    "mars": {
+      "url": "/textures/bodies/mars.fca3025fb1.jpg",
+      "sources": [
+        {
+          "url": "https://www.solarsystemscope.com/textures/download/8k_mars.jpg",
+          "credit": "Solar System Scope (INOVE)",
+          "license": "CC BY 4.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+          "page": "https://www.solarsystemscope.com/textures/",
+          "note": "Based on NASA/USGS Viking/MGS imagery"
+        }
+      ],
+      "processing": []
+    },
+    "jupiter": {
+      "url": "/textures/bodies/jupiter.359d9333ee.jpg",
+      "sources": [
+        {
+          "url": "https://www.solarsystemscope.com/textures/download/8k_jupiter.jpg",
+          "credit": "Solar System Scope (INOVE)",
+          "license": "CC BY 4.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+          "page": "https://www.solarsystemscope.com/textures/",
+          "note": "Based on NASA Cassini/Juno imagery"
+        }
+      ],
+      "processing": []
+    },
+    "saturn": {
+      "url": "/textures/bodies/saturn.d7e1dd9d96.jpg",
+      "sources": [
+        {
+          "url": "https://www.solarsystemscope.com/textures/download/8k_saturn.jpg",
+          "credit": "Solar System Scope (INOVE)",
+          "license": "CC BY 4.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+          "page": "https://www.solarsystemscope.com/textures/"
+        }
+      ],
+      "processing": []
+    },
+    "saturn-ring": {
+      "url": "/textures/bodies/saturn-ring.3700327419.png",
+      "sources": [
+        {
+          "url": "https://www.solarsystemscope.com/textures/download/8k_saturn_ring_alpha.png",
+          "credit": "Solar System Scope (INOVE)",
+          "license": "CC BY 4.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+          "page": "https://www.solarsystemscope.com/textures/"
+        }
+      ],
+      "processing": []
+    },
+    "uranus": {
+      "url": "/textures/bodies/uranus.ae0b6c9261.jpg",
+      "sources": [
+        {
+          "url": "https://www.solarsystemscope.com/textures/download/2k_uranus.jpg",
+          "credit": "Solar System Scope (INOVE)",
+          "license": "CC BY 4.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+          "page": "https://www.solarsystemscope.com/textures/"
+        }
+      ],
+      "processing": []
+    },
+    "neptune": {
+      "url": "/textures/bodies/neptune.584c4ff640.jpg",
+      "sources": [
+        {
+          "url": "https://www.solarsystemscope.com/textures/download/2k_neptune.jpg",
+          "credit": "Solar System Scope (INOVE)",
+          "license": "CC BY 4.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+          "page": "https://www.solarsystemscope.com/textures/"
+        }
+      ],
+      "processing": []
+    },
+    "io": {
+      "url": "/textures/bodies/io.18ad042ad9.jpg",
+      "sources": [
+        {
+          "url": "https://planetarymaps.usgs.gov/mosaic/Io_GalileoSSI-Voyager_Global_Mosaic_ClrMerge_1km.tif",
+          "credit": "NASA/JPL/USGS Galileo SSI + Voyager colour mosaic",
+          "license": "Public domain (NASA/USGS)",
+          "licenseUrl": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+          "page": "https://astrogeology.usgs.gov/search/map/io_galileo_ssi_voyager_global_mosaic_clrmerge_1km"
+        }
+      ],
+      "processing": []
+    },
+    "europa": {
+      "url": "/textures/bodies/europa.8862349212.jpg",
+      "sources": [
+        {
+          "url": "https://planetarymaps.usgs.gov/mosaic/Europa_Voyager_GalileoSSI_global_mosaic_500m.tif",
+          "credit": "NASA/JPL/USGS Voyager + Galileo SSI mosaic",
+          "license": "Public domain (NASA/USGS)",
+          "licenseUrl": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+          "page": "https://astrogeology.usgs.gov/search/map/europa_voyager_galileo_ssi_global_mosaic_500m"
+        }
+      ],
+      "processing": [
+        "greyscale mosaic tinted rgb(96,74,52) -> rgb(246,238,222) (approximate colour)",
+        "unimaged (black) area filled with the mean tone",
+        "rolled 180 deg so longitude 0 is centred"
+      ]
+    },
+    "ganymede": {
+      "url": "/textures/bodies/ganymede.bf9713c0a4.jpg",
+      "sources": [
+        {
+          "url": "https://planetarymaps.usgs.gov/mosaic/Ganymede_Voyager_GalileoSSI_Global_ClrMosaic_1435m.tif",
+          "credit": "NASA/JPL/USGS Voyager + Galileo SSI colour mosaic",
+          "license": "Public domain (NASA/USGS)",
+          "licenseUrl": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+          "page": "https://astrogeology.usgs.gov/search/map/ganymede_voyager_galileo_ssi_global_clrmosaic_1435m"
+        }
+      ],
+      "processing": [
+        "unimaged (black) area filled with the mean tone",
+        "rolled 180 deg so longitude 0 is centred"
+      ]
+    },
+    "callisto": {
+      "url": "/textures/bodies/callisto.8a82737de0.jpg",
+      "sources": [
+        {
+          "url": "https://planetarymaps.usgs.gov/mosaic/Callisto_Voyager_GalileoSSI_global_mosaic_1km.tif",
+          "credit": "NASA/JPL/USGS Voyager + Galileo SSI mosaic",
+          "license": "Public domain (NASA/USGS)",
+          "licenseUrl": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+          "page": "https://astrogeology.usgs.gov/search/map/callisto_voyager_galileo_ssi_global_mosaic_1km"
+        }
+      ],
+      "processing": [
+        "greyscale mosaic tinted rgb(30,26,22) -> rgb(214,200,178) (approximate colour)",
+        "unimaged (black) area filled with the mean tone",
+        "levels 0%,88%",
+        "rolled 180 deg so longitude 0 is centred"
+      ]
+    },
+    "mimas": {
+      "url": "/textures/bodies/mimas.f6149de303.jpg",
+      "sources": [
+        {
+          "url": "https://planetarymaps.usgs.gov/mosaic/Mimas/Cassini_DLR_Mimas.zip",
+          "credit": "NASA/JPL/SSI Cassini ISS, DLR basemap (Roatsch et al.)",
+          "license": "Public domain (NASA/USGS)",
+          "licenseUrl": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+          "page": "https://astrogeology.usgs.gov/search/map/mimas_cassini_global_mosaic_dlr"
+        }
+      ],
+      "processing": [
+        "greyscale mosaic tinted rgb(58,56,54) -> rgb(238,236,232) (approximate colour)"
+      ]
+    },
+    "enceladus": {
+      "url": "/textures/bodies/enceladus.d56cb28ada.jpg",
+      "sources": [
+        {
+          "url": "https://planetarymaps.usgs.gov/mosaic/Enceladus_Cassini_mosaic_global_110m.tif",
+          "credit": "NASA/JPL/SSI Cassini ISS mosaic (DLR/USGS)",
+          "license": "Public domain (NASA/USGS)",
+          "licenseUrl": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+          "page": "https://astrogeology.usgs.gov/search/map/enceladus_cassini_iss_global_mosaic_110m"
+        }
+      ],
+      "processing": [
+        "greyscale mosaic tinted rgb(92,98,108) -> rgb(252,253,255) (approximate colour)"
+      ]
+    },
+    "tethys": {
+      "url": "/textures/bodies/tethys.28102f45d0.jpg",
+      "sources": [
+        {
+          "url": "https://planetarymaps.usgs.gov/mosaic/Tethys_Cassini_mosaic_global_293m.tif",
+          "credit": "NASA/JPL/SSI Cassini ISS mosaic (DLR/USGS)",
+          "license": "Public domain (NASA/USGS)",
+          "licenseUrl": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+          "page": "https://astrogeology.usgs.gov/search/map/tethys_cassini_iss_global_mosaic_293m"
+        }
+      ],
+      "processing": [
+        "greyscale mosaic tinted rgb(70,68,66) -> rgb(242,240,236) (approximate colour)"
+      ]
+    },
+    "dione": {
+      "url": "/textures/bodies/dione.f4ac5b059a.jpg",
+      "sources": [
+        {
+          "url": "https://planetarymaps.usgs.gov/mosaic/Dione_Cassini_Voyager_mosaic_global_154m.tif",
+          "credit": "NASA/JPL/SSI Cassini ISS + Voyager mosaic (DLR/USGS)",
+          "license": "Public domain (NASA/USGS)",
+          "licenseUrl": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+          "page": "https://astrogeology.usgs.gov/search/map/dione_cassini_voyager_global_mosaic_154m"
+        }
+      ],
+      "processing": [
+        "greyscale mosaic tinted rgb(58,56,54) -> rgb(236,233,228) (approximate colour)"
+      ]
+    },
+    "rhea": {
+      "url": "/textures/bodies/rhea.6d3a256891.jpg",
+      "sources": [
+        {
+          "url": "https://planetarymaps.usgs.gov/mosaic/Rhea_Cassini_Voyager_mosaic_global_417m.tif",
+          "credit": "NASA/JPL/SSI Cassini ISS + Voyager mosaic (DLR/USGS)",
+          "license": "Public domain (NASA/USGS)",
+          "licenseUrl": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+          "page": "https://astrogeology.usgs.gov/search/map/rhea_cassini_voyager_global_mosaic_417m"
+        }
+      ],
+      "processing": [
+        "greyscale mosaic tinted rgb(56,53,50) -> rgb(236,232,226) (approximate colour)"
+      ]
+    },
+    "titan": {
+      "url": "/textures/bodies/titan.4fdd6cc65a.jpg",
+      "sources": [
+        {
+          "url": "https://planetarymaps.usgs.gov/mosaic/Titan_ISS_P19658_Mosaic_Global_4km.tif",
+          "credit": "NASA/JPL/SSI Cassini ISS near-IR mosaic (USGS)",
+          "license": "Public domain (NASA/USGS)",
+          "licenseUrl": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+          "page": "https://astrogeology.usgs.gov/search/map/titan_cassini_iss_global_mosaic_4km"
+        }
+      ],
+      "processing": [
+        "greyscale mosaic tinted rgb(150,92,34) -> rgb(226,160,72) (approximate colour)",
+        "rolled 180 deg so longitude 0 is centred"
+      ]
+    },
+    "iapetus": {
+      "url": "/textures/bodies/iapetus.66c9613356.jpg",
+      "sources": [
+        {
+          "url": "https://planetarymaps.usgs.gov/mosaic/Iapetus_Cassini_Voyager_mosaic_global_783m.tif",
+          "credit": "NASA/JPL/SSI Cassini ISS + Voyager mosaic (DLR/USGS)",
+          "license": "Public domain (NASA/USGS)",
+          "licenseUrl": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+          "page": "https://astrogeology.usgs.gov/search/map/iapetus_cassini_voyager_global_mosaic_783m"
+        }
+      ],
+      "processing": [
+        "greyscale mosaic tinted rgb(34,22,14) -> rgb(238,232,222) (approximate colour)"
+      ]
+    },
+    "miranda": {
+      "url": "/textures/bodies/miranda.aaede9109b.jpg",
+      "sources": [
+        {
+          "url": "https://upload.wikimedia.org/wikipedia/commons/8/81/Miranda_map_JPL_USGS.jpg",
+          "credit": "NASA/JPL/USGS Voyager 2 mosaic",
+          "license": "Public domain",
+          "licenseUrl": "https://commons.wikimedia.org/wiki/File:Miranda_map_JPL_USGS.jpg",
+          "page": "https://commons.wikimedia.org/wiki/File:Miranda_map_JPL_USGS.jpg"
+        }
+      ],
+      "processing": [
+        "greyscale mosaic tinted rgb(52,52,52) -> rgb(222,220,218) (approximate colour)",
+        "unimaged (black) area filled with the mean tone"
+      ]
+    },
+    "ariel": {
+      "url": "/textures/bodies/ariel.559ad5f645.jpg",
+      "sources": [
+        {
+          "url": "https://upload.wikimedia.org/wikipedia/commons/7/74/Ariel_map_JPL_USGS.jpg",
+          "credit": "NASA/JPL/USGS Voyager 2 mosaic",
+          "license": "Public domain",
+          "licenseUrl": "https://commons.wikimedia.org/wiki/File:Ariel_map_JPL_USGS.jpg",
+          "page": "https://commons.wikimedia.org/wiki/File:Ariel_map_JPL_USGS.jpg"
+        }
+      ],
+      "processing": [
+        "greyscale mosaic tinted rgb(60,59,58) -> rgb(232,230,228) (approximate colour)",
+        "unimaged (black) area filled with the mean tone"
+      ]
+    },
+    "umbriel": {
+      "url": "/textures/bodies/umbriel.c037f392dc.jpg",
+      "sources": [
+        {
+          "url": "https://upload.wikimedia.org/wikipedia/commons/4/42/Umbriel_map_JPL_USGS.jpg",
+          "credit": "NASA/JPL/USGS Voyager 2 mosaic",
+          "license": "Public domain",
+          "licenseUrl": "https://commons.wikimedia.org/wiki/File:Umbriel_map_JPL_USGS.jpg",
+          "page": "https://commons.wikimedia.org/wiki/File:Umbriel_map_JPL_USGS.jpg"
+        }
+      ],
+      "processing": [
+        "greyscale mosaic tinted rgb(34,33,33) -> rgb(170,168,166) (approximate colour)",
+        "unimaged (black) area filled with the mean tone"
+      ]
+    },
+    "titania": {
+      "url": "/textures/bodies/titania.dd856f3ade.jpg",
+      "sources": [
+        {
+          "url": "https://upload.wikimedia.org/wikipedia/commons/8/85/Titania_map_JPL_USGS.jpg",
+          "credit": "NASA/JPL/USGS Voyager 2 mosaic",
+          "license": "Public domain",
+          "licenseUrl": "https://commons.wikimedia.org/wiki/File:Titania_map_JPL_USGS.jpg",
+          "page": "https://commons.wikimedia.org/wiki/File:Titania_map_JPL_USGS.jpg"
+        }
+      ],
+      "processing": [
+        "greyscale mosaic tinted rgb(50,48,46) -> rgb(214,208,202) (approximate colour)",
+        "unimaged (black) area filled with the mean tone"
+      ]
+    },
+    "oberon": {
+      "url": "/textures/bodies/oberon.8130c3bb10.jpg",
+      "sources": [
+        {
+          "url": "https://upload.wikimedia.org/wikipedia/commons/1/1d/Oberon_map_JPL_USGS.jpg",
+          "credit": "NASA/JPL/USGS Voyager 2 mosaic",
+          "license": "Public domain",
+          "licenseUrl": "https://commons.wikimedia.org/wiki/File:Oberon_map_JPL_USGS.jpg",
+          "page": "https://commons.wikimedia.org/wiki/File:Oberon_map_JPL_USGS.jpg"
+        }
+      ],
+      "processing": [
+        "greyscale mosaic tinted rgb(44,40,38) -> rgb(200,190,182) (approximate colour)",
+        "unimaged (black) area filled with the mean tone"
+      ]
+    },
+    "triton": {
+      "url": "/textures/bodies/triton.3575b10f07.jpg",
+      "sources": [
+        {
+          "url": "https://planetarymaps.usgs.gov/mosaic/Triton_Voyager2_ClrMosaic_GlobalFill_600m.tif",
+          "credit": "NASA/JPL/USGS Voyager 2 colour mosaic (unimaged areas filled)",
+          "license": "Public domain (NASA/USGS)",
+          "licenseUrl": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+          "page": "https://astrogeology.usgs.gov/search/map/triton_voyager_2_global_color_mosaic_600m"
+        }
+      ],
+      "processing": [
+        "unimaged (black) area filled with the mean tone"
+      ]
+    },
+    "pluto": {
+      "url": "/textures/bodies/pluto.c72536bba3.jpg",
+      "sources": [
+        {
+          "url": "https://planetarymaps.usgs.gov/mosaic/Pluto_NewHorizons_Global_Mosaic_300m_Jul2017_8bit.tif",
+          "credit": "NASA/JHUAPL/SwRI New Horizons LORRI+MVIC mosaic (USGS)",
+          "license": "Public domain (NASA/USGS)",
+          "licenseUrl": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+          "page": "https://astrogeology.usgs.gov/search/map/pluto_new_horizons_lorri_mvic_global_mosaic_300m"
+        }
+      ],
+      "processing": [
+        "greyscale mosaic tinted rgb(62,30,16) -> rgb(250,236,214) (approximate colour)",
+        "unimaged (black) area filled with the mean tone",
+        "rolled 180 deg so longitude 0 is centred"
+      ]
+    },
+    "charon": {
+      "url": "/textures/bodies/charon.a25b4b3815.jpg",
+      "sources": [
+        {
+          "url": "https://planetarymaps.usgs.gov/mosaic/Charon_NewHorizons_Global_Mosaic_300m_Jul2017_8bit.tif",
+          "credit": "NASA/JHUAPL/SwRI New Horizons LORRI+MVIC mosaic (USGS)",
+          "license": "Public domain (NASA/USGS)",
+          "licenseUrl": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+          "page": "https://astrogeology.usgs.gov/search/map/charon_new_horizons_lorri_mvic_global_mosaic_300m"
+        }
+      ],
+      "processing": [
+        "greyscale mosaic tinted rgb(52,42,38) -> rgb(220,214,208) (approximate colour)",
+        "unimaged (black) area filled with the mean tone"
+      ]
+    },
+    "ceres": {
+      "url": "/textures/bodies/ceres.5cadc19ab8.jpg",
+      "sources": [
+        {
+          "url": "https://planetarymaps.usgs.gov/mosaic/Ceres_Dawn_FC_DLR_global_20ppd_Oct2015.tif",
+          "credit": "NASA/JPL-Caltech/UCLA/MPS/DLR/IDA Dawn FC mosaic",
+          "license": "Public domain (NASA/USGS)",
+          "licenseUrl": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+          "page": "https://astrogeology.usgs.gov/search/map/ceres_dawn_fc_dlr_global_mosaic_20ppd"
+        }
+      ],
+      "processing": [
+        "greyscale mosaic tinted rgb(28,27,26) -> rgb(200,196,190) (approximate colour)",
+        "rolled 180 deg so longitude 0 is centred"
+      ]
+    },
+    "eris": {
+      "url": "/textures/bodies/eris.7a1c9fcb6c.jpg",
+      "sources": [
+        {
+          "url": "https://www.solarsystemscope.com/textures/download/4k_eris_fictional.jpg",
+          "credit": "Solar System Scope (INOVE)",
+          "license": "CC BY 4.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+          "page": "https://www.solarsystemscope.com/textures/",
+          "note": "Fictional terrain (no spacecraft imagery exists)"
+        }
+      ],
+      "processing": [
+        "greyscale mosaic tinted rgb(120,118,116) -> rgb(240,236,232) (approximate colour)"
+      ]
+    },
+    "haumea": {
+      "url": "/textures/bodies/haumea.292366a45d.jpg",
+      "sources": [
+        {
+          "url": "https://www.solarsystemscope.com/textures/download/4k_haumea_fictional.jpg",
+          "credit": "Solar System Scope (INOVE)",
+          "license": "CC BY 4.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+          "page": "https://www.solarsystemscope.com/textures/",
+          "note": "Fictional terrain (no spacecraft imagery exists)"
+        }
+      ],
+      "processing": [
+        "greyscale mosaic tinted rgb(118,114,110) -> rgb(236,232,228) (approximate colour)"
+      ]
+    },
+    "makemake": {
+      "url": "/textures/bodies/makemake.c8142d9ff5.jpg",
+      "sources": [
+        {
+          "url": "https://www.solarsystemscope.com/textures/download/4k_makemake_fictional.jpg",
+          "credit": "Solar System Scope (INOVE)",
+          "license": "CC BY 4.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+          "page": "https://www.solarsystemscope.com/textures/",
+          "note": "Fictional terrain (no spacecraft imagery exists)"
+        }
+      ],
+      "processing": [
+        "greyscale mosaic tinted rgb(110,84,62) -> rgb(228,206,184) (approximate colour)"
+      ]
+    }
+  }
+}

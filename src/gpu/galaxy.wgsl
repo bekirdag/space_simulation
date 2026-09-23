@@ -27,7 +27,7 @@ struct Galaxy {
 
 const BACKGROUND_GALAXY_BRIGHTNESS_SCALE: f32 = 0.5;
 const CAMERA_NEAR: f32 = 1e-8;
-const CAMERA_FAR:  f32 = 50000000.0;
+const CAMERA_FAR:  f32 = 500000000.0;
 
 struct VertexOut {
   @builtin(position) clip_pos: vec4<f32>,
@@ -44,12 +44,12 @@ var<private> quad: array<vec2<f32>, 6> = array<vec2<f32>, 6>(
 
 fn visual_radius_to_mpc(radiusAU: f32) -> f32 {
   let linearLimitMpc = 2.0;
-  let mpcToAU = 8000000.0;
+  let mpcToAU = 80000000.0; // 80 000 AU/kpc (scale.ts, galaxies.ts)
   let linearLimitAU = linearLimitMpc * mpcToAU;
   if radiusAU <= linearLimitAU {
     return max(radiusAU / mpcToAU, 0.02);
   }
-  return linearLimitMpc + 2.0 * (pow(2.0, (radiusAU - linearLimitAU) / 1200000.0) - 1.0);
+  return linearLimitMpc + 2.0 * (pow(2.0, (radiusAU - linearLimitAU) / 12000000.0) - 1.0);
 }
 
 fn camera_back() -> vec3<f32> {
@@ -147,8 +147,8 @@ fn vs_main(
   // At galaxy-scale distances the camera is far from the solar system.
   // Boost all galaxy brightnesses so they remain visible, while keeping
   // their relative brightness ordering (LMC still brighter than M87).
-  // Uses a power-law ramp: starts at 10 kpc (80 000 AU), max ~15× at ≥1 Mpc.
-  let camDistKpc  = length(camera.eyeAndFlags.xyz) / 8000.0;
+  // Uses a power-law ramp: starts at 10 kpc (800 000 AU), max ~15× at ≥1 Mpc.
+  let camDistKpc  = length(camera.eyeAndFlags.xyz) / 80000.0;
   let boostRatio  = max(camDistKpc / 10.0, 1.0);         // 1.0 at ≤10 kpc
   let zoomBoost   = clamp(pow(boostRatio, 0.65), 1.0, 15.0);
   // Apply boost to intrinsic brightness; cap so nothing blows out completely.
@@ -170,7 +170,7 @@ fn vs_main(
   // intentionally traveled very close to one, expand the billboard so the
   // clicked galaxy reads as a close-up target instead of remaining a tiny dot.
   let closeDist = camera_distance(center);
-  let closeFocus = 1.0 - smoothstep(220.0, 900.0, closeDist);
+  let closeFocus = 1.0 - smoothstep(2200.0, 9000.0, closeDist);
   let pxRadius = max(catalogRadius, closeFocus * 0.5);
 
   // ── Frustum culling ────────────────────────────────────────────────────────
@@ -184,7 +184,7 @@ fn vs_main(
     return out;
   }
 
-  out.clip_pos = clip_c + vec4(uv.x * pxRadius * clip_c.w, uv.y * pxRadius * clip_c.w, 0.0, 0.0);
+  out.clip_pos = with_log_depth(clip_c + vec4(uv.x * pxRadius * clip_c.w, uv.y * pxRadius * clip_c.w, 0.0, 0.0));
   return out;
 }
 
@@ -226,4 +226,20 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   // The blend srcFactor=src_alpha then gives: col*a + dst (correct).
   let objectBrightness = max(camera.eyeAndFlags.w, 0.0);
   return vec4<f32>(col * objectBrightness, a);
+}
+
+// Logarithmic depth shared with solar-system-model.wgsl / milkyway-model.wgsl /
+// render.wgsl / trail.wgsl (keep LOG_DEPTH_* in sync). The standard hyperbolic
+// depth collapses to 1.0 beyond a few AU, so every depth-tested scene layer
+// writes log2 view depth instead. Billboards keep the same clip w on all
+// corners, so z = logDepth(w) * w is exact for the whole sprite (centre depth).
+const LOG_DEPTH_K: f32 = 1e-9;
+const LOG_DEPTH_INV_RANGE: f32 = 0.016666667; // 1 / log2(1 + 1e9 / 1e-9) ~= 1 / 59.79
+
+fn logDepth(viewDepth: f32) -> f32 {
+  return clamp(log2(1.0 + max(viewDepth, 0.0) / LOG_DEPTH_K) * LOG_DEPTH_INV_RANGE, 0.0, 1.0);
+}
+
+fn with_log_depth(clip: vec4<f32>) -> vec4<f32> {
+  return vec4<f32>(clip.xy, logDepth(clip.w) * clip.w, clip.w);
 }

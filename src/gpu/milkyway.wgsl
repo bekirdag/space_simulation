@@ -28,7 +28,7 @@ struct Star {
 const CLOSE_STAR_SPHERE_LOD_START_PX: f32 = 2.25;
 const CLOSE_STAR_SPHERE_LOD_FULL_PX:  f32 = 4.50;
 const CAMERA_NEAR: f32 = 1e-8;
-const CAMERA_FAR:  f32 = 50000000.0;
+const CAMERA_FAR:  f32 = 500000000.0;
 const SOLAR_RADIUS_AU: f32 = 0.00465047;
 
 struct VertexOut {
@@ -38,8 +38,39 @@ struct VertexOut {
   @location(2)       alpha:    f32,
   @location(3)       brightness: f32,
   @location(4)       effects: f32,
-  @location(5)       pixel_radius: f32,
+  @location(5)       pixel_radius: f32, // quad radius in device pixels
+  @location(6)       disk_px: f32,      // sphere-LOD radius in device pixels
+  @location(7)       point_sigma: f32,  // PSF sigma in device pixels
+  @location(8)       point_gain: f32,   // flux-normalised, clamped PSF peak
+  @location(9)       intensity: f32,
 };
+
+// ── Band-limited point PSF (anti-twinkle) ─────────────────────────────────
+// Same profile as star.wgsl: a Gaussian in device-pixel units (sigma >= 0.72
+// px) so per-star pixel energy does not depend on the sub-pixel phase, with a
+// flux-normalised, soft-clamped peak so bloom does not flicker.
+const POINT_SIGMA_MIN_PX: f32 = 0.72;
+const POINT_SIGMA_MAX_PX: f32 = 0.95;
+const POINT_PEAK_SOFT_MAX: f32 = 28.0;
+const POINT_TAIL_CUTOFF: f32 = 0.004;
+
+fn point_sigma_px(markerPx: f32) -> f32 {
+  return clamp(markerPx * 0.46, POINT_SIGMA_MIN_PX, POINT_SIGMA_MAX_PX);
+}
+
+// Energy of the legacy marker (0.72 plateau of radius 0.54·marker + core).
+fn point_flux_norm(markerPx: f32, sigmaPx: f32) -> f32 {
+  return 0.70 * markerPx * markerPx / (6.2831853 * sigmaPx * sigmaPx);
+}
+
+fn soft_clamp_peak(v: f32) -> f32 {
+  return POINT_PEAK_SOFT_MAX * (1.0 - exp(-max(v, 0.0) / POINT_PEAK_SOFT_MAX));
+}
+
+fn point_extent_px(sigmaPx: f32, peak: f32) -> f32 {
+  let reach = sqrt(2.0 * log(max(peak / POINT_TAIL_CUTOFF, 1.0)));
+  return sigmaPx * clamp(reach, 3.0, 4.6) + 0.5;
+}
 
 var<private> quad: array<vec2<f32>, 6> = array<vec2<f32>, 6>(
   vec2(-1.0,-1.0), vec2(1.0,-1.0), vec2(-1.0,1.0),
@@ -56,7 +87,7 @@ fn stellar_luminosity_proxy(color: vec3<f32>, radiusAU: f32, alpha: f32) -> f32 
 }
 
 fn apparent_mw_brightness(cameraDistanceAU: f32, color: vec3<f32>, radiusAU: f32, alpha: f32) -> f32 {
-  let distKpc = max(cameraDistanceAU / 8000.0, 0.16);
+  let distKpc = max(cameraDistanceAU / 80000.0, 0.16); // 80 000 AU/kpc (scale.ts)
   let flux = stellar_luminosity_proxy(color, radiusAU, alpha) / (distKpc * distKpc);
   return clamp(pow(max(flux * 3.6, 0.0001), 0.34), 0.08, 2.15);
 }
@@ -112,7 +143,7 @@ fn clip_billboard_offset(uv: vec2<f32>, radiusNdcY: f32, clipW: f32) -> vec4<f32
 }
 
 fn brightness_camera_distance(center: vec3<f32>) -> f32 {
-  let referenceDistanceAU = max(length(center), 800.0);
+  let referenceDistanceAU = max(length(center), 8000.0); // 0.1 kpc
   return max(camera_distance(center), referenceDistanceAU * 0.025);
 }
 
@@ -132,6 +163,10 @@ fn vs_main(
   let actual = lodFade.z > 0.5;
   out.effects = clamp(lodFade.z, 0.0, 1.0);
   out.pixel_radius = 0.0;
+  out.disk_px = 0.0;
+  out.point_sigma = POINT_SIGMA_MIN_PX;
+  out.point_gain = 0.0;
+  out.intensity = 1.0;
   let cameraDistanceAU = brightness_camera_distance(center);
   let radiusAU = max(star.pos_size.w, SOLAR_RADIUS_AU * 0.08);
   out.brightness = select(1.0, apparent_mw_brightness(cameraDistanceAU, out.color, radiusAU, star.color_alpha.w), actual);
@@ -158,8 +193,18 @@ fn vs_main(
     (0.46 + 0.12 * out.alpha) * radiusMarkerLift,
     0.35,
   );
-  let pxRadius = max(physicalNdcRadius, pointNdcRadius);
-  out.pixel_radius = pxRadius * 2.5 / max(camera.rightAndMNR.w, 0.000001);
+  // All sizing below is in device pixels (MNR corresponds to 2.5 px).
+  let ndcToPx = 2.5 / max(camera.rightAndMNR.w, 0.000001);
+  let markerPx = pointNdcRadius * ndcToPx;
+  out.disk_px = max(physicalNdcRadius, pointNdcRadius) * ndcToPx;
+  out.intensity = mix(1.0, clamp(pow(max(out.brightness, 0.05), 1.55) * 10.5, 0.40, 95.0), out.effects);
+  out.point_sigma = point_sigma_px(markerPx);
+  out.point_gain = soft_clamp_peak(
+    point_flux_norm(markerPx, out.point_sigma) * out.intensity * out.alpha
+  );
+  let quadPx = max(out.disk_px + 1.0, point_extent_px(out.point_sigma, out.point_gain));
+  let pxRadius = quadPx / ndcToPx;
+  out.pixel_radius = quadPx;
   let cullMargin = max(pxRadius * 1.5, 0.06);
   if ndcX - cullMargin > 1.0 || ndcX + cullMargin < -1.0 ||
      ndcY - cullMargin > 1.0 || ndcY + cullMargin < -1.0 {
@@ -171,44 +216,48 @@ fn vs_main(
   // Keep the math target-relative like the catalog-star shader. Absolute
   // viewProj projection loses precision at galaxy scale and makes star HDR
   // brightness/culling flicker while orbiting or panning.
-  out.clip_pos = clip_c + clip_billboard_offset(uv, pxRadius, clip_c.w);
+  out.clip_pos = with_log_depth(clip_c + clip_billboard_offset(uv, pxRadius, clip_c.w));
   return out;
 }
 
 @fragment
 fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   let d = length(in.uv);
-  let edgeAa = clamp(max(fwidth(d), 0.85 / max(in.pixel_radius, 1.0)), 0.0015, 0.42);
-  let silhouette = 1.0 - smoothstep(1.0 - edgeAa, 1.0 + edgeAa, d);
-  if silhouette <= 0.001 { discard; }
 
-  // Crisp distant-star impostor: use a tight point core instead of a soft PSF.
-  let d2    = d * d;
-  let core  = exp(-d2 * 46.0);
-  let pointDisk = 1.0 - smoothstep(0.54 - edgeAa, 0.54 + edgeAa, d);
-  let pointCore = max(core, pointDisk * 0.72);
+  // Band-limited point PSF in device-pixel units (see star.wgsl).
+  let rPx = d * in.pixel_radius;
+  let sigma = max(in.point_sigma, 0.001);
+  let psf = exp(-(rPx * rPx) / (2.0 * sigma * sigma)) * (1.0 - smoothstep(0.82, 1.0, d));
+
+  // Sphere-LOD coordinates: the resolved disk may be smaller than the quad.
+  let diskScale = in.pixel_radius / max(in.disk_px, 0.0001);
+  let suv = in.uv * diskScale;
+  let sd = d * diskScale;
+  let edgeAa = clamp(max(fwidth(sd), 0.85 / max(in.disk_px, 1.0)), 0.0015, 0.42);
+  let silhouette = 1.0 - smoothstep(1.0 - edgeAa, 1.0 + edgeAa, sd);
+  let sphereLod = smoothstep(CLOSE_STAR_SPHERE_LOD_START_PX, CLOSE_STAR_SPHERE_LOD_FULL_PX, in.disk_px);
+  if psf <= 0.00001 && (silhouette <= 0.001 || sphereLod <= 0.001) { discard; }
 
   let baseSpectral = mix(in.color, subtle_spectral_color(in.color), in.effects);
   let coolWeight = cool_star_weight(baseSpectral);
   let spectral = mix(baseSpectral, pow(baseSpectral, vec3<f32>(2.25)), coolWeight * in.effects * 0.72);
   var col = spectral;
   let lift   = mix(1.0, clamp(pow(max(in.brightness, 0.08), 0.28), 0.55, 1.8), in.effects);
-  let bleach = clamp(pointCore * in.alpha * (0.95 + lift * 0.42) * mix(1.0, 0.38, coolWeight) * in.effects, 0.0, 1.0);
+  let bleach = clamp(psf * in.alpha * (0.95 + lift * 0.42) * mix(1.0, 0.38, coolWeight) * in.effects, 0.0, 1.0);
   let coreTint = bright_spectral_color(spectral, coolWeight);
   col = mix(spectral, coreTint, bleach);
 
-  let pointProfile = pointCore * silhouette;
-  var alpha = clamp(pointProfile * in.alpha * mix(1.0, 0.72 + lift * 0.42, in.effects), 0.0, 1.0);
-  let intensity = mix(1.0, clamp(pow(max(in.brightness, 0.05), 1.55) * 10.5, 0.40, 95.0), in.effects);
-  var hdr = col * pointProfile * in.alpha * intensity;
+  var alpha = clamp(psf * in.alpha * mix(1.0, 0.72 + lift * 0.42, in.effects), 0.0, 1.0);
+  let intensity = in.intensity;
+  var hdr = col * psf * in.point_gain;
 
   // Close/background Milky Way stars should not expose the quad impostor.
   // Keep a crisp point for tiny distant stars, then blend into an implicit
   // spherical photosphere once the projected radius is large enough to inspect.
-  let sphereLod = smoothstep(CLOSE_STAR_SPHERE_LOD_START_PX, CLOSE_STAR_SPHERE_LOD_FULL_PX, in.pixel_radius);
   if sphereLod > 0.001 {
-    let z = sqrt(max(0.0, 1.0 - d2));
-    let normal = normalize(vec3<f32>(in.uv.x, in.uv.y, z));
+    let sd2 = sd * sd;
+    let z = sqrt(max(0.0, 1.0 - sd2));
+    let normal = normalize(vec3<f32>(suv.x, suv.y, z));
     let lightDir = normalize(vec3<f32>(-0.38, 0.32, 0.87));
     let diffuse = max(dot(normal, lightDir), 0.0);
     let limb = pow(max(z, 0.0), 0.45);
@@ -219,7 +268,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
       hotSpot * mix(0.30, 0.08, coolWeight)
     );
     let sphereAlpha = clamp(silhouette * in.alpha * (0.46 + limb * 0.54), 0.0, 1.0);
-    let corona = exp(-d2 * 4.8) * 0.24;
+    let corona = exp(-sd2 * 4.8) * 0.24;
     let sphereHdr = (
       sphereCol * in.alpha * intensity * (0.36 + limb * 0.72 + hotSpot * 0.42) +
       (spectral + vec3<f32>(corona * 0.20 * (1.0 - coolWeight * 0.72))) * intensity * corona * in.alpha
@@ -230,4 +279,20 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
 
   let objectBrightness = max(camera.eyeAndFlags.w, 0.0);
   return vec4<f32>(hdr * objectBrightness, alpha);
+}
+
+// Logarithmic depth shared with solar-system-model.wgsl / milkyway-model.wgsl /
+// render.wgsl / trail.wgsl (keep LOG_DEPTH_* in sync). The standard hyperbolic
+// depth collapses to 1.0 beyond a few AU, so every depth-tested scene layer
+// writes log2 view depth instead. Billboards keep the same clip w on all
+// corners, so z = logDepth(w) * w is exact for the whole sprite (centre depth).
+const LOG_DEPTH_K: f32 = 1e-9;
+const LOG_DEPTH_INV_RANGE: f32 = 0.016666667; // 1 / log2(1 + 1e9 / 1e-9) ~= 1 / 59.79
+
+fn logDepth(viewDepth: f32) -> f32 {
+  return clamp(log2(1.0 + max(viewDepth, 0.0) / LOG_DEPTH_K) * LOG_DEPTH_INV_RANGE, 0.0, 1.0);
+}
+
+fn with_log_depth(clip: vec4<f32>) -> vec4<f32> {
+  return vec4<f32>(clip.xy, logDepth(clip.w) * clip.w, clip.w);
 }

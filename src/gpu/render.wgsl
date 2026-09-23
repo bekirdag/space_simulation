@@ -39,6 +39,13 @@ struct VertexOut {
   @location(2)       btype:    f32,
   @location(3)       fade:     f32,  // 1.0 = fully visible, 0.0 = hidden
   @location(4)       brightness: f32,
+  @location(5)       centerDepth: f32, // clip w (view depth, AU) of the body centre
+  @location(6)       radius:      f32, // physical radius, AU
+};
+
+struct FragmentOut {
+  @location(0)         color: vec4<f32>,
+  @builtin(frag_depth) depth: f32,
 };
 
 var<private> quad: array<vec2<f32>, 6> = array<vec2<f32>, 6>(
@@ -87,6 +94,8 @@ fn vs_main(
   out.btype   = b.acc_type.w;
   out.fade    = clamp(b.acc_type.z, 0.0, 1.0);
   let cameraDistanceAU = length(center - camera.eyeAndFlags.xyz);
+  out.centerDepth = clip_c.w;
+  out.radius = r_phys;
   out.brightness = camera_distance_adjusted_brightness(
     max(b.acc_type.x, 0.0),
     b.acc_type.y,
@@ -109,12 +118,34 @@ fn vs_main(
   let clipRight = camera.viewProj * vec4(camRight * (r_phys * glowScale), 0.0);
   let clipUp    = camera.viewProj * vec4(camUp    * (r_phys * glowScale), 0.0);
   let clipOffset = uv.x * clipRight + uv.y * clipUp;
-  out.clip_pos = clip_c + vec4(clipOffset.xy, 0.0, 0.0);
+  out.clip_pos = with_log_depth(clip_c + vec4(clipOffset.xy, 0.0, 0.0));
   return out;
 }
 
+// Sphere-impostor depth for the physical disc: the visible hemisphere point in
+// front of the centre, so orbit trails / stars behind a sprite-rendered body are
+// hidden while trail segments in front of it still pass the depth test.
+fn sphere_depth(in: VertexOut, sphereD: f32) -> f32 {
+  let zc = sqrt(max(0.0, 1.0 - min(sphereD, 1.0) * min(sphereD, 1.0)));
+  return logDepth(max(in.centerDepth - in.radius * zc, 0.0));
+}
+
+fn glow_scale_for(brightness: f32) -> f32 {
+  return clamp(1.0 + log2(max(brightness, 1.0)) * 0.65, 1.0, 8.0);
+}
+
+// Depth-only pre-pass drawn at the start of the scene pass: writes the opaque
+// core disc of every visible sprite body (halo excluded) so every later layer
+// (stars, galaxies, dust, constellations, trails) is depth-tested against it.
 @fragment
-fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
+fn fs_depth(in: VertexOut) -> @builtin(frag_depth) f32 {
+  let sphereD = length(in.uv) * glow_scale_for(max(in.brightness, 0.0));
+  if sphereD > 1.0 || in.fade < 0.5 { discard; }
+  return sphere_depth(in, sphereD);
+}
+
+@fragment
+fn fs_main(in: VertexOut) -> FragmentOut {
   let d = length(in.uv);
   if d > 1.0 { discard; }
 
@@ -162,5 +193,28 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   let outAlpha = max(coreAlpha, haloAlpha);
   let objectBrightness = max(camera.eyeAndFlags.w, 0.0);
   let outCol = (coreCol * coreAlpha + haloCol * haloAlpha) * objectBrightness;
-  return vec4<f32>(outCol, outAlpha);
+  var out: FragmentOut;
+  out.color = vec4<f32>(outCol, outAlpha);
+  // Core: same impostor depth as fs_depth (passes less-equal against it);
+  // halo: body-centre depth, so halos of bodies behind another disc are hidden.
+  // The tiny bias keeps the core from failing against its own pre-pass value
+  // if the two entry points round differently (~1e-5 relative distance).
+  out.depth = max(select(logDepth(in.centerDepth), sphere_depth(in, sphereD), sphereD <= 1.0) - 4e-7, 0.0);
+  return out;
+}
+
+// Logarithmic depth shared with solar-system-model.wgsl / milkyway-model.wgsl /
+// render.wgsl / trail.wgsl (keep LOG_DEPTH_* in sync). The standard hyperbolic
+// depth collapses to 1.0 beyond a few AU, so every depth-tested scene layer
+// writes log2 view depth instead. Billboards keep the same clip w on all
+// corners, so z = logDepth(w) * w is exact for the whole sprite (centre depth).
+const LOG_DEPTH_K: f32 = 1e-9;
+const LOG_DEPTH_INV_RANGE: f32 = 0.016666667; // 1 / log2(1 + 1e9 / 1e-9) ~= 1 / 59.79
+
+fn logDepth(viewDepth: f32) -> f32 {
+  return clamp(log2(1.0 + max(viewDepth, 0.0) / LOG_DEPTH_K) * LOG_DEPTH_INV_RANGE, 0.0, 1.0);
+}
+
+fn with_log_depth(clip: vec4<f32>) -> vec4<f32> {
+  return vec4<f32>(clip.xy, logDepth(clip.w) * clip.w, clip.w);
 }
